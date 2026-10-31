@@ -74,26 +74,16 @@ def get_fingerprint(email):
     """Generate a deterministic fingerprint based on the email address."""
     h = int(hashlib.md5(email.encode()).hexdigest(), 16)
     
-    # 1. User Agents (Modern versions)
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-    ]
-    ua = user_agents[h % len(user_agents)]
-    
-    # 2. Resolutions
+    # Resolutions
     resolutions = ["1920,1080", "1536,864", "1366,768", "1440,900", "1600,900"]
     res = resolutions[h % len(resolutions)]
     
-    # 3. Hardware / Memory
+    # Hardware / Memory
     concurrency = [4, 8, 12, 16][h % 4]
     memory = [4, 8, 16][h % 3]
     
     return {
-        "ua": ua,
+        "ua": None,  # Gunakan User-Agent native Chromium agar konsisten dengan platform Linux & Client Hints (mencegah Google CAPTCHA)
         "res": res,
         "concurrency": concurrency,
         "memory": memory,
@@ -203,7 +193,7 @@ INSTRUKSI WAJIB:
    - Panjang ulasan antara 2 sampai 4 kalimat.
    - Tulis HANYA teks komentar ulasan. JANGAN menyertakan tanda kutip (" "), jangan pakai markdown, dan jangan gunakan kata pengantar."""
 
-    models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest", "gemini-pro-latest"]
     for model in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key.strip()}"
         payload = {
@@ -371,7 +361,7 @@ def setup_authenticated_session(sb, email, target_url="https://www.google.com/ma
 
 
 def login_with_google_credentials(sb, email, password, totp_secret=None, business_id=None, email_id=None):
-    """Metode 2: Login otomatis ke Akun Google menggunakan Email, Password, dan TOTP jika diperlukan."""
+    """Metode 1: Login otomatis ke Akun Google menggunakan Email, Password, dan TOTP jika diperlukan."""
     if not password:
         return False, "Password tidak tersedia untuk akun ini."
 
@@ -383,31 +373,147 @@ def login_with_google_credentials(sb, email, password, totp_secret=None, busines
         cur = sb.get_current_url()
         # Jika profil browser sebelumnya sudah dalam keadaan login:
         if "myaccount.google.com" in cur or "google.com/maps" in cur:
-            db.add_process_log(business_id, f"[{email}] Profil browser sudah login sebelumnya.", email_id)
-            session_manager.sync_browser_cookies_to_db(sb, email)
-            return True, "Sudah login."
+            account_elems = sb.find_elements("a[aria-label*='Google Account'], button[aria-label*='Google Account'], a[href*='SignOutOptions']")
+            if account_elems:
+                db.add_process_log(business_id, f"[{email}] Profil browser sudah login sebelumnya.", email_id)
+                session_manager.sync_browser_cookies_to_db(sb, email)
+                return True, "Sudah login."
 
-        # Input Email Google
+        pwd_sel = 'input[type="password"]:not([name="hiddenPassword"]), input[name="Passwd"], input[name="password"]'
+
+        # Cek apakah ada Account Chooser ("Choose an account" / "Pilih akun")
+        body_txt_init = (sb.get_text("body") or "").lower()
+        if not sb.is_element_visible(pwd_sel) and ("choose an account" in body_txt_init or "pilih akun" in body_txt_init):
+            db.add_process_log(business_id, f"[{email}] Memilih akun dari daftar pemilih akun Google...", email_id)
+            clicked = sb.evaluate(f'''(() => {{
+                var el = document.querySelector("div[data-identifier='{email}'], div[data-email='{email}']");
+                if (el) {{ el.click(); return 'clicked'; }}
+                return 'not found';
+            }})()''')
+            if clicked == 'clicked':
+                try:
+                    sb.wait_for_element_visible(pwd_sel, timeout=12)
+                except Exception:
+                    sb.sleep(4)
+            else:
+                # Coba klik "Use another account"
+                sb.evaluate('''(() => {
+                    var all = document.querySelectorAll("div[role='link'], li, div");
+                    for (var el of all) {
+                        var t = (el.innerText || '').toLowerCase();
+                        if (t.includes('use another account') || t.includes('gunakan akun lain')) {
+                            el.click(); break;
+                        }
+                    }
+                })()''')
+                sb.sleep(random.uniform(4, 6))
+
+        # Input Email Google jika masih di kolom email dan kolom sandi belum terbuka
         email_sel = 'input[type="email"], #identifierId, input[name="identifier"]'
-        sb.wait_for_element_visible(email_sel, timeout=15)
-        sb.click(email_sel)
-        sb.sleep(1)
-        sb.type(email_sel, email)
-        sb.sleep(random.uniform(1.5, 2.5))
+        if not sb.is_element_visible(pwd_sel) and sb.is_element_visible(email_sel):
+            sb.click(email_sel)
+            sb.sleep(1)
+            sb.type(email_sel, email)
+            sb.sleep(random.uniform(1.5, 2.5))
 
-        # Klik Next Email
-        sb.click('#identifierNext, button:contains("Next")')
-        sb.sleep(random.uniform(4, 6))
+            # Klik Next Email
+            sb.click('#identifierNext button, #identifierNext, button:contains("Next"), button:contains("Berikutnya")')
+            sb.sleep(random.uniform(4, 6))
 
         # Cek jika ada error akun tidak ditemukan
         body_txt = (sb.get_text("body") or "").lower()
         if "couldn't find your google account" in body_txt or "tidak dapat menemukan akun" in body_txt:
             return False, "Akun Google tidak ditemukan atau salah ketik."
 
+        # Cek jika Google menampilkan CAPTCHA audio/visual (input[name="ca"] / #ca / img#captchaimg)
+        captcha_sel = 'input[name="ca"], #ca'
+        captcha_img_sel = 'img#captchaimg'
+        if (sb.is_element_visible(captcha_sel) or sb.is_element_visible(captcha_img_sel)) and not sb.is_element_visible(pwd_sel):
+            db.add_process_log(business_id, f"[{email}] ⚠ Google meminta CAPTCHA verifikasi keamanan. Menyelesaikan otomatis dengan Gemini AI Vision...", email_id, "warning")
+            gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+            captcha_solved = False
+            if gemini_key:
+                import base64 as _b64
+                for captcha_attempt in range(1, 4):  # Retry CAPTCHA sampai 3x
+                    try:
+                        if captcha_attempt > 1:
+                            time.sleep(2.5)  # Backoff agar tidak terkena rate limit HTTP 429 Gemini API
+                        db.add_process_log(business_id, f"[{email}] 🔍 CAPTCHA attempt {captcha_attempt}/3 — Mengambil gambar CAPTCHA...", email_id)
+                        cap_path = f"/tmp/captcha_{int(time.time())}.png"
+                        # Prioritas: Screenshot tepat pada elemen img#captchaimg via CDP
+                        try:
+                            sb.save_screenshot(cap_path, selector="img#captchaimg")
+                        except Exception:
+                            sb.save_screenshot(cap_path)
+
+                        with open(cap_path, "rb") as f:
+                            captcha_img_data = _b64.b64encode(f.read()).decode("utf-8")
+                        captcha_mime = "image/png"
+
+                        # Kirim ke Gemini Vision
+                        captcha_resp = requests.post(
+                            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}",
+                            json={
+                                "contents": [{
+                                    "parts": [
+                                        {"text": (
+                                            "Look at this Google CAPTCHA image with distorted text. "
+                                            "What exact word is written? Output ONLY the word in lowercase, no punctuation, no explanation:"
+                                        )},
+                                        {"inline_data": {"mime_type": captcha_mime, "data": captcha_img_data}}
+                                    ]
+                                }],
+                                "generationConfig": {"temperature": 0.0}
+                            },
+                            timeout=20,
+                        )
+                        if captcha_resp.status_code == 200:
+                            raw_sol = captcha_resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                            sol = "".join(c for c in raw_sol.lower() if c.isalnum() and ord(c) < 128)
+                            log.info("Gemini Vision solved CAPTCHA attempt %d for %s: '%s' (raw: '%s')", captcha_attempt, email, sol, raw_sol)
+                            db.add_process_log(business_id, f"[{email}] ✓ Gemini AI membaca CAPTCHA: '{sol}' (attempt {captcha_attempt}). Mengirim...", email_id)
+
+                            # Clear field dan input solusi
+                            sb.evaluate('''(() => {
+                                var ca = document.querySelector('input[name="ca"], #ca');
+                                if (ca) { ca.value = ""; ca.focus(); }
+                            })()''')
+                            sb.sleep(0.5)
+                            sb.type('input[name="ca"], #ca', sol)
+                            sb.sleep(random.uniform(1.5, 2.5))
+                            sb.click('#identifierNext button, #identifierNext, button:contains("Next"), button:contains("Berikutnya")')
+                            sb.sleep(random.uniform(5, 8))
+
+                            # Cek apakah CAPTCHA berhasil (password field muncul atau CAPTCHA hilang)
+                            if sb.is_element_visible(pwd_sel) or (not sb.is_element_visible(captcha_img_sel) and not sb.is_element_visible('input[name="ca"]')):
+                                db.add_process_log(business_id, f"[{email}] ✓ CAPTCHA berhasil diselesaikan (attempt {captcha_attempt})!", email_id)
+                                captcha_solved = True
+                                break
+                            else:
+                                db.add_process_log(business_id, f"[{email}] ✗ CAPTCHA masih muncul (attempt {captcha_attempt}), CAPTCHA mungkin salah. Mencoba ulang...", email_id, "warning")
+                                # Reload CAPTCHA baru (jika tersedia tombol reload)
+                                try:
+                                    sb.evaluate('''(() => {
+                                        var reloadBtn = document.querySelector('a[href*="captcha"], button[id*="reload"], #reload-captcha');
+                                        if (reloadBtn) { reloadBtn.click(); }
+                                    })()''')
+                                    sb.sleep(2)
+                                except Exception:
+                                    pass
+                        else:
+                            log.warning("Gemini API returned %d for CAPTCHA solve attempt %d", captcha_resp.status_code, captcha_attempt)
+                            db.add_process_log(business_id, f"[{email}] Gemini API error {captcha_resp.status_code} pada attempt {captcha_attempt}.", email_id, "warning")
+                    except Exception as cap_err:
+                        log.warning("Gemini CAPTCHA auto-solve attempt %d failed for %s: %s", captcha_attempt, email, cap_err)
+                        db.add_process_log(business_id, f"[{email}] Error CAPTCHA attempt {captcha_attempt}: {cap_err}", email_id, "warning")
+            if not captcha_solved:
+                log.warning("CAPTCHA could not be solved after 3 attempts for %s", email)
+                return False, "Google menampilkan CAPTCHA dan tidak berhasil diselesaikan otomatis setelah 3 percobaan."
+
         # Input Password
-        pwd_sel = 'input[type="password"], input[name="Passwd"], input[name="password"]'
+        pwd_sel = 'input[type="password"]:not([name="hiddenPassword"]), input[name="Passwd"], input[name="password"]'
         try:
-            sb.wait_for_element_visible(pwd_sel, timeout=15)
+            sb.wait_for_element_visible(pwd_sel, timeout=20)
         except Exception:
             body_txt = (sb.get_text("body") or "").lower()
             if "couldn't find your google account" in body_txt or "tidak dapat menemukan akun" in body_txt:
@@ -417,7 +523,7 @@ def login_with_google_credentials(sb, email, password, totp_secret=None, busines
             if "verify it's you" in body_txt or "verifikasi" in body_txt:
                 return False, "Google meminta verifikasi keamanan tambahan (No. HP/Email pemulihan). Solusi: gunakan Cookie."
             if "captcha" in body_txt or "robot" in body_txt or "unusual traffic" in body_txt:
-                return False, "Google menampilkan CAPTCHA keamanan. Solusi: gunakan Cookie."
+                return False, "Google menampilkan CAPTCHA keamanan."
             if "disabled" in body_txt or "dinonaktifkan" in body_txt:
                 return False, "Akun Google telah dinonaktifkan/ditangguhkan oleh Google."
             return False, "Kolom sandi tidak muncul (Google mengalihkan halaman atau meminta verifikasi)."
@@ -428,8 +534,8 @@ def login_with_google_credentials(sb, email, password, totp_secret=None, busines
         sb.sleep(random.uniform(1.5, 2.5))
 
         # Klik Next Password
-        sb.click('#passwordNext, button:contains("Next")')
-        sb.sleep(random.uniform(5, 7))
+        sb.click('#passwordNext button, #passwordNext, button:contains("Next"), button:contains("Berikutnya")')
+        sb.sleep(random.uniform(6, 8))
 
         # Cek Password Salah
         body_txt = (sb.get_text("body") or "").lower()
@@ -447,7 +553,7 @@ def login_with_google_credentials(sb, email, password, totp_secret=None, busines
                 sb.sleep(1)
                 sb.type(totp_sel, code_2fa)
                 sb.sleep(random.uniform(1.5, 2))
-                sb.click('#totpNext, button:contains("Next")')
+                sb.click('#totpNext button, #totpNext, button:contains("Next"), button:contains("Berikutnya")')
                 sb.sleep(random.uniform(5, 8))
             else:
                 return False, "Akun meminta kode verifikasi 2FA/TOTP tetapi secret 2FA tidak disediakan."
@@ -911,56 +1017,49 @@ def post_review(
         sb.maximize()
         sb.sleep(2)
 
-        # ── Step: Setup Authenticated Session (3 METODE: OAuth, Cookie & Login Kredensial) ──
+        # ── Step: Setup Authenticated Session (Cara 1: Auto-Login Kredensial & Cookie Sesi) ──
         auth_ok = False
-        oauth_creds = db.get_oauth_account_for_email(email)
-        cookie_available = db.get_cookie_for_email(email) is not None
+        has_real_password = bool(password and password not in ("cookie_auth", "oauth_auth"))
 
-        if oauth_creds:
-            db.add_process_log(business_id, f"[{email}] [Cara 1] Menggunakan OAuth 2.0 Google (token terverifikasi)...", email_id)
-            oauth_ok = apply_oauth_session_to_browser(sb, email)
-            if oauth_ok:
-                # Verify the Chromium profile session is not stuck on login page
-                cur_url = sb.get_current_url() or ""
-                if "accounts.google.com" in cur_url:
-                    db.add_process_log(business_id, f"[{email}] ⚠ Browser masih di halaman login meski token OAuth valid. Mencoba reload...", email_id, "warning")
-                    sb.sleep(2)
-                    sb.open("https://myaccount.google.com/")
-                    sb.sleep(3)
-                    cur_url = sb.get_current_url() or ""
-                if "accounts.google.com" not in cur_url:
-                    auth_ok = True
-                    db.add_process_log(business_id, f"[{email}] ✓ Sesi OAuth aktif. Akun terautentikasi.", email_id)
-                else:
-                    db.add_process_log(business_id, f"[{email}] ✖ Sesi browser belum login meski token OAuth valid. Coba hubungkan ulang akun.", email_id, "error")
-            else:
-                db.add_process_log(business_id, f"[{email}] ✖ Token OAuth tidak valid atau kedaluwarsa. Coba hubungkan ulang akun.", email_id, "error")
+        if has_real_password:
+            # Cara 1: Akun dengan Email & Password
+            # Cek dulu apakah profil browser lokal sudah dalam kondisi login
+            try:
+                acc_check = sb.find_elements("a[aria-label*='Google Account'], button[aria-label*='Google Account']")
+                if acc_check:
+                    for ac in acc_check:
+                        lbl = (ac.get_attribute("aria-label") or "").lower()
+                        if email.lower() in lbl:
+                            auth_ok = True
+                            db.add_process_log(business_id, f"[{email}] ✓ Profil browser sudah dalam keadaan login ({email}).", email_id, "success")
+                            break
+            except Exception:
+                pass
 
-        elif cookie_available:
-            db.add_process_log(business_id, f"[{email}] [Cara 1] Menggunakan Cookie Sesi Google tersimpan...", email_id)
-            c_ok, c_status, c_reason = setup_authenticated_session(
-                sb, email, verification_url, business_id=business_id, email_id=email_id
-            )
-            if c_ok:
-                auth_ok = True
-            else:
-                log.info("Cookie session invalid for %s: %s. Checking credential fallback...", email, c_reason)
-
-        if not auth_ok:
-            if password:
-                db.add_process_log(business_id, f"[{email}] [Cara 2] Masuk menggunakan Email & Password Akun Google...", email_id)
+            if not auth_ok:
+                db.add_process_log(business_id, f"[{email}] [Cara 1: Auto-Login] Masuk otomatis ke Akun Google menggunakan Email & Sandi...", email_id)
                 l_ok, l_msg = login_with_google_credentials(
                     sb, email, password, totp_secret=totp_secret, business_id=business_id, email_id=email_id
                 )
                 if l_ok:
                     auth_ok = True
                 else:
-                    db.add_process_log(business_id, f"[{email}] ✖ Login kredensial gagal: {l_msg}.", email_id, "error")
-            else:
-                if oauth_creds:
-                    db.add_process_log(business_id, f"[{email}] ✖ Tidak dapat masuk: Token OAuth tidak valid dan Password belum diisi.", email_id, "error")
+                    db.add_process_log(business_id, f"[{email}] ✖ Auto-login kredensial gagal: {l_msg}.", email_id, "error")
+        else:
+            # Akun berbasis Cookie / OAuth cadangan
+            raw_cookie = db.get_cookie_for_email(email)
+            if raw_cookie:
+                db.add_process_log(business_id, f"[{email}] Memeriksa cookie sesi Google tersimpan...", email_id)
+                c_ok, c_status, c_reason = setup_authenticated_session(
+                    sb, email, verification_url, business_id=business_id, email_id=email_id
+                )
+                if c_ok:
+                    auth_ok = True
+                    db.add_process_log(business_id, f"[{email}] ✓ Sesi Google aktif dari cookie tersimpan.", email_id, "success")
                 else:
-                    db.add_process_log(business_id, f"[{email}] ✖ Tidak dapat masuk: Cookie tidak valid/tersedia dan Password belum diisi.", email_id, "error")
+                    db.add_process_log(business_id, f"[{email}] ✖ Sesi cookie tidak valid: {c_reason}.", email_id, "error")
+            else:
+                db.add_process_log(business_id, f"[{email}] ✖ Sandi/Password belum diisi di database. Harap isi password akun di menu Akun Google.", email_id, "error")
 
         if not auth_ok:
             log.warning("Authentication failed for %s via both Cookie and Credential methods.", email)
@@ -998,31 +1097,43 @@ def post_review(
         existing_snippet = ""
 
         check_existing_script = """(() => {
-            const body = document.body ? document.body.innerText : '';
-            const markers = ['Your review', 'Your Review', 'Ulasan Anda', 'Your rating', 'Edit your review', 'Edit ulasan', 'Ulasan saya'];
-            let foundMarker = markers.find(m => body.includes(m));
+            // 1. Jika ada tombol 'Write a review' / 'Tulis ulasan' / 'Beri ulasan', akun ini PASTI BELUM mengulas
+            const allBtns = Array.from(document.querySelectorAll('button, a'));
+            const hasWriteBtn = allBtns.some(el => {
+                const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                const txt = (el.innerText || '').toLowerCase().trim();
+                return aria.includes('write a review') || aria.includes('tulis ulasan') || aria.includes('beri ulasan') ||
+                       txt === 'write a review' || txt === 'tulis ulasan' || txt === 'beri ulasan';
+            });
+            if (hasWriteBtn) {
+                return { exists: false, reason: 'write_button_present' };
+            }
 
-            // Cek tombol edit ulasan atau tombol tindakan ulasan milik akun sendiri
+            // 2. Cek apakah ada tombol eksplisit 'Edit your review' / 'Edit ulasan Anda'
             const editBtn = document.querySelector(
-                'button[aria-label*="Edit your review"], ' +
-                'button[aria-label*="Edit ulasan"], ' +
-                'button[aria-label*="Tindakan untuk ulasan"], ' +
-                'button[aria-label*="Action for review"], ' +
-                'button[data-tooltip*="Edit ulasan"], ' +
-                'button[data-tooltip*="Edit your review"]'
+                'button[aria-label*="Edit your review" i], ' +
+                'button[aria-label*="Edit ulasan Anda" i], ' +
+                'button[data-tooltip*="Edit your review" i], ' +
+                'button[data-tooltip*="Edit ulasan Anda" i]'
             );
 
-            let snippet = '';
-            if (foundMarker || editBtn) {
-                const headings = Array.from(document.querySelectorAll('div, h2, h3, span')).filter(el => {
-                    const t = (el.innerText || '').trim();
-                    return t === 'Ulasan Anda' || t === 'Your review' || t === 'Your rating';
-                });
+            // 3. Cek heading eksklusif ulasan milik akun sendiri
+            const headings = Array.from(document.querySelectorAll('h2, h3, div')).filter(el => {
+                const t = (el.innerText || '').trim().toLowerCase();
+                return t === 'your review' || t === 'ulasan anda';
+            });
+
+            if (editBtn) {
+                return { exists: true, marker: 'edit_button: ' + (editBtn.getAttribute('aria-label') || ''), snippet: '' };
+            }
+
+            if (headings.length > 0) {
+                let snippet = '';
                 for (const h of headings) {
                     let parent = h.parentElement;
-                    for (let i = 0; i < 4 && parent; i++) {
+                    for (let i = 0; i < 3 && parent; i++) {
                         const txt = (parent.innerText || '').replace(h.innerText, '').trim();
-                        if (txt.length > 5) {
+                        if (txt.length > 5 && !txt.toLowerCase().includes('see photos') && !txt.toLowerCase().includes('directions')) {
                             snippet = txt.substring(0, 120);
                             break;
                         }
@@ -1030,18 +1141,21 @@ def post_review(
                     }
                     if (snippet) break;
                 }
-                return { exists: true, marker: foundMarker || (editBtn ? 'edit-button' : 'detected'), snippet: snippet };
+                if (snippet) {
+                    return { exists: true, marker: 'heading_with_content', snippet: snippet };
+                }
             }
-            return { exists: false };
+            return { exists: false, reason: 'no_own_review_found' };
         })()"""
 
-        check_res = sb.execute_script(check_existing_script) or {}
+        check_res = sb.evaluate(check_existing_script) or {}
+        log.info("Check existing review overview: %s", check_res)
         if check_res.get("exists"):
             has_existing_review = True
             existing_snippet = check_res.get("snippet", "")
 
         # Jika belum terdeteksi di tab overview, buka tab Ulasan (Reviews) untuk pemeriksaan menyeluruh
-        if not has_existing_review:
+        if not has_existing_review and not check_res.get("reason") == "write_button_present":
             for rev_tab in [
                 'button[aria-label*="Reviews"]',
                 'button[aria-label*="Ulasan"]',
@@ -1055,7 +1169,8 @@ def post_review(
                         break
                 except Exception:
                     pass
-            check_res_tab = sb.execute_script(check_existing_script) or {}
+            check_res_tab = sb.evaluate(check_existing_script) or {}
+            log.info("Check existing review reviews tab: %s", check_res_tab)
             if check_res_tab.get("exists"):
                 has_existing_review = True
                 existing_snippet = check_res_tab.get("snippet", "")
@@ -1212,12 +1327,77 @@ def post_review(
         db.add_process_log(business_id, f"[{email}] Form review Google Maps sudah terbuka.", email_id)
         sb.sleep(4)  # Brief wait before polling for the textarea
 
-        # Wait until the review field is reachable, including inside an open shadow root.
+        # ── Step: Klik star rating dulu (textarea baru muncul SETELAH star diklik di Maps UI baru) ──
+        db.add_process_log(business_id, f"[{email}] Memilih rating bintang {star_rating} di form ulasan...", email_id)
+        star_clicked = False
+        for _star_try in range(3):
+            try:
+                sb.nested_click(iframe_sel, f"div[data-rating='{star_rating}'][role='radio']")
+                star_clicked = True
+                log.info("Clicked star %d via data-rating/role=radio (attempt %d)", star_rating, _star_try + 1)
+                break
+            except Exception:
+                pass
+            try:
+                sb.nested_click(iframe_sel, f"span[data-rating='{star_rating}']")
+                star_clicked = True
+                log.info("Clicked star %d via span[data-rating] (attempt %d)", star_rating, _star_try + 1)
+                break
+            except Exception:
+                pass
+            try:
+                sb.nested_click(iframe_sel, f"input[value='{star_rating}']")
+                star_clicked = True
+                log.info("Clicked star %d via input[value] (attempt %d)", star_rating, _star_try + 1)
+                break
+            except Exception:
+                pass
+            # Fallback: JS click pada bintang di dalam iframe
+            try:
+                clicked = sb.execute_script(f"""
+                    var iframe = document.querySelector("iframe[name='goog-reviews-write-widget']");
+                    if (!iframe) return null;
+                    var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+                    if (!doc) return null;
+                    var selectors = [
+                        "div[data-rating='{star_rating}'][role='radio']",
+                        "span[data-rating='{star_rating}']",
+                        "input[value='{star_rating}']",
+                        "button[aria-label*='{star_rating}']"
+                    ];
+                    for (var sel of selectors) {{
+                        var el = doc.querySelector(sel);
+                        if (el) {{ el.click(); return sel; }}
+                    }}
+                    return null;
+                """)
+                if clicked:
+                    star_clicked = True
+                    log.info("Clicked star %d via JS fallback: %s", star_rating, clicked)
+                    break
+            except Exception:
+                pass
+            time.sleep(2)
+
+        if star_clicked:
+            sb.sleep(random.uniform(3, 5))  # Tunggu textarea muncul setelah star diklik
+        else:
+            log.warning("Could not click star rating, trying to find textarea anyway...")
+            sb.sleep(3)
+
+        # ── Step: Cari textarea review (setelah star diklik, textarea seharusnya sudah muncul) ──
         review_area = None
         for _attempt in range(24):  # 24 × 2.5s = 60s max
             review_area = _find_review_textarea(sb, iframe_sel)
             if review_area is not None:
                 break
+            # Setiap 5 percobaan, coba klik star lagi jika belum berhasil
+            if _attempt % 5 == 4 and not star_clicked:
+                try:
+                    sb.nested_click(iframe_sel, f"div[data-rating='{star_rating}'][role='radio']")
+                    sb.sleep(2)
+                except Exception:
+                    pass
             log.debug("Waiting for review textarea (attempt %d/24)...", _attempt + 1)
             time.sleep(2.5)
         if review_area is None:
@@ -1225,16 +1405,6 @@ def post_review(
 
         review_area.click()  # Focus the textarea to ensure it's ready for input
         time.sleep(3)
-
-        # Select the star rating before creating the local review text
-        try:
-            sb.nested_click(iframe_sel, f"div[data-rating='{star_rating}'][role='radio']")
-        except Exception:
-            try:
-                sb.nested_click(iframe_sel, f"span[data-rating='{star_rating}'], input[value='{star_rating}']")
-            except Exception:
-                pass
-        sb.sleep(random.uniform(2, 5))
 
         # Generate review text now that we know the write box is open and star is selected
         db.add_process_log(business_id, f"[{email}] Membuat teks ulasan (kontekstual bidang usaha) dan memilih rating.", email_id)

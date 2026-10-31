@@ -641,13 +641,6 @@ def apply_cookies_to_browser(sb: Any, cookies: list[dict], target_url: str) -> t
         sb.get(base_url)
         sb.sleep(1)
 
-        # Clear existing transient cookies safely
-        try:
-            if hasattr(sb, "clear_cookies"):
-                sb.clear_cookies()
-        except Exception:
-            pass
-
         # Attempt official SeleniumBase CDP mechanism
         try:
             from mycdp import network as _cdp_net
@@ -847,14 +840,46 @@ def sync_browser_cookies_to_db(sb: Any, email: str) -> bool:
     try:
         if not sb or not email:
             return False
-        cookies = sb.get_all_cookies() if hasattr(sb, "get_all_cookies") else None
-        if not cookies:
+
+        raw_cookies = None
+        # Try CDP storage.get_cookies (gets all browser cookies across domains)
+        try:
+            if hasattr(sb, "loop") and hasattr(sb, "page"):
+                import mycdp
+                raw_cookies = sb.loop.run_until_complete(sb.page.send(mycdp.storage.get_cookies()))
+        except Exception:
+            pass
+
+        if not raw_cookies and hasattr(sb, "get_all_cookies"):
+            raw_cookies = sb.get_all_cookies()
+
+        if not raw_cookies:
             return False
+
+        # Convert CDP cookie objects to dicts if needed
+        clean_cookies = []
+        for c in raw_cookies:
+            if isinstance(c, dict):
+                clean_cookies.append(c)
+            elif hasattr(c, "to_json"):
+                clean_cookies.append(c.to_json())
+            else:
+                clean_cookies.append({
+                    "name": getattr(c, "name", ""),
+                    "value": getattr(c, "value", ""),
+                    "domain": getattr(c, "domain", ""),
+                    "path": getattr(c, "path", "/"),
+                    "expires": getattr(c, "expires", None),
+                    "httpOnly": getattr(c, "http_only", False),
+                    "secure": getattr(c, "secure", False),
+                })
+
         # Verify essential Google auth tokens exist
-        has_auth = any(c.get("name") in ("SID", "__Secure-1PSID", "SAPISID", "SSID") for c in cookies if isinstance(c, dict))
+        has_auth = any(c.get("name") in ("SID", "__Secure-1PSID", "SAPISID", "SSID", "HSID") for c in clean_cookies)
         if not has_auth:
             return False
-        val = validate_cookie_payload(cookies, target_domain="google.com")
+
+        val = validate_cookie_payload(clean_cookies, target_domain="google.com")
         if val.is_valid and val.normalized_json:
             db.save_cookie(email, val.normalized_json)
             log.info("Successfully synced %d refreshed Google cookies to database for %s", val.cookie_count, email)

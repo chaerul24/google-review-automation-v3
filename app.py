@@ -2521,10 +2521,46 @@ class TikTokLiveRunner:
             last_chat_time = time.time() - 3.0 + (worker_idx * 0.4)
             last_viewer_scan = time.time()
             last_live_check = time.time()
-            last_screen_time = 0.0
+
+            driver_lock = threading.Lock()
+            capture_stop = threading.Event()
+
+            # Dedicated ultra low-latency background capture thread (Smooth ~8 FPS, ~10KB low-quality frames, zero delay!)
+            def capture_loop():
+                last_disk_save = 0.0
+                while not self.stop_event.is_set() and not capture_stop.is_set():
+                    if getattr(self, "enable_display", False):
+                        if driver_lock.acquire(blocking=False):
+                            try:
+                                curr_u = (driver.current_url or "").lower()
+                                if "/live" in curr_u and "chrome-error" not in curr_u:
+                                    cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {
+                                        "format": "jpeg",
+                                        "quality": 38,
+                                        "clip": {"x": 0, "y": 0, "width": 1366, "height": 768, "scale": 0.5}
+                                    })
+                                    if cdp_res and "data" in cdp_res:
+                                        raw_jpeg = base64.b64decode(cdp_res["data"])
+                                        self.update_worker_frame(worker_idx, raw_jpeg)
+                                        now_c = time.time()
+                                        if (now_c - last_disk_save >= 3.0) or not os.path.exists(screen_path):
+                                            last_disk_save = now_c
+                                            try:
+                                                with open(screen_path, "wb") as f_out:
+                                                    f_out.write(raw_jpeg)
+                                            except Exception:
+                                                pass
+                            except Exception:
+                                pass
+                            finally:
+                                driver_lock.release()
+                    time.sleep(0.12)  # ~8 FPS smooth video streaming directly to user!
+
+            cap_thread = threading.Thread(target=capture_loop, daemon=True)
+            cap_thread.start()
 
             while not self.stop_event.is_set():
-                time.sleep(0.08)
+                time.sleep(0.06)
                 if self.stop_event.is_set():
                     break
 
@@ -2532,7 +2568,8 @@ class TikTokLiveRunner:
                 # Periodic check: check if live stream is still active every 10 seconds
                 if now - last_live_check >= 10.0:
                     last_live_check = now
-                    is_still_live, end_reason = check_is_live_active(driver)
+                    with driver_lock:
+                        is_still_live, end_reason = check_is_live_active(driver)
                     if is_still_live is False:
                         self.add_log("warning", f"[!] [{b_label}] Siaran live telah berakhir ({end_reason}). Menghentikan bot...")
                         self.stop_event.set()
@@ -2543,21 +2580,22 @@ class TikTokLiveRunner:
                 if now - last_like_time >= 1.0:
                     last_like_time = now
                     try:
-                        click_res = driver.execute_script("""
-                            const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
-                            if (btn) {
-                                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                                btn.click();
-                                return { ok: true, method: 'room-chat-like-btn' };
-                            }
-                            const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                            if (layer) {
-                                layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                                return { ok: true, method: 'canvas_layer' };
-                            }
-                            return { ok: false, method: 'none' };
-                        """)
+                        with driver_lock:
+                            click_res = driver.execute_script("""
+                                const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+                                if (btn) {
+                                    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                                    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                                    btn.click();
+                                    return { ok: true, method: 'room-chat-like-btn' };
+                                }
+                                const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
+                                if (layer) {
+                                    layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
+                                    return { ok: true, method: 'canvas_layer' };
+                                }
+                                return { ok: false, method: 'none' };
+                            """)
                         if click_res and click_res.get("ok"):
                             method = click_res.get("method")
                             if method == "room-chat-like-btn" and not has_logged_like_btn:
@@ -2582,47 +2620,26 @@ class TikTokLiveRunner:
 
                 # Auto-recovery if browser gets dropped onto error page
                 try:
-                    curr_url = (driver.current_url or "").lower()
-                    if "chrome-error" in curr_url or "about:blank" in curr_url or "robots.txt" in curr_url or ("/live" not in curr_url):
-                        self.add_log("warning", f"[!] [{b_label}] Koneksi browser teralihkan ({curr_url}). Memulihkan ke siaran live...")
-                        driver.get(target_url)
-                        time.sleep(3.0)
+                    with driver_lock:
+                        curr_url = (driver.current_url or "").lower()
+                        if "chrome-error" in curr_url or "about:blank" in curr_url or "robots.txt" in curr_url or ("/live" not in curr_url):
+                            self.add_log("warning", f"[!] [{b_label}] Koneksi browser teralihkan ({curr_url}). Memulihkan ke siaran live...")
+                            driver.get(target_url)
+                            time.sleep(2.5)
                 except Exception:
                     pass
-
-                # Real-time frame capture: fast CDP in-memory JPEG every 0.35s with zero lag!
-                if getattr(self, "enable_display", False) and (now - last_screen_time >= 0.35):
-                    last_screen_time = now
-                    try:
-                        curr_url = (driver.current_url or "").lower()
-                        if "/live" in curr_url and "chrome-error" not in curr_url:
-                            cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "jpeg", "quality": 55})
-                            if cdp_res and "data" in cdp_res:
-                                raw_jpeg = base64.b64decode(cdp_res["data"])
-                                self.update_worker_frame(worker_idx, raw_jpeg)
-                                try:
-                                    with open(screen_path, "wb") as f_out:
-                                        f_out.write(raw_jpeg)
-                                except Exception:
-                                    pass
-                            else:
-                                driver.save_screenshot(screen_path)
-                    except Exception:
-                        try:
-                            driver.save_screenshot(screen_path)
-                        except Exception:
-                            pass
 
                 # Scan room for accounts in viewer list / chat periodically
                 if now - last_viewer_scan >= 15.0:
                     last_viewer_scan = now
                     try:
                         all_accs = [a.get("username") for a in self.selected_accounts if a.get("username")]
-                        detected_accs = driver.execute_script("""
-                            const txt = (document.body.innerText || "").toLowerCase();
-                            const accs = arguments[0];
-                            return accs.filter(u => txt.includes(u.replace("@", "").toLowerCase()));
-                        """, all_accs)
+                        with driver_lock:
+                            detected_accs = driver.execute_script("""
+                                const txt = (document.body.innerText || "").toLowerCase();
+                                const accs = arguments[0];
+                                return accs.filter(u => txt.includes(u.replace("@", "").toLowerCase()));
+                            """, all_accs)
                         if detected_accs:
                             with self.lock:
                                 for d in detected_accs:
@@ -2638,7 +2655,8 @@ class TikTokLiveRunner:
                 if self.auto_chat and (now - last_chat_time >= 3.0):
                     last_chat_time = now
                     if is_logged:
-                        ok, method = send_comment_to_live(driver, self.chat_message)
+                        with driver_lock:
+                            ok, method = send_comment_to_live(driver, self.chat_message)
                         if ok:
                             with self.lock:
                                 self.chats_sent += 1
@@ -2667,6 +2685,10 @@ class TikTokLiveRunner:
                 self.error_count += 1
             self.add_log("error", f"[!] Kendala pada {b_label} ({user}): {ex}")
         finally:
+            try:
+                capture_stop.set()
+            except Exception:
+                pass
             if driver:
                 try:
                     driver.quit()
@@ -2829,12 +2851,48 @@ class TikTokLiveRunner:
                 last_like_time = 0.0
                 last_chat_time = time.time() - 3.0
                 last_live_check = time.time()
-                last_screen_time = 0.0
                 turn_duration = 75.0 if total_acc > 1 else float("inf")
                 batch_likes = 0
 
+                driver_lock = threading.Lock()
+                capture_stop = threading.Event()
+
+                # Dedicated ultra low-latency background capture thread (Smooth ~8 FPS, ~10KB low-quality frames, zero delay!)
+                def capture_loop():
+                    last_disk_save = 0.0
+                    while not self.stop_event.is_set() and not capture_stop.is_set():
+                        if getattr(self, "enable_display", False):
+                            if driver_lock.acquire(blocking=False):
+                                try:
+                                    curr_u = (driver.current_url or "").lower()
+                                    if "/live" in curr_u and "chrome-error" not in curr_u:
+                                        cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {
+                                            "format": "jpeg",
+                                            "quality": 38,
+                                            "clip": {"x": 0, "y": 0, "width": 1366, "height": 768, "scale": 0.5}
+                                        })
+                                        if cdp_res and "data" in cdp_res:
+                                            raw_jpeg = base64.b64decode(cdp_res["data"])
+                                            self.update_worker_frame(idx, raw_jpeg)
+                                            now_c = time.time()
+                                            if (now_c - last_disk_save >= 3.0) or not os.path.exists(screen_path):
+                                                last_disk_save = now_c
+                                                try:
+                                                    with open(screen_path, "wb") as f_out:
+                                                        f_out.write(raw_jpeg)
+                                                except Exception:
+                                                    pass
+                                except Exception:
+                                    pass
+                                finally:
+                                    driver_lock.release()
+                        time.sleep(0.12)
+
+                cap_thread = threading.Thread(target=capture_loop, daemon=True)
+                cap_thread.start()
+
                 while not self.stop_event.is_set():
-                    time.sleep(0.08)
+                    time.sleep(0.06)
                     if self.stop_event.is_set():
                         break
 
@@ -2846,7 +2904,8 @@ class TikTokLiveRunner:
                     # Periodic check: check if live stream is still active every 10 seconds
                     if now - last_live_check >= 10.0:
                         last_live_check = now
-                        is_still_live, end_reason = check_is_live_active(driver)
+                        with driver_lock:
+                            is_still_live, end_reason = check_is_live_active(driver)
                         if is_still_live is False:
                             self.add_log("warning", f"[!] [{b_label}] Siaran live telah berakhir ({end_reason}). Menghentikan bot...")
                             self.stop_event.set()
@@ -2857,21 +2916,22 @@ class TikTokLiveRunner:
                     if now - last_like_time >= 1.0:
                         last_like_time = now
                         try:
-                            click_res = driver.execute_script("""
-                                const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
-                                if (btn) {
-                                    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                                    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                                    btn.click();
-                                    return { ok: true, method: 'room-chat-like-btn' };
-                                }
-                                const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                                if (layer) {
-                                    layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                                    return { ok: true, method: 'canvas_layer' };
-                                }
-                                return { ok: false, method: 'none' };
-                            """)
+                            with driver_lock:
+                                click_res = driver.execute_script("""
+                                    const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+                                    if (btn) {
+                                        btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                                        btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                                        btn.click();
+                                        return { ok: true, method: 'room-chat-like-btn' };
+                                    }
+                                    const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
+                                    if (layer) {
+                                        layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
+                                        return { ok: true, method: 'canvas_layer' };
+                                    }
+                                    return { ok: false, method: 'none' };
+                                """)
                             if click_res and click_res.get("ok"):
                                 method = click_res.get("method")
                                 if method == "room-chat-like-btn" and not has_logged_like_btn:
@@ -2896,41 +2956,20 @@ class TikTokLiveRunner:
 
                     # Auto-recovery if browser gets dropped onto error page
                     try:
-                        curr_url = (driver.current_url or "").lower()
-                        if "chrome-error" in curr_url or "about:blank" in curr_url or "robots.txt" in curr_url or ("/live" not in curr_url):
-                            driver.get(target_url)
-                            time.sleep(3.0)
+                        with driver_lock:
+                            curr_url = (driver.current_url or "").lower()
+                            if "chrome-error" in curr_url or "about:blank" in curr_url or "robots.txt" in curr_url or ("/live" not in curr_url):
+                                driver.get(target_url)
+                                time.sleep(3.0)
                     except Exception:
                         pass
-
-                    # Real-time frame capture: fast CDP in-memory JPEG every 0.35s with zero lag!
-                    if getattr(self, "enable_display", False) and (now - last_screen_time >= 0.35):
-                        last_screen_time = now
-                        try:
-                            curr_url = (driver.current_url or "").lower()
-                            if "/live" in curr_url and "chrome-error" not in curr_url:
-                                cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "jpeg", "quality": 55})
-                                if cdp_res and "data" in cdp_res:
-                                    raw_jpeg = base64.b64decode(cdp_res["data"])
-                                    self.update_worker_frame(idx, raw_jpeg)
-                                    try:
-                                        with open(screen_path, "wb") as f_out:
-                                            f_out.write(raw_jpeg)
-                                    except Exception:
-                                        pass
-                                else:
-                                    driver.save_screenshot(screen_path)
-                        except Exception:
-                            try:
-                                driver.save_screenshot(screen_path)
-                            except Exception:
-                                pass
 
                     # Komentar setiap 3.0 detik per akun cookie!
                     if self.auto_chat and (now - last_chat_time >= 3.0):
                         last_chat_time = now
                         if is_logged_in:
-                            ok, method = send_comment_to_live(driver, self.chat_message)
+                            with driver_lock:
+                                ok, method = send_comment_to_live(driver, self.chat_message)
                             if ok:
                                 with self.lock:
                                     self.chats_sent += 1
@@ -2964,6 +3003,10 @@ class TikTokLiveRunner:
                     self.error_count += 1
                 self.add_log("error", f"[!] Terjadi kendala pada browser {user}: {e}")
             finally:
+                try:
+                    capture_stop.set()
+                except Exception:
+                    pass
                 if driver:
                     try:
                         driver.quit()
@@ -2993,21 +3036,22 @@ tiktok_live_runner = TikTokLiveRunner()
 def api_tiktok_live_screen_mjpg(worker_idx):
     """Real-time zero-delay MJPEG video stream of isolated Chromium worker for TikTok Live."""
     is_display_on = getattr(tiktok_live_runner, "enable_display", False)
-    if not is_display_on:
+    is_running = getattr(tiktok_live_runner, "is_running", False)
+    if not is_display_on or not is_running:
         return api_tiktok_live_screen(worker_idx)
 
     def generate():
         last_ts = 0.0
         try:
-            while True:
+            while getattr(tiktok_live_runner, "is_running", False) and getattr(tiktok_live_runner, "enable_display", False):
                 frame_data, ts = tiktok_live_runner.get_worker_frame(worker_idx)
-                if frame_data and ts > last_ts:
+                if frame_data and len(frame_data) >= 3000 and ts > last_ts:
                     last_ts = ts
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
                 elif not frame_data:
                     screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
-                    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 15000:
+                    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 3000:
                         try:
                             mtime = os.path.getmtime(screen_path)
                             if mtime > last_ts:
@@ -3018,7 +3062,7 @@ def api_tiktok_live_screen_mjpg(worker_idx):
                                        b'Content-Type: image/jpeg\r\n\r\n' + disk_bytes + b'\r\n')
                         except Exception:
                             pass
-                time.sleep(0.08)
+                time.sleep(0.04)
         except (GeneratorExit, StopIteration):
             return
         except Exception:
@@ -3041,7 +3085,7 @@ def api_tiktok_live_screen(worker_idx):
     """Single-frame snapshot of isolated Chromium Headless worker for TikTok Live."""
     # Fast check in-memory frame buffer (0ms disk I/O)
     frame_data, ts = tiktok_live_runner.get_worker_frame(worker_idx)
-    if frame_data and len(frame_data) >= 15000:
+    if frame_data and len(frame_data) >= 3000:
         return Response(
             frame_data,
             mimetype="image/jpeg",
@@ -3053,8 +3097,8 @@ def api_tiktok_live_screen(worker_idx):
         )
 
     screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
-    # Filter: pastikan file ada dan ukuran >= 20KB
-    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 20000:
+    # Filter: pastikan file ada dan ukuran >= 3KB
+    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 3000:
         try:
             with open(screen_path, "rb") as f:
                 img_bytes = f.read()

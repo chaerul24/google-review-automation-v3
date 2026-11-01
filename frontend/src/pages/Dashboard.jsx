@@ -235,9 +235,9 @@ export default function Dashboard({ onLogout }) {
               is_running: Boolean(ttRes.state.is_running || prev?.is_running),
               current_task: ttRes.state.is_running ? 'tiktok_live' : (prev?.current_task || null),
             }));
-            // Otomatis arahkan ke tab Tiktok Live jika bot TikTok sedang aktif & Google Maps tidak aktif
+            // Otomatis arahkan ke tab Tiktok Live jika bot TikTok sedang aktif & Google Maps tidak aktif (kecuali user sengaja beralih tab)
             const isGMapRunning = Boolean(liveTask?.is_running && !liveTask?.current_task?.includes('tiktok'));
-            if (ttRes.state.is_running && !isGMapRunning) {
+            if (!userManuallyToggledScreen && ttRes.state.is_running && !isGMapRunning) {
               setSharescreenMode('tiktok_live');
             }
           }
@@ -2957,17 +2957,27 @@ export default function Dashboard({ onLogout }) {
                           <div className="relative aspect-video bg-slate-950 overflow-hidden flex items-center justify-center border-b border-slate-800/80 select-none">
                             {isDisplayOn ? (
                               <>
-                                <img
-                                  key={`tt-stream-${wIdx}-${streamSessionKey}`}
-                                  src={`/api/tiktok-live/screen/${wIdx}.mjpg?v=${streamSessionKey}`}
-                                  alt={`Display ${card.username}`}
-                                  className="w-full h-full object-cover select-none"
-                                  loading="eager"
-                                  onError={(e) => {
-                                    // Fallback ke fast single snapshot jika stream sedang bersiap
-                                    e.currentTarget.src = `/api/tiktok-live/screen/${wIdx}.png?t=${Date.now()}`;
-                                  }}
-                                />
+                                {isTTRunning ? (
+                                  <img
+                                    key={`tt-stream-${wIdx}-${streamSessionKey}`}
+                                    src={`/api/tiktok-live/screen/${wIdx}.mjpg?v=${streamSessionKey}`}
+                                    alt={`Display ${card.username}`}
+                                    className="w-full h-full object-cover select-none"
+                                    loading="eager"
+                                    onError={(e) => {
+                                      // Fallback ke fast single snapshot jika stream sedang bersiap
+                                      e.currentTarget.src = `/api/tiktok-live/screen/${wIdx}.png?t=${Date.now()}`;
+                                    }}
+                                  />
+                                ) : (
+                                  <img
+                                    key={`tt-standby-${wIdx}-${streamSessionKey}`}
+                                    src={`/api/tiktok-live/screen/${wIdx}.png?t=${streamSessionKey}`}
+                                    alt={`Display ${card.username}`}
+                                    className="w-full h-full object-cover select-none"
+                                    loading="eager"
+                                  />
+                                )}
                                 {/* Overlay Badges on Top of Screen */}
                                 <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 pointer-events-none">
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${

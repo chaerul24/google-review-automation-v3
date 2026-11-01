@@ -600,12 +600,11 @@ export default function Dashboard({ onLogout }) {
 
   // Dynamic Google Cookie Nodes for the Tentacle Flow Canvas (Matches ALL registered cookies)
   const tentacleNodes = useMemo(() => {
-    const activeList = cookies.filter((c) => c.status === 'active' || !c.status);
-    const pool = activeList.length > 0 ? activeList : cookies;
-    const list = pool.length > 0 ? pool : [
+    // Include ALL cookies so both active and needs_login / expired cookies are rendered
+    const list = cookies.length > 0 ? cookies : [
       { id: '181', email: 'muhmadaljannah@gmail.com', account_name: 'Muhammad Jannah', status: 'active' },
       { id: '179', email: 'galoijul@gmail.com', account_name: 'Galo Ijul', status: 'active' },
-      { id: '175', email: 'cantikaayu0302@gmail.com', account_name: 'Cantika Ayu', status: 'active' },
+      { id: '175', email: 'cantikaayu0302@gmail.com', account_name: 'Cantika Ayu', status: 'needs_login' },
       { id: '187', email: 'jonotayo7@gmail.com', account_name: 'Jono Tayo', status: 'active' },
     ];
 
@@ -615,6 +614,25 @@ export default function Dashboard({ onLogout }) {
     const Rx = 340;
     const Ry = 220;
     const colors = ['#F59E0B', '#38BDF8', '#10B981', '#A855F7', '#EC4899', '#06B6D4', '#6366F1', '#F97316'];
+
+    // De Casteljau subdivision for cleanly severing the tentacle if needs_login
+    const splitBezier = (p0, p1, p2, p3, t) => {
+      const lerp = (a, b, f) => a + (b - a) * f;
+      const ptLerp = (a, b, f) => ({ x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f) });
+      const p01 = ptLerp(p0, p1, t);
+      const p12 = ptLerp(p1, p2, t);
+      const p23 = ptLerp(p2, p3, t);
+      const p012 = ptLerp(p01, p12, t);
+      const p123 = ptLerp(p12, p23, t);
+      const p0123 = ptLerp(p012, p123, t);
+      return {
+        left: [p0, p01, p012, p0123],
+        right: [p0123, p123, p23, p3],
+      };
+    };
+
+    const toPath = (pts) =>
+      `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)} C ${pts[1].x.toFixed(1)} ${pts[1].y.toFixed(1)}, ${pts[2].x.toFixed(1)} ${pts[2].y.toFixed(1)}, ${pts[3].x.toFixed(1)} ${pts[3].y.toFixed(1)}`;
 
     return list.map((c, i) => {
       const alpha = (2 * Math.PI * i / N) - (Math.PI / 2);
@@ -632,9 +650,31 @@ export default function Dashboard({ onLogout }) {
       const cp2X = cx + (nodeX - cx) * 0.70 - (curlFactor * 0.6) * perpX;
       const cp2Y = cy + (nodeY - cy) * 0.70 - (curlFactor * 0.6) * perpY;
 
-      const pathD = `M ${cx} ${cy} C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)}, ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)}, ${nodeX.toFixed(1)} ${nodeY.toFixed(1)}`;
+      const p0 = { x: cx, y: cy };
+      const p1 = { x: cp1X, y: cp1Y };
+      const p2 = { x: cp2X, y: cp2Y };
+      const p3 = { x: nodeX, y: nodeY };
+
+      const fullPathD = `M ${cx} ${cy} C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)}, ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)}, ${nodeX.toFixed(1)} ${nodeY.toFixed(1)}`;
+
       const rawName = (c.account_name || c.email?.split('@')[0] || `Akun #${c.id}`).trim();
       const displayName = rawName.length > 13 ? rawName.substring(0, 12) + '…' : rawName;
+
+      // Status check for severed connection
+      const isNeedsLogin =
+        c.status === 'needs_login' ||
+        c.status === 'expired' ||
+        c.status === 'invalid' ||
+        c.status === 'perlu_login';
+
+      // Severed tentacle paths and break coordinates
+      const stump1 = splitBezier(p0, p1, p2, p3, 0.38).left;
+      const stump2 = splitBezier(p0, p1, p2, p3, 0.74).right;
+      const stump1Path = toPath(stump1);
+      const stump2Path = toPath(stump2);
+      const breakTip1 = stump1[3];
+      const breakTip2 = stump2[0];
+      const midBreak = { x: (breakTip1.x + breakTip2.x) / 2, y: (breakTip1.y + breakTip2.y) / 2 };
 
       return {
         index: i,
@@ -644,10 +684,16 @@ export default function Dashboard({ onLogout }) {
         fullName: rawName,
         email: c.email || `${rawName.toLowerCase()}@gmail.com`,
         status: c.status || 'active',
+        isNeedsLogin,
         x: nodeX,
         y: nodeY,
-        pathD,
-        color: colors[i % colors.length],
+        pathD: fullPathD,
+        stump1Path,
+        stump2Path,
+        breakTip1,
+        breakTip2,
+        midBreak,
+        color: isNeedsLogin ? '#EF4444' : colors[i % colors.length],
         animDur: `${(2.0 + (i % 5) * 0.3).toFixed(1)}s`,
       };
     });
@@ -2709,12 +2755,18 @@ export default function Dashboard({ onLogout }) {
               {/* Left Column: The Tentacle Neural Graph Canvas */}
               <div className="xl:col-span-8 bg-[#0B0F19] border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl relative overflow-hidden flex flex-col">
                 {/* Top Toolbar inside Canvas */}
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 text-xs text-slate-400 mb-2">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800/80 text-xs text-slate-400 mb-2 gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
                     <span className="font-mono text-[11px] text-slate-200 font-semibold">
-                      Model & Worker Topology ({tentacleNodes.length} Akun Cookie Terhubung)
+                      Model & Worker Topology ({tentacleNodes.length} Akun Terdaftar)
                     </span>
+                    {tentacleNodes.some((n) => n.isNeedsLogin) && (
+                      <span className="font-mono text-[10px] text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-800 animate-pulse flex items-center gap-1 font-bold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                        {tentacleNodes.filter((n) => n.isNeedsLogin).length} TENTAKEL TERPUTUS (PERLU LOGIN)
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/70">
@@ -2755,6 +2807,13 @@ export default function Dashboard({ onLogout }) {
                             <feMergeNode in="SourceGraphic" />
                           </feMerge>
                         </filter>
+                        <filter id="glow-rose" x="-20%" y="-20%" width="140%" height="140%">
+                          <feGaussianBlur stdDeviation="4" result="blur" />
+                          <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
                         <filter id="glow-node" x="-20%" y="-20%" width="140%" height="140%">
                           <feGaussianBlur stdDeviation="3" result="blur" />
                           <feMerge>
@@ -2767,6 +2826,103 @@ export default function Dashboard({ onLogout }) {
                       {/* Dynamic Tentacle Strands & Energy Particles (1 per registered cookie) */}
                       {tentacleNodes.map((node) => {
                         const isSelected = selectedNodeId === node.id || selectedNodeId === 'router';
+
+                        // JIKA STATUS "PERLU LOGIN" -> TENTAKEL TERPUTUS DENGAN PERCIKAN LISTRIK (SPARKS)
+                        if (node.isNeedsLogin) {
+                          return (
+                            <g key={`tentacle-${node.id}`} className="transition-opacity duration-300">
+                              {/* Severed Stump 1: Dari Router menuju titik patahan (Break Tip 1) */}
+                              <path
+                                d={node.stump1Path}
+                                fill="none"
+                                stroke="#EF4444"
+                                strokeWidth={isSelected ? '6.5' : '4.5'}
+                                opacity={isSelected ? 0.45 : 0.22}
+                                filter="url(#glow-rose)"
+                              />
+                              <path
+                                d={node.stump1Path}
+                                fill="none"
+                                stroke="#F87171"
+                                strokeWidth="2.2"
+                                strokeLinecap="round"
+                                opacity={isSelected ? 0.95 : 0.65}
+                              />
+                              {/* Pulse partikel yang tertahan & mendesis di ujung tunggul tentakel */}
+                              <circle r="3" fill="#EF4444" filter="url(#glow-rose)">
+                                <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
+                              </circle>
+                              <circle r="1.3" fill="#FFFFFF">
+                                <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
+                              </circle>
+
+                              {/* Percikan Listrik Putus di Ujung Patahan (Sparking Electrical Crackles) */}
+                              <circle cx={node.breakTip1.x} cy={node.breakTip1.y} r="4.5" fill="#EF4444" opacity="0.8">
+                                <animate attributeName="r" values="3.5;6.5;3.5" dur="0.8s" repeatCount="indefinite" />
+                                <animate attributeName="opacity" values="0.9;0.3;0.9" dur="0.8s" repeatCount="indefinite" />
+                              </circle>
+                              <circle cx={node.breakTip1.x} cy={node.breakTip1.y} r="2" fill="#FFFFFF" />
+
+                              {/* Celah Patahan: Garis putus-putus merah peringatan */}
+                              <line
+                                x1={node.breakTip1.x}
+                                y1={node.breakTip1.y}
+                                x2={node.breakTip2.x}
+                                y2={node.breakTip2.y}
+                                stroke="#EF4444"
+                                strokeWidth="1.2"
+                                strokeDasharray="3 4"
+                                opacity="0.35"
+                              />
+
+                              {/* Indikator Peringatan Sambungan Terputus (✕ Disconnected Badge) */}
+                              <g
+                                className="cursor-pointer group/badge"
+                                onClick={() => setSelectedNodeId(node.id)}
+                              >
+                                <circle
+                                  cx={node.midBreak.x}
+                                  cy={node.midBreak.y}
+                                  r="9"
+                                  fill="#1C1917"
+                                  stroke="#EF4444"
+                                  strokeWidth="1.4"
+                                />
+                                <text
+                                  x={node.midBreak.x}
+                                  y={node.midBreak.y + 3.2}
+                                  textAnchor="middle"
+                                  fill="#F87171"
+                                  fontSize="8.5"
+                                  fontWeight="bold"
+                                >
+                                  ✕
+                                </text>
+                              </g>
+
+                              {/* Severed Stump 2: Sisa tentakel lemas menggantung dari node akun */}
+                              <path
+                                d={node.stump2Path}
+                                fill="none"
+                                stroke="#7F1D1D"
+                                strokeWidth="3.5"
+                                opacity="0.3"
+                              />
+                              <path
+                                d={node.stump2Path}
+                                fill="none"
+                                stroke="#991B1B"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeDasharray="4 2"
+                                opacity="0.75"
+                              />
+                              <circle cx={node.breakTip2.x} cy={node.breakTip2.y} r="2.5" fill="#EF4444" opacity="0.7" />
+                            </g>
+                          );
+                        }
+
+                        // TENTAKEL UTUH & AKTIF (NORMAL)
                         return (
                           <g key={`tentacle-${node.id}`} className="transition-opacity duration-300">
                             {/* Outer Glow Path */}
@@ -2856,7 +3012,7 @@ export default function Dashboard({ onLogout }) {
                         const pillH = 28;
                         const pillX = node.x - pillW / 2;
                         const pillY = node.y - pillH / 2;
-                        const isOnline = node.status === 'active' || !node.status;
+                        const isNeedsLogin = node.isNeedsLogin;
 
                         return (
                           <g
@@ -2873,7 +3029,7 @@ export default function Dashboard({ onLogout }) {
                                 rx="9"
                                 fill={node.color}
                                 opacity="0.35"
-                                filter="url(#glow-node)"
+                                filter={isNeedsLogin ? 'url(#glow-rose)' : 'url(#glow-node)'}
                               />
                             )}
                             <rect
@@ -2882,28 +3038,77 @@ export default function Dashboard({ onLogout }) {
                               width={pillW}
                               height={pillH}
                               rx="7"
-                              fill="#0F172A"
+                              fill={isNeedsLogin ? '#1C1316' : '#0F172A'}
                               stroke={node.color}
-                              strokeWidth={isSelected ? 2.2 : 1.2}
+                              strokeWidth={isSelected ? 2.2 : (isNeedsLogin ? 1.5 : 1.2)}
+                              strokeDasharray={isNeedsLogin ? '5 2.5' : undefined}
                               className="transition-all duration-200 group-hover:brightness-125"
                             />
                             <text
                               x={node.x - 8}
                               y={node.y + 3.5}
                               textAnchor="middle"
-                              fill="#F1F5F9"
+                              fill={isNeedsLogin ? '#FDA4AF' : '#F1F5F9'}
                               fontSize="9.5"
                               fontWeight="bold"
                               className="transition-all duration-200 group-hover:fill-white font-mono"
                             >
                               {node.name}
                             </text>
-                            <circle
-                              cx={node.x + pillW / 2 - 12}
-                              cy={node.y}
-                              r="3.2"
-                              fill={isOnline ? '#10B981' : '#EF4444'}
-                            />
+
+                            {/* Live status dot or red warning dot */}
+                            {isNeedsLogin ? (
+                              <g>
+                                <circle
+                                  cx={node.x + pillW / 2 - 12}
+                                  cy={node.y}
+                                  r="3.2"
+                                  fill="#EF4444"
+                                />
+                                <circle
+                                  cx={node.x + pillW / 2 - 12}
+                                  cy={node.y}
+                                  r="5"
+                                  fill="#EF4444"
+                                  opacity="0.3"
+                                  className="animate-ping"
+                                />
+                              </g>
+                            ) : (
+                              <circle
+                                cx={node.x + pillW / 2 - 12}
+                                cy={node.y}
+                                r="3.2"
+                                fill="#10B981"
+                              />
+                            )}
+
+                            {/* PERLU LOGIN sub-badge under pill */}
+                            {isNeedsLogin && (
+                              <g>
+                                <rect
+                                  x={node.x - 33}
+                                  y={node.y + 16}
+                                  width="66"
+                                  height="13"
+                                  rx="3"
+                                  fill="#450A0A"
+                                  stroke="#991B1B"
+                                  strokeWidth="0.8"
+                                />
+                                <text
+                                  x={node.x}
+                                  y={node.y + 25.5}
+                                  textAnchor="middle"
+                                  fill="#FCA5A5"
+                                  fontSize="7.5"
+                                  fontWeight="bold"
+                                  letterSpacing="0.3"
+                                >
+                                  PERLU LOGIN
+                                </text>
+                              </g>
+                            )}
                           </g>
                         );
                       })}
@@ -2944,38 +3149,96 @@ export default function Dashboard({ onLogout }) {
                   const selNode = tentacleNodes.find((n) => n.id === selectedNodeId);
                   const isRouter = selectedNodeId === 'router' || !selNode;
                   const totalCount = tentacleNodes.length;
+                  const activeCount = tentacleNodes.filter((n) => !n.isNeedsLogin).length;
+                  const isNeedsLogin = !isRouter && selNode?.isNeedsLogin;
 
                   return (
-                    <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
-                        <span className="font-bold text-slate-100 font-mono text-xs truncate block" title={isRouter ? 'Router (Job Core)' : selNode.fullName}>
-                          {isRouter ? '⚡ Router (Job Core)' : `🍪 ${selNode.fullName}`}
-                        </span>
+                    <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
+                          <span
+                            className="font-bold text-slate-100 font-mono text-xs truncate block"
+                            title={isRouter ? 'Router (Job Core)' : selNode.fullName}
+                          >
+                            {isRouter
+                              ? '⚡ Router (Job Core)'
+                              : isNeedsLogin
+                              ? `⚠️ ${selNode.fullName} (TERPUTUS)`
+                              : `🍪 ${selNode.fullName}`}
+                          </span>
+                        </div>
+
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
+                          <span
+                            className={`font-bold font-mono text-xs truncate block ${
+                              isNeedsLogin ? 'text-rose-400' : 'text-cyan-400'
+                            }`}
+                            title={isRouter ? 'Dispatcher / Load Balancer' : selNode.email}
+                          >
+                            {isRouter ? `Dispatcher (${activeCount}/${totalCount} Aktif)` : selNode.email}
+                          </span>
+                        </div>
+
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
+                          {isRouter ? (
+                            <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              ONLINE ({activeCount} Sesi Aktif)
+                            </span>
+                          ) : isNeedsLogin ? (
+                            <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                              PERLU LOGIN (SESI TERPUTUS)
+                            </span>
+                          ) : (
+                            <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              SESI AKTIF (VALID)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
+                          {isNeedsLogin ? (
+                            <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              OFFLINE (TENTAKEL PUTUS)
+                            </span>
+                          ) : (
+                            <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              READY TO POST
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
-                        <span className="font-bold text-cyan-400 font-mono text-xs truncate block" title={isRouter ? 'Dispatcher / Load Balancer' : selNode.email}>
-                          {isRouter ? `Dispatcher (${totalCount} Akun)` : selNode.email}
-                        </span>
-                      </div>
-
-                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
-                        <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                          {isRouter ? `ONLINE (${totalCount} Sesi)` : (selNode.status === 'active' || !selNode.status ? 'SESI AKTIF (VALID)' : selNode.status.toUpperCase())}
-                        </span>
-                      </div>
-
-                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
-                        <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          READY TO POST
-                        </span>
-                      </div>
+                      {/* Disconnected Cookie Alert Callout with 1-Click Action to Cookies Tab */}
+                      {isNeedsLogin && (
+                        <div className="bg-rose-950/40 border border-rose-800/70 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                          <div className="flex items-center gap-2.5 text-rose-200">
+                            <span className="text-base">⚠️</span>
+                            <div>
+                              <p className="font-semibold text-rose-300">
+                                Sesi Akun Google Terputus (Perlu Login Ulang)
+                              </p>
+                              <p className="text-[11px] text-rose-300/80">
+                                Tentakel routing ke akun ini otomatis diputus demi mencegah bot Google Maps gagal saat posting ulasan.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setActiveTab('cookies')}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-lg text-xs whitespace-nowrap cursor-pointer transition-colors shadow-sm self-start sm:self-auto"
+                          >
+                            Perbarui Cookie di Akun Google →
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}

@@ -3303,6 +3303,7 @@ export default function Dashboard({ onLogout }) {
                               return (
                                 <g
                                   key={`node-${node.id}`}
+                                  id={node.id}
                                   onClick={() => setSelectedNodeId(node.id)}
                                   className="cursor-pointer group select-none transition-all duration-300"
                                 >
@@ -3444,149 +3445,317 @@ export default function Dashboard({ onLogout }) {
                                     />
                                   )}
 
-                                  {/* Sub-badge di bawah Pill: Perlu Login / Selesai / Sedang Dipakai / Standby / Paralel */}
-                                  {isNeedsLogin ? (
-                                    <g>
-                                      <rect
-                                        x={node.x - 33}
-                                        y={node.y + 16}
-                                        width="66"
-                                        height="13"
-                                        rx="3"
-                                        fill="#450A0A"
-                                        stroke="#991B1B"
-                                        strokeWidth="0.8"
-                                      />
-                                      <text
-                                        x={node.x}
-                                        y={node.y + 25.5}
-                                        textAnchor="middle"
-                                        fill="#FCA5A5"
-                                        fontSize="7.5"
-                                        fontWeight="bold"
-                                        letterSpacing="0.3"
-                                      >
-                                        PERLU LOGIN
-                                      </text>
-                                    </g>
-                                  ) : isCompleted ? (
-                                    <g>
-                                      <rect
-                                        x={node.x - 34}
-                                        y={node.y + 16}
-                                        width="68"
-                                        height="13"
-                                        rx="3"
-                                        fill="#064E3B"
+                                  {/* Sub-tentacles: Google > Map > Review + Comment */}
+                                  <g className="sub-tentacles select-none">
+                                    {/* Stem connecting Main Cookie Pill to Google Node */}
+                                    {isNeedsLogin ? (
+                                      <g>
+                                        <path
+                                          d={`M ${node.x} ${node.y + 14} C ${node.x} ${node.y + 18}, ${node.x - 48} ${node.y + 16}, ${node.x - 48} ${node.y + 21}`}
+                                          fill="none"
+                                          stroke="#EF4444"
+                                          strokeWidth="1.2"
+                                          strokeDasharray="2 2"
+                                        />
+                                        <circle cx={node.x - 48} cy={node.y + 18.5} r="2" fill="#EF4444" opacity="0.8">
+                                          <animate attributeName="opacity" values="0.3;1;0.3" dur="0.8s" repeatCount="indefinite" />
+                                        </circle>
+                                      </g>
+                                    ) : isCompleted ? (
+                                      <path
+                                        d={`M ${node.x} ${node.y + 14} C ${node.x} ${node.y + 18}, ${node.x - 48} ${node.y + 16}, ${node.x - 48} ${node.y + 21}`}
+                                        fill="none"
                                         stroke="#10B981"
-                                        strokeWidth="0.9"
+                                        strokeWidth="1.5"
                                       />
-                                      <text
-                                        x={node.x}
-                                        y={node.y + 25.5}
-                                        textAnchor="middle"
-                                        fill="#6EE7B7"
-                                        fontSize="7.2"
-                                        fontWeight="bold"
-                                        letterSpacing="0.2"
-                                      >
-                                        ✓ SELESAI
-                                      </text>
-                                    </g>
-                                  ) : isTurnActive ? (
-                                    <g>
-                                      <rect
-                                        x={node.x - 38}
-                                        y={node.y + 16}
-                                        width="76"
-                                        height="13"
-                                        rx="3"
-                                        fill="#064E3B"
-                                        stroke="#059669"
-                                        strokeWidth="0.9"
-                                      />
-                                      <text
-                                        x={node.x}
-                                        y={node.y + 25.5}
-                                        textAnchor="middle"
-                                        fill="#6EE7B7"
-                                        fontSize="7.2"
-                                        fontWeight="bold"
-                                        letterSpacing="0.2"
-                                      >
-                                        SEDANG DIPAKAI 🚀
-                                      </text>
-                                    </g>
-                                  ) : !isTaskActive ? (
-                                    <g>
-                                      <rect
-                                        x={node.x - 32}
-                                        y={node.y + 16}
-                                        width="64"
-                                        height="12"
-                                        rx="3"
-                                        fill="#0F172A"
-                                        stroke="#1E293B"
-                                        strokeWidth="0.7"
-                                      />
-                                      <text
-                                        x={node.x}
-                                        y={node.y + 24.5}
-                                        textAnchor="middle"
-                                        fill="#64748B"
-                                        fontSize="6.8"
-                                        fontWeight="medium"
-                                      >
-                                        STANDBY • SIAP
-                                      </text>
-                                    </g>
-                                  ) : !isParallel ? (
-                                    <g>
-                                      <rect
-                                        x={node.x - 34}
-                                        y={node.y + 16}
-                                        width="68"
-                                        height="12"
-                                        rx="3"
-                                        fill="#0F172A"
-                                        stroke="#1E293B"
-                                        strokeWidth="0.7"
-                                      />
-                                      <text
-                                        x={node.x}
-                                        y={node.y + 24.5}
-                                        textAnchor="middle"
-                                        fill="#64748B"
-                                        fontSize="6.8"
-                                        fontWeight="medium"
-                                      >
-                                        MENUNGGU GILIRAN
-                                      </text>
-                                    </g>
-                                  ) : (
-                                    <g>
-                                      <rect
-                                        x={node.x - 32}
-                                        y={node.y + 16}
-                                        width="64"
-                                        height="12"
-                                        rx="3"
-                                        fill="#082F49"
+                                    ) : isTurnActive ? (
+                                      <g>
+                                        <path
+                                          d={`M ${node.x} ${node.y + 14} C ${node.x} ${node.y + 18}, ${node.x - 48} ${node.y + 16}, ${node.x - 48} ${node.y + 21}`}
+                                          fill="none"
+                                          stroke="#38BDF8"
+                                          strokeWidth="1.8"
+                                          filter="url(#glow-node)"
+                                        />
+                                        <circle cx={node.x - 24} cy={node.y + 16} r="1.8" fill="#FFFFFF">
+                                          <animate attributeName="opacity" values="0.2;1;0.2" dur="0.8s" repeatCount="indefinite" />
+                                        </circle>
+                                      </g>
+                                    ) : isParallel ? (
+                                      <path
+                                        d={`M ${node.x} ${node.y + 14} C ${node.x} ${node.y + 18}, ${node.x - 48} ${node.y + 16}, ${node.x - 48} ${node.y + 21}`}
+                                        fill="none"
                                         stroke="#0284C7"
-                                        strokeWidth="0.7"
+                                        strokeWidth="1.4"
+                                      />
+                                    ) : (
+                                      <path
+                                        d={`M ${node.x} ${node.y + 14} C ${node.x} ${node.y + 18}, ${node.x - 48} ${node.y + 16}, ${node.x - 48} ${node.y + 21}`}
+                                        fill="none"
+                                        stroke="#334155"
+                                        strokeWidth="1.0"
+                                        strokeDasharray="2 2"
+                                        opacity="0.75"
+                                      />
+                                    )}
+
+                                    {/* Sub-node 1: Google */}
+                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 1 - Autentikasi Akun Google`}>
+                                      <rect
+                                        x={node.x - 64}
+                                        y={node.y + 21}
+                                        width="32"
+                                        height="14"
+                                        rx="3.5"
+                                        fill={
+                                          isNeedsLogin
+                                            ? '#3B1216'
+                                            : isCompleted
+                                            ? '#064E3B'
+                                            : isTurnActive
+                                            ? '#0C4A6E'
+                                            : isParallel
+                                            ? '#082F49'
+                                            : '#162032'
+                                        }
+                                        stroke={
+                                          isNeedsLogin
+                                            ? '#EF4444'
+                                            : isCompleted
+                                            ? '#10B981'
+                                            : isTurnActive
+                                            ? '#38BDF8'
+                                            : isParallel
+                                            ? '#0284C7'
+                                            : '#334155'
+                                        }
+                                        strokeWidth={isSelected || isTurnActive ? '1.2' : '0.9'}
                                       />
                                       <text
-                                        x={node.x}
-                                        y={node.y + 24.5}
+                                        x={node.x - 48}
+                                        y={node.y + 31.0}
                                         textAnchor="middle"
-                                        fill="#7DD3FC"
+                                        fill={
+                                          isNeedsLogin
+                                            ? '#FDA4AF'
+                                            : isCompleted
+                                            ? '#6EE7B7'
+                                            : isTurnActive
+                                            ? '#BAE6FD'
+                                            : isParallel
+                                            ? '#7DD3FC'
+                                            : '#CBD5E1'
+                                        }
                                         fontSize="6.8"
                                         fontWeight="bold"
+                                        className="font-mono select-none"
                                       >
-                                        PARALEL AKTIF
+                                        {isNeedsLogin ? '✕ Gagal' : isCompleted ? '✓ Google' : 'Google'}
                                       </text>
                                     </g>
-                                  )}
+
+                                    {/* Tentacle Bridge 1: Google > Map */}
+                                    <g>
+                                      <path
+                                        d={`M ${node.x - 32} ${node.y + 28} Q ${node.x - 28} ${node.y + 26.5} ${node.x - 24} ${node.y + 28}`}
+                                        fill="none"
+                                        stroke={
+                                          isNeedsLogin
+                                            ? '#475569'
+                                            : isCompleted
+                                            ? '#10B981'
+                                            : isTurnActive
+                                            ? '#38BDF8'
+                                            : isParallel
+                                            ? '#0284C7'
+                                            : '#475569'
+                                        }
+                                        strokeWidth={isCompleted || isTurnActive ? '1.5' : '1.0'}
+                                        strokeDasharray={isNeedsLogin ? '2 2' : undefined}
+                                        opacity={isNeedsLogin ? 0.4 : 1.0}
+                                      />
+                                      {/* Directional Chevron Arrow > */}
+                                      <path
+                                        d={`M ${node.x - 29} ${node.y + 26.5} L ${node.x - 26.5} ${node.y + 28} L ${node.x - 29} ${node.y + 29.5}`}
+                                        fill="none"
+                                        stroke={
+                                          isNeedsLogin
+                                            ? '#475569'
+                                            : isCompleted
+                                            ? '#6EE7B7'
+                                            : isTurnActive
+                                            ? '#BAE6FD'
+                                            : isParallel
+                                            ? '#7DD3FC'
+                                            : '#94A3B8'
+                                        }
+                                        strokeWidth="1.2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                      {isTurnActive && (
+                                        <circle cx={node.x - 28} cy={node.y + 28} r="1.5" fill="#38BDF8">
+                                          <animate attributeName="opacity" values="0.3;1;0.3" dur="0.9s" repeatCount="indefinite" />
+                                        </circle>
+                                      )}
+                                    </g>
+
+                                    {/* Sub-node 2: Map */}
+                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 2 - Buka Google Maps Target Bisnis`}>
+                                      <rect
+                                        x={node.x - 24}
+                                        y={node.y + 21}
+                                        width="26"
+                                        height="14"
+                                        rx="3.5"
+                                        fill={
+                                          isNeedsLogin
+                                            ? '#0B132B'
+                                            : isCompleted
+                                            ? '#064E3B'
+                                            : isTurnActive
+                                            ? '#065F46'
+                                            : isParallel
+                                            ? '#082F49'
+                                            : '#162032'
+                                        }
+                                        stroke={
+                                          isNeedsLogin
+                                            ? '#334155'
+                                            : isCompleted
+                                            ? '#10B981'
+                                            : isTurnActive
+                                            ? '#34D399'
+                                            : isParallel
+                                            ? '#0284C7'
+                                            : '#334155'
+                                        }
+                                        strokeWidth={isSelected || isTurnActive ? '1.2' : '0.9'}
+                                      />
+                                      <text
+                                        x={node.x - 11}
+                                        y={node.y + 31.0}
+                                        textAnchor="middle"
+                                        fill={
+                                          isNeedsLogin
+                                            ? '#64748B'
+                                            : isCompleted
+                                            ? '#6EE7B7'
+                                            : isTurnActive
+                                            ? '#A7F3D0'
+                                            : isParallel
+                                            ? '#7DD3FC'
+                                            : '#CBD5E1'
+                                        }
+                                        fontSize="6.8"
+                                        fontWeight="bold"
+                                        className="font-mono select-none"
+                                      >
+                                        {isNeedsLogin ? '🔒 Map' : isCompleted ? '✓ Map' : 'Map'}
+                                      </text>
+                                    </g>
+
+                                    {/* Tentacle Bridge 2: Map > Review + Comment */}
+                                    <g>
+                                      <path
+                                        d={`M ${node.x + 2} ${node.y + 28} Q ${node.x + 6} ${node.y + 26.5} ${node.x + 10} ${node.y + 28}`}
+                                        fill="none"
+                                        stroke={
+                                          isNeedsLogin
+                                            ? '#475569'
+                                            : isCompleted
+                                            ? '#10B981'
+                                            : isTurnActive
+                                            ? '#F59E0B'
+                                            : isParallel
+                                            ? '#0284C7'
+                                            : '#475569'
+                                        }
+                                        strokeWidth={isCompleted || isTurnActive ? '1.5' : '1.0'}
+                                        strokeDasharray={isNeedsLogin ? '2 2' : undefined}
+                                        opacity={isNeedsLogin ? 0.4 : 1.0}
+                                      />
+                                      {/* Directional Chevron Arrow > */}
+                                      <path
+                                        d={`M ${node.x + 5} ${node.y + 26.5} L ${node.x + 7.5} ${node.y + 28} L ${node.x + 5} ${node.y + 29.5}`}
+                                        fill="none"
+                                        stroke={
+                                          isNeedsLogin
+                                            ? '#475569'
+                                            : isCompleted
+                                            ? '#6EE7B7'
+                                            : isTurnActive
+                                            ? '#FDE68A'
+                                            : isParallel
+                                            ? '#7DD3FC'
+                                            : '#94A3B8'
+                                        }
+                                        strokeWidth="1.2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                      {isTurnActive && (
+                                        <circle cx={node.x + 6} cy={node.y + 28} r="1.5" fill="#F59E0B">
+                                          <animate attributeName="opacity" values="0.3;1;0.3" dur="0.9s" repeatCount="indefinite" />
+                                        </circle>
+                                      )}
+                                    </g>
+
+                                    {/* Sub-node 3: Review + Comment */}
+                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 3 - Pemberian Rating 5-Star & Komentar AI Gemini`}>
+                                      <rect
+                                        x={node.x + 10}
+                                        y={node.y + 21}
+                                        width="54"
+                                        height="14"
+                                        rx="3.5"
+                                        fill={
+                                          isNeedsLogin
+                                            ? '#0B132B'
+                                            : isCompleted
+                                            ? '#064E3B'
+                                            : isTurnActive
+                                            ? '#78350F'
+                                            : isParallel
+                                            ? '#082F49'
+                                            : '#162032'
+                                        }
+                                        stroke={
+                                          isNeedsLogin
+                                            ? '#334155'
+                                            : isCompleted
+                                            ? '#10B981'
+                                            : isTurnActive
+                                            ? '#F59E0B'
+                                            : isParallel
+                                            ? '#0284C7'
+                                            : '#334155'
+                                        }
+                                        strokeWidth={isSelected || isTurnActive ? '1.2' : '0.9'}
+                                      />
+                                      <text
+                                        x={node.x + 37}
+                                        y={node.y + 31.0}
+                                        textAnchor="middle"
+                                        fill={
+                                          isNeedsLogin
+                                            ? '#64748B'
+                                            : isCompleted
+                                            ? '#6EE7B7'
+                                            : isTurnActive
+                                            ? '#FDE68A'
+                                            : isParallel
+                                            ? '#7DD3FC'
+                                            : '#CBD5E1'
+                                        }
+                                        fontSize="6.2"
+                                        fontWeight="bold"
+                                        className="font-mono select-none"
+                                      >
+                                        {isNeedsLogin ? '🔒 Review' : isCompleted ? '✓ Review+Komen' : 'Review+Comment'}
+                                      </text>
+                                    </g>
+                                  </g>
                                 </g>
                               );
                             })}
@@ -3765,6 +3934,183 @@ export default function Dashboard({ onLogout }) {
                                     {isParallel ? 'RUNNING MULTI-DISPLAY' : 'READY TO POST'}
                                   </span>
                                 )}
+                              </div>
+                            </div>
+
+                            {/* Alur Eksekusi Bot: Google > Map > Review + Comment */}
+                            <div className="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3.5 flex flex-col gap-2.5">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pb-2 border-b border-slate-800/80">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                                  <span className="text-[11px] font-bold text-slate-200 tracking-wide font-mono uppercase">
+                                    Alur Eksekusi Bot: Google ➔ Map ➔ Review + Comment
+                                  </span>
+                                  {!isRouter && (
+                                    <span className="text-[10px] text-cyan-300 font-mono font-semibold bg-cyan-950/70 border border-cyan-800/80 px-2 py-0.5 rounded">
+                                      {selNode?.name}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-mono font-bold text-slate-400">
+                                  {isRouter ? (
+                                    isTaskActive ? (
+                                      isParallel ? '⚡ Semua Akun Aktif Paralel' : `⚡ Giliran #${currentTurnNumber} Aktif`
+                                    ) : (
+                                      `${tentacleNodes.length} Akun Terdaftar (Standby)`
+                                    )
+                                  ) : isCompletedNode ? (
+                                    '✓ Semua Tahap Selesai (100%)'
+                                  ) : isNeedsLogin ? (
+                                    '✕ Terputus di Tahap 1 Google (0%)'
+                                  ) : isCurrentlyUsed ? (
+                                    '⚡ Sedang Berjalan (Aktif)'
+                                  ) : (
+                                    '💤 Standby (Siap Diproses)'
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
+                                {/* Tahap 1: Google Auth */}
+                                <div
+                                  className={`rounded-lg p-2.5 border transition-all ${
+                                    !isRouter && isNeedsLogin
+                                      ? 'bg-rose-950/40 border-rose-800/80 text-rose-300'
+                                      : !isRouter && isCompletedNode
+                                      ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-300'
+                                      : isCurrentlyUsed || (isRouter && isTaskActive)
+                                      ? 'bg-sky-950/40 border-sky-600/80 text-sky-200'
+                                      : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-bold flex items-center gap-1.5 text-[11px]">
+                                      <span>🌐</span> 1. Google (Auth)
+                                    </span>
+                                    <span
+                                      className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                                        !isRouter && isNeedsLogin
+                                          ? 'bg-rose-900/80 text-rose-200'
+                                          : !isRouter && isCompletedNode
+                                          ? 'bg-emerald-900/80 text-emerald-200'
+                                          : isCurrentlyUsed || (isRouter && isTaskActive)
+                                          ? 'bg-sky-900/80 text-sky-200 animate-pulse'
+                                          : 'bg-slate-700/60 text-slate-400'
+                                      }`}
+                                    >
+                                      {!isRouter && isNeedsLogin
+                                        ? '✕ GAGAL'
+                                        : !isRouter && isCompletedNode
+                                        ? '✓ OK'
+                                        : isCurrentlyUsed || (isRouter && isTaskActive)
+                                        ? '⚡ AKTIF'
+                                        : 'SIAP'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] opacity-80 leading-relaxed">
+                                    {!isRouter && isNeedsLogin
+                                      ? 'Sesi cookie login kadaluarsa / invalid, perlu login ulang.'
+                                      : !isRouter && isCompletedNode
+                                      ? 'Profil Google aktif & terverifikasi sukses.'
+                                      : isRouter
+                                      ? `Memverifikasi sesi cookie dari ${tentacleNodes.length} akun Google.`
+                                      : 'Sesi akun Google & profil browser review.'}
+                                  </p>
+                                </div>
+
+                                {/* Tahap 2: Google Maps */}
+                                <div
+                                  className={`rounded-lg p-2.5 border transition-all ${
+                                    !isRouter && isNeedsLogin
+                                      ? 'bg-slate-900/50 border-slate-800 text-slate-500'
+                                      : !isRouter && isCompletedNode
+                                      ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-300'
+                                      : isCurrentlyUsed || (isRouter && isTaskActive)
+                                      ? 'bg-emerald-950/40 border-emerald-600/80 text-emerald-200'
+                                      : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-bold flex items-center gap-1.5 text-[11px]">
+                                      <span>📍</span> 2. Google Maps
+                                    </span>
+                                    <span
+                                      className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                                        !isRouter && isNeedsLogin
+                                          ? 'bg-slate-800 text-slate-500'
+                                          : !isRouter && isCompletedNode
+                                          ? 'bg-emerald-900/80 text-emerald-200'
+                                          : isCurrentlyUsed || (isRouter && isTaskActive)
+                                          ? 'bg-emerald-900/80 text-emerald-200 animate-pulse'
+                                          : 'bg-slate-700/60 text-slate-400'
+                                      }`}
+                                    >
+                                      {!isRouter && isNeedsLogin
+                                        ? '🔒 LOCKED'
+                                        : !isRouter && isCompletedNode
+                                        ? '✓ LOADED'
+                                        : isCurrentlyUsed || (isRouter && isTaskActive)
+                                        ? '⚡ NAVIGASI'
+                                        : 'STANDBY'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] opacity-80 leading-relaxed">
+                                    {!isRouter && isNeedsLogin
+                                      ? 'Terkunci karena sesi Google belum terautentikasi.'
+                                      : !isRouter && isCompletedNode
+                                      ? 'Listing target bisnis Google Maps berhasil dibuka.'
+                                      : isRouter
+                                      ? 'Membuka URL tempat bisnis target di Google Maps.'
+                                      : 'Navigasi otomatis ke URL tempat Google Maps target.'}
+                                  </p>
+                                </div>
+
+                                {/* Tahap 3: Review + Comment */}
+                                <div
+                                  className={`rounded-lg p-2.5 border transition-all ${
+                                    !isRouter && isNeedsLogin
+                                      ? 'bg-slate-900/50 border-slate-800 text-slate-500'
+                                      : !isRouter && isCompletedNode
+                                      ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-300'
+                                      : isCurrentlyUsed || (isRouter && isTaskActive)
+                                      ? 'bg-amber-950/40 border-amber-600/80 text-amber-200'
+                                      : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-bold flex items-center gap-1.5 text-[11px]">
+                                      <span>⭐</span> 3. Review + Comment
+                                    </span>
+                                    <span
+                                      className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                                        !isRouter && isNeedsLogin
+                                          ? 'bg-slate-800 text-slate-500'
+                                          : !isRouter && isCompletedNode
+                                          ? 'bg-emerald-900/80 text-emerald-200'
+                                          : isCurrentlyUsed || (isRouter && isTaskActive)
+                                          ? 'bg-amber-900/80 text-amber-200 animate-pulse'
+                                          : 'bg-slate-700/60 text-slate-400'
+                                      }`}
+                                    >
+                                      {!isRouter && isNeedsLogin
+                                        ? '🔒 LOCKED'
+                                        : !isRouter && isCompletedNode
+                                        ? '✓ 5-STAR POSTED'
+                                        : isCurrentlyUsed || (isRouter && isTaskActive)
+                                        ? '⚡ SUBMIT'
+                                        : 'STANDBY'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] opacity-80 leading-relaxed">
+                                    {!isRouter && isNeedsLogin
+                                      ? 'Terkunci karena tidak dapat memposting tanpa sesi Google.'
+                                      : !isRouter && isCompletedNode
+                                      ? 'Ulasan bintang 5 & komentar AI sukses terposting publik.'
+                                      : isRouter
+                                      ? 'Gemini AI menghasilkan ulasan bintang 5 & komentar unik.'
+                                      : 'Injeksi ulasan bintang 5 + komentar AI Gemini natural.'}
+                                  </p>
+                                </div>
                               </div>
                             </div>
 

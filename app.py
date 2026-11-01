@@ -1431,6 +1431,30 @@ def api_dashboard():
             displays.append(f":{num}")
 
     tiktok_cookies = db.get_all_tiktok_cookies()
+    is_worker_running = False
+    try:
+        res_p = subprocess.run(["pgrep", "-f", "worker.py"], capture_output=True, text=True)
+        if res_p.stdout.strip():
+            is_worker_running = True
+    except Exception:
+        pass
+
+    is_tt_running = False
+    tt_status_dict = {}
+    try:
+        if 'tiktok_live_runner' in globals() and tiktok_live_runner:
+            tt_status_dict = tiktok_live_runner.get_status()
+            is_tt_running = bool(tt_status_dict.get("is_running"))
+    except Exception:
+        pass
+
+    live_task_info = {
+        "is_running": is_worker_running or is_tt_running,
+        "mode": "parallel" if (is_tt_running or is_worker_running) else "queue",
+        "tiktok_live": tt_status_dict,
+        "current_task": "tiktok_live" if is_tt_running else ("google_maps" if is_worker_running else None)
+    }
+
     return jsonify({
         "status": "ok",
         "businesses": businesses,
@@ -1446,6 +1470,8 @@ def api_dashboard():
         "inventory": inventory,
         "host_metrics": _host_metrics(),
         "analytics": db.get_analytics_summary(),
+        "task_execution": live_task_info,
+        "live_task": live_task_info,
         "csrf_token": _csrf_token(),
     })
 

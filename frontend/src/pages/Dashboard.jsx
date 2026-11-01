@@ -188,6 +188,7 @@ export default function Dashboard({ onLogout }) {
   const [sharescreenMode, setSharescreenMode] = useState('google_map'); // 'google_map' | 'tiktok_live'
   const [userManuallyToggledScreen, setUserManuallyToggledScreen] = useState(false);
   const [tiktokLiveScreenStatus, setTiktokLiveScreenStatus] = useState(null);
+  const [liveTask, setLiveTask] = useState(null);
   const screenContainerRef = useRef(null);
 
   const handleToggleFullscreen = () => {
@@ -227,6 +228,12 @@ export default function Dashboard({ onLogout }) {
           if (logsRes && logsRes.logs) setScreenLogs(logsRes.logs);
           if (ttRes && ttRes.state) {
             setTiktokLiveScreenStatus(ttRes.state);
+            setLiveTask(prev => ({
+              ...(prev || {}),
+              tiktok_live: ttRes.state,
+              is_running: Boolean(ttRes.state.is_running || prev?.is_running),
+              current_task: ttRes.state.is_running ? 'tiktok_live' : (prev?.current_task || null),
+            }));
             // Otomatis arahkan ke tab Tiktok Live jika bot TikTok sedang aktif & Google Maps tidak aktif
             const isGMapRunning = Boolean(liveTask?.is_running && !liveTask?.current_task?.includes('tiktok'));
             if (ttRes.state.is_running && !isGMapRunning) {
@@ -328,6 +335,9 @@ export default function Dashboard({ onLogout }) {
         setUsageData(res);
         if (res.all_tiktok_cookies && res.all_tiktok_cookies.length > 0 && (!tiktokCookies || tiktokCookies.length === 0)) {
           setTikTokCookies(res.all_tiktok_cookies);
+        }
+        if (res.task_execution) {
+          setLiveTask(res.task_execution);
         }
         if (res.task_execution?.is_running && res.task_execution?.mode) {
           setTaskExecutionMode(res.task_execution.mode);
@@ -569,6 +579,9 @@ export default function Dashboard({ onLogout }) {
         setData(dashRes.value);
         if (dashRes.value?.all_tiktok_cookies) {
           setTikTokCookies(dashRes.value.all_tiktok_cookies);
+        }
+        if (dashRes.value?.task_execution || dashRes.value?.live_task) {
+          setLiveTask(dashRes.value.task_execution || dashRes.value.live_task);
         }
       }
       if (cliRes.status === 'fulfilled' && cliRes.value) {

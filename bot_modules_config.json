@@ -7,7 +7,7 @@
     "ai_comments": true,
     "auto_retry": true,
     "rotation_mode": "queue",
-    "display": true
+    "display": false
   },
   "tiktok_live": {
     "enabled": true,
@@ -19,7 +19,7 @@
     "chat_message": "Halo Cantik",
     "multi_account": true,
     "execution_mode": "parallel",
-    "display": true
+    "display": false
   },
   "youtube_live": {
     "enabled": false,
@@ -28,7 +28,7 @@
     "description": "Otomatisasi komentar, auto like, dan engagement live streaming YouTube (Segera Hadir)."
   },
   "display": {
-    "enabled": true,
+    "enabled": false,
     "name": "Display",
     "subtitle": "aktifkan layar untuk memantau bot.",
     "description": "aktifkan layar untuk memantau bot."

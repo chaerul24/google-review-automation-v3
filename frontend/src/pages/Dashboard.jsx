@@ -202,6 +202,10 @@ export default function Dashboard({ onLogout }) {
   useEffect(() => {
     if (activeTab !== 'sharescreen') return;
 
+    // Refresh bot config dan status segera saat tab sharescreen dibuka
+    loadBotConfig();
+    fetchTikTokCookies();
+
     // Cek status segera saat tab sharescreen diklik
     fetch('/api/tiktok-live/status')
       .then(r => r.json())
@@ -416,7 +420,12 @@ export default function Dashboard({ onLogout }) {
   };
 
   useEffect(() => {
-    if (activeTab === 'config-bot') {
+    loadBotConfig();
+    fetchTikTokCookies();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'config-bot' || activeTab === 'sharescreen') {
       loadBotConfig();
     }
   }, [activeTab]);
@@ -2413,6 +2422,13 @@ export default function Dashboard({ onLogout }) {
           const isTTRunning = Boolean(ttState?.is_running);
           const rawStats = ttState?.account_stats || {};
           let ttCardList = Object.values(rawStats);
+          const isDisplayOn = Boolean(botModulesConfig.display?.enabled);
+
+          const availableCookies = (tiktokCookies && tiktokCookies.length > 0)
+            ? tiktokCookies
+            : ((data?.all_tiktok_cookies && data.all_tiktok_cookies.length > 0)
+                ? data.all_tiktok_cookies
+                : []);
 
           if (ttCardList.length === 0) {
             if (ttState?.active_accounts && ttState.active_accounts.length > 0) {
@@ -2428,8 +2444,8 @@ export default function Dashboard({ onLogout }) {
                 status: 'Online (Sesi Aktif)',
                 browser_profile: `Profile #${i + 1}`
               }));
-            } else if (tiktokCookies && tiktokCookies.length > 0) {
-              ttCardList = tiktokCookies.map((ck, i) => ({
+            } else if (availableCookies.length > 0) {
+              ttCardList = availableCookies.map((ck, i) => ({
                 username: ck.username || `@cookie_${i + 1}`,
                 worker_idx: i,
                 is_logged_in: ck.status === 'active' || ck.session_status === 'active',
@@ -2437,10 +2453,26 @@ export default function Dashboard({ onLogout }) {
                 has_like_btn: false,
                 likes_sent: 0,
                 chats_sent: 0,
-                last_chat_message: 'indonesia',
+                last_chat_message: ttState?.chat_message || 'indonesia',
                 status: ck.status === 'active' ? 'Siap' : 'Perlu Login',
                 browser_profile: `Cookie Profile #${i + 1}`
               }));
+            } else {
+              // Minimal fallback default card agar tampilan kartu tidak pernah kosong/blank
+              ttCardList = [
+                {
+                  username: '@akun_cookie_1',
+                  worker_idx: 0,
+                  is_logged_in: false,
+                  is_viewer_verified: false,
+                  has_like_btn: false,
+                  likes_sent: 0,
+                  chats_sent: 0,
+                  last_chat_message: 'indonesia',
+                  status: 'Standby (Belum Ada Akun)',
+                  browser_profile: 'Default Browser'
+                }
+              ];
             }
           }
 
@@ -2658,7 +2690,33 @@ export default function Dashboard({ onLogout }) {
 
                     {/* Video / Image Display Area */}
                     <div className="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden">
-                      {liveTask?.is_running && !liveTask?.current_task?.includes('tiktok') && streamActive && !streamError ? (
+                      {!isDisplayOn ? (
+                        <div className="text-center p-8 space-y-3.5 select-none">
+                          <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-400 shadow-inner">
+                            <Tv className="w-7 h-7 text-slate-400" />
+                          </div>
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-900 text-slate-300 border border-slate-800">
+                            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                            <span>Sedang Mati</span>
+                          </div>
+                          <p className="text-sm font-bold text-slate-200">
+                            Display Monitor Sedang Mati
+                          </p>
+                          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                            aktifkan layar untuk memantau bot.
+                          </p>
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={handleToggleDisplay}
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl cursor-pointer transition inline-flex items-center gap-2 shadow-sm"
+                            >
+                              <Tv className="w-4 h-4" />
+                              <span>Nyalakan Layar</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (liveTask?.is_running && !liveTask?.current_task?.includes('tiktok') && streamActive && !streamError) ? (
                         <img
                           key={screenTs}
                           src={`/api/screen/stream.mjpg?t=${screenTs}`}
@@ -2879,32 +2937,74 @@ export default function Dashboard({ onLogout }) {
                             </div>
                           </div>
 
-                          {/* Display Screen Snapshot (Chromium Headless Worker) */}
-                          <div className="relative aspect-video bg-slate-950 overflow-hidden flex items-center justify-center">
-                            <img
-                              key={`${screenTs}-${wIdx}`}
-                              src={`/api/tiktok-live/screen/${wIdx}.png?t=${screenTs}`}
-                              alt={`Display ${card.username}`}
-                              className="w-full h-full object-cover"
-                              loading="eager"
-                            />
-                            {/* Overlay Badges on Top of Screen */}
-                            <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 pointer-events-none">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
-                                isViewer
-                                  ? 'bg-emerald-600/90 text-white'
-                                  : 'bg-slate-900/85 text-slate-300 border border-slate-700/80'
-                              }`}>
-                                {isViewer ? '✓ Penonton Terdaftar' : '? Memindai Penonton...'}
-                              </span>
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
-                                hasLikeBtn
-                                  ? 'bg-rose-600/90 text-white'
-                                  : 'bg-slate-900/85 text-slate-300 border border-slate-700/80'
-                              }`}>
-                                {hasLikeBtn ? '❤️ Tombol Love [✓]' : 'Cari Tombol Love'}
-                              </span>
-                            </div>
+                          {/* Display Screen Snapshot / Placeholder Sedang Mati */}
+                          <div className="relative aspect-video bg-slate-950 overflow-hidden flex items-center justify-center border-b border-slate-800/80 select-none">
+                            {isDisplayOn ? (
+                              <>
+                                <img
+                                  key={`${screenTs}-${wIdx}`}
+                                  src={`/api/tiktok-live/screen/${wIdx}.png?t=${screenTs}`}
+                                  alt={`Display ${card.username}`}
+                                  className="w-full h-full object-cover"
+                                  loading="eager"
+                                />
+                                {/* Overlay Badges on Top of Screen */}
+                                <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 pointer-events-none">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
+                                    isViewer
+                                      ? 'bg-emerald-600/90 text-white'
+                                      : 'bg-slate-900/85 text-slate-300 border border-slate-700/80'
+                                  }`}>
+                                    {isViewer ? '✓ Penonton Terdaftar' : '? Memindai Penonton...'}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
+                                    hasLikeBtn
+                                      ? 'bg-rose-600/90 text-white'
+                                      : 'bg-slate-900/85 text-slate-300 border border-slate-700/80'
+                                  }`}>
+                                    {hasLikeBtn ? '❤️ Tombol Love [✓]' : 'Cari Tombol Love'}
+                                  </span>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-b from-slate-900 via-slate-950 to-black flex flex-col items-center justify-center p-4 text-center relative group">
+                                <div className="w-10 h-10 rounded-2xl bg-slate-800/90 border border-slate-700/80 flex items-center justify-center text-slate-400 mb-1.5 shadow-inner group-hover:scale-105 transition-transform duration-200">
+                                  <Tv className="w-5 h-5 text-slate-400" />
+                                </div>
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800/90 text-slate-300 border border-slate-700/80 mb-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                  <span>Sedang Mati</span>
+                                </div>
+                                <p className="text-[11px] text-slate-400 font-sans max-w-[210px] leading-tight">
+                                  aktifkan layar untuk memantau bot.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={handleToggleDisplay}
+                                  className="mt-2.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                                >
+                                  <Tv className="w-3.5 h-3.5" />
+                                  <span>Nyalakan Layar</span>
+                                </button>
+                                {/* Overlay Badges on Top of Placeholder too */}
+                                <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 pointer-events-none opacity-80">
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
+                                    isViewer
+                                      ? 'bg-emerald-600/90 text-white'
+                                      : 'bg-slate-900/85 text-slate-400 border border-slate-800'
+                                  }`}>
+                                    {isViewer ? '✓ Penonton Terdaftar' : 'Memindai Penonton'}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
+                                    hasLikeBtn
+                                      ? 'bg-rose-600/90 text-white'
+                                      : 'bg-slate-900/85 text-slate-400 border border-slate-800'
+                                  }`}>
+                                    {hasLikeBtn ? '❤️ Tombol Love [✓]' : 'Cari Tombol Love'}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Real Statistics Card Body (100% Real, NO DUMMY) */}

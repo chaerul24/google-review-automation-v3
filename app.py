@@ -2923,18 +2923,41 @@ def api_tiktok_live_screen(worker_idx):
             pass
 
     is_display_on = getattr(tiktok_live_runner, "enable_display", False)
-    sub_title = "Menghubungkan ke Siaran Live TikTok..." if is_display_on else "aktifkan layar untuk memantau bot."
-    info_text = "Menyinkronkan sesi cookie mandiri &amp; merender frame live" if is_display_on else "Status: Display nonaktif (hemat sumber daya)"
-    title_text = f"Browser Worker #{worker_idx + 1}" if is_display_on else "Display Dinonaktifkan"
+    if not is_display_on:
+        title_text = f"Browser Worker #{worker_idx + 1}"
+        sub_title = "aktifkan layar untuk memantau bot."
+        badge_text = "SEDANG MATI"
+        svg = f"""<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100%" height="100%" fill="#090d16"/>
+            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <circle cx="2" cy="2" r="1" fill="#1e293b"/>
+            </pattern>
+            <rect width="100%" height="100%" fill="url(#grid)" opacity="0.5"/>
+            <rect x="250" y="65" width="140" height="26" rx="13" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+            <circle cx="266" cy="78" r="4" fill="#f43f5e"/>
+            <text x="325" y="82" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="700" fill="#f1f5f9" text-anchor="middle">{badge_text}</text>
+            <rect x="296" y="112" width="48" height="36" rx="6" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+            <rect x="302" y="118" width="36" height="24" rx="2" fill="#090d16"/>
+            <path d="M312 148h16v6h-16zM306 154h28v2h-28z" fill="#475569"/>
+            <path d="M316 126l10 7-10 7z" fill="#475569"/>
+            <text x="50%" y="195" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">{title_text} • Display Sedang Mati</text>
+            <text x="50%" y="222" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">{sub_title}</text>
+            <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Pengaturan dapat diubah di Config Bot atau tombol di atas</text>
+        </svg>"""
+        return Response(
+            svg,
+            mimetype="image/svg+xml",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+        )
 
     svg = f"""<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#090d16"/>
         <circle cx="320" cy="135" r="34" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
-        <path d="M312 123l22 12-22 12z" fill="{'#06b6d4' if is_display_on else '#64748b'}"/>
-        <circle cx="320" cy="135" r="42" fill="none" stroke="{'#06b6d4' if is_display_on else '#475569'}" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.6"/>
-        <text x="50%" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" fill="#f8fafc" text-anchor="middle">{title_text}</text>
-        <text x="50%" y="224" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">{sub_title}</text>
-        <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">{info_text}</text>
+        <path d="M312 123l22 12-22 12z" fill="#06b6d4"/>
+        <circle cx="320" cy="135" r="42" fill="none" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.6"/>
+        <text x="50%" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" fill="#f8fafc" text-anchor="middle">Browser Worker #{worker_idx + 1}</text>
+        <text x="50%" y="224" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Menghubungkan ke Siaran Live TikTok...</text>
+        <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Menyinkronkan sesi cookie mandiri &amp; merender frame live</text>
     </svg>"""
     return Response(
         svg,

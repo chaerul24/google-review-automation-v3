@@ -11,9 +11,9 @@ fi
 
 PY_BIN="$(command -v python3 || command -v python)"
 
-# Tentukan server target (Coba IP LAN lokal dulu, fallback ke domain publik)
-SERVER_URL="https://autobotix.my.id"
-if curl -fs --connect-timeout 2 http://192.168.1.17:5000/download/bot_cli.py >/dev/null 2>&1; then
+# Tentukan server target (Bisa di-override lewat variabel BOT_SERVER)
+SERVER_URL="${BOT_SERVER:-https://autobotix.my.id}"
+if [ -z "$BOT_SERVER" ] && curl -fs --connect-timeout 2 http://192.168.1.17:5000/download/bot_cli.py >/dev/null 2>&1; then
     SERVER_URL="http://192.168.1.17:5000"
 fi
 
@@ -37,4 +37,18 @@ if [ ! -f "$CLI_PATH" ]; then
 fi
 
 echo -e "\033[1;32m[2/2] Memulai AutoBotix CLI...\033[0m"
-exec "$PY_BIN" "$CLI_PATH" --server "$SERVER_URL" "$@"
+
+# Cek apakah user sudah menyertakan argumen --server / -H
+HAS_SERVER=0
+for arg in "$@"; do
+    if [ "$arg" = "--server" ] || [ "$arg" = "-H" ]; then
+        HAS_SERVER=1
+        break
+    fi
+done
+
+if [ "$HAS_SERVER" -eq 1 ]; then
+    exec "$PY_BIN" "$CLI_PATH" "$@"
+else
+    exec "$PY_BIN" "$CLI_PATH" --server "$SERVER_URL" "$@"
+fi

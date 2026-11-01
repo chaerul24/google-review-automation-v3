@@ -15,7 +15,7 @@
     "target_user": "@s42cadyfnz",
     "tap_speed": 5,
     "auto_chat": true,
-    "chat_message": "bro",
+    "chat_message": "\"Test\"",
     "multi_account": true,
     "execution_mode": "parallel"
   },

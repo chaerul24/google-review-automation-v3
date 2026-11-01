@@ -11,6 +11,7 @@ import requests
 import logging
 import os
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -588,6 +589,73 @@ def prompt_login_server(default_user: str = "admin") -> bool:
 
 # ── Responsive Card UI for TikTok Live ──────────────────────────────────────
 
+def format_rich_tiktok_log(ts: str, lvl: str, raw_msg: str, width: int = 80) -> str:
+    """Format single TikTok Live log entry into rich markup with tag [+]/[!]/[-]/[?], actor badge, and ──> arrows."""
+    clean = (raw_msg or "").strip()
+    tag_detected = None
+    actors = []
+
+    while True:
+        m = re.match(r"^\[([^\]]+)\]\s*(.*)", clean)
+        if not m:
+            break
+        bracket = m.group(1).strip()
+        rem = m.group(2).strip()
+
+        if bracket in ("+", "?", "!", "-"):
+            tag_detected = f"[{bracket}]"
+            clean = rem
+        elif re.match(r"^(Browser|Akun|Slot|Mode|SISTEM)", bracket, re.IGNORECASE) or bracket.startswith("@"):
+            actors.append(bracket)
+            clean = rem
+        else:
+            break
+
+    m_user = re.match(r"^(@[a-zA-Z0-9._]+):\s*(.*)", clean)
+    if m_user:
+        actors.append(m_user.group(1))
+        clean = m_user.group(2).strip()
+
+    clean = re.sub(r'^[✓▲✖ℹ🌐🔑❤️💬🚀⚡]\s*', '', clean)
+    clean_escaped = clean.replace("[", "\\[").replace("]", "\\]")
+
+    actor_str = " • ".join(actors) if actors else ""
+    if actor_str:
+        if width < 65:
+            short_actor = actor_str.replace("Browser Cookie ", "B").replace("Browser ", "B")
+            actor_badge = f"[bold cyan][{short_actor[:18]}][/bold cyan]"
+        else:
+            actor_badge = f"[bold cyan][{actor_str[:32]}][/bold cyan]"
+    elif any(w in clean.lower() for w in ("chromium", "browser", "driver", "page", "cdp")):
+        actor_badge = "[bright_blue][SISTEM BROWSER][/bright_blue]"
+    else:
+        actor_badge = "[cyan][SISTEM LIVE][/cyan]"
+
+    lvl_low = (lvl or "info").lower()
+    if tag_detected == "[+]" or lvl_low == "success":
+        tag = "[bold green]\\[+][/bold green]"
+        arrow = "[green]──>[/green]"
+        msg_out = f"[bold green]{clean_escaped}[/bold green]"
+    elif tag_detected == "[!]" or lvl_low in ("error", "fatal"):
+        tag = "[bold red]\\[!][/bold red]"
+        arrow = "[red]──>[/red]"
+        msg_out = f"[bold red]{clean_escaped}[/bold red]"
+    elif tag_detected == "[!]" or lvl_low in ("warning", "fail"):
+        tag = "[bold yellow]\\[!][/bold yellow]"
+        arrow = "[yellow]──>[/yellow]"
+        msg_out = f"[yellow]{clean_escaped}[/yellow]"
+    elif tag_detected == "[?]" or any(k in clean.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
+        tag = "[bold cyan]\\[?][/bold cyan]"
+        arrow = "[cyan]──>[/cyan]"
+        msg_out = f"[cyan]{clean_escaped}[/cyan]"
+    else:
+        tag = "[bold bright_blue]\\[-][/bold bright_blue]"
+        arrow = "[cyan]──>[/cyan]"
+        msg_out = f"[white]{clean_escaped}[/white]"
+
+    return f"[dim][{ts}][/dim] {tag} {arrow} {actor_badge} {arrow} {msg_out}"
+
+
 def render_tiktok_live_cards(
     width: int,
     t_user: str,
@@ -708,22 +776,25 @@ def render_tiktok_live_cards(
         )
         grid = Group(c_mobile1, c_mobile2)
 
-    # Real-Time Logs (WITHOUT Card - Newest on Top)
+    # Real-Time Logs (Google Maps Tree Line Style - Newest on Top)
     max_logs = 3 if width < 65 else 5
     logs_slice = list(reversed(logs[-max_logs:])) if logs else []
 
     log_elements = []
     if width >= 65:
-        log_elements.append(Text(f"\n📋 Live Engine Logs (Terbaru di atas) ─────────────────────────", style="bold bright_blue"))
+        log_elements.append(Text.from_markup("\n[cyan]┌──[/cyan] [bold cyan]📋 LIVE PROCESS LOGS • TIKTOK LIVE ENGINE (Terbaru di atas)[/bold cyan]"))
     else:
-        log_elements.append(Text(f"\n📋 Live Logs (Terbaru di atas):", style="bold bright_blue"))
+        log_elements.append(Text.from_markup("\n[cyan]┌──[/cyan] [bold cyan]📋 LIVE LOGS (Terbaru di atas)[/bold cyan]"))
 
     if not logs_slice:
-        log_elements.append(Text("   Menghubungkan browser Chromium ke siaran TikTok Live...", style="dim"))
+        trunk = "│ └──" if width < 65 else "│   └──"
+        log_elements.append(Text.from_markup(f"[cyan]{trunk}[/cyan] [dim][--:--:--] [-] ──> [SISTEM LIVE] ──> Menghubungkan browser Chromium ke siaran...[/dim]"))
     else:
         for idx, l in enumerate(logs_slice):
-            prefix = " ▶" if idx == 0 else "  "
-            log_elements.append(Text.from_markup(f"{prefix} {l}"))
+            is_last = (idx == len(logs_slice) - 1)
+            branch = "└──" if is_last else "├──"
+            trunk_indent = "│ ├──" if (width < 65 and not is_last) else ("│ └──" if width < 65 else f"│   {branch}")
+            log_elements.append(Text.from_markup(f"[cyan]{trunk_indent}[/cyan] {l}"))
 
     # Control Action Footer (Text WITHOUT Card)
     if width >= 65:
@@ -910,45 +981,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                                 lvl = (l.get("level") or "info").lower()
                                 ts = (l.get("created_at") or "")[-8:]
                                 raw_msg = (l.get("message") or "").strip()
-
-                                tag = "[-]"
-                                tag_style = "bold bright_blue"
-                                clean_text = raw_msg
-                                if clean_text.startswith("[+]"):
-                                    tag = "[+]"
-                                    tag_style = "bold green"
-                                    clean_text = clean_text[3:].strip()
-                                elif clean_text.startswith("[?]"):
-                                    tag = "[?]"
-                                    tag_style = "bold cyan"
-                                    clean_text = clean_text[3:].strip()
-                                elif clean_text.startswith("[!]"):
-                                    tag = "[!]"
-                                    tag_style = "bold red" if lvl in ("error", "fatal") else "bold yellow"
-                                    clean_text = clean_text[3:].strip()
-                                elif clean_text.startswith("[-]"):
-                                    tag = "[-]"
-                                    tag_style = "bold bright_blue"
-                                    clean_text = clean_text[3:].strip()
-                                else:
-                                    if lvl == "success":
-                                        tag = "[+]"
-                                        tag_style = "bold green"
-                                    elif lvl in ("error", "fatal"):
-                                        tag = "[!]"
-                                        tag_style = "bold red"
-                                    elif lvl in ("warning", "fail"):
-                                        tag = "[!]"
-                                        tag_style = "bold yellow"
-                                    elif any(k in clean_text.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
-                                        tag = "[?]"
-                                        tag_style = "bold cyan"
-                                    else:
-                                        tag = "[-]"
-                                        tag_style = "bold bright_blue"
-
-                                clean_text = re.sub(r'^[✓▲✖ℹ🌐🔑❤️💬🚀⚡]\s*', '', clean_text)
-                                recent_logs.append(f"[dim][{ts}][/dim] [{tag_style}]{tag}[/{tag_style}] [white]{clean_text}[/white]")
+                                recent_logs.append(format_rich_tiktok_log(ts, lvl, raw_msg, width=console.width))
                     except Exception:
                         pass
 

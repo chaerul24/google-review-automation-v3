@@ -2085,6 +2085,78 @@ def format_task_log_line(ts: str, lvl: str, msg: str, email: str = "", account_n
     return f" {C_CYAN}│   ├──{C_RESET} {C_DIM}{ts}{C_RESET} {tag} {arrow} {actor_badge} {arrow} {msg_out}"
 
 
+def format_tiktok_live_log_line(ts: str, lvl: str, raw_msg: str, is_last: bool = False, cols: int = 80) -> str:
+    """Format single TikTok Live log entry into a Google Maps style tree branch line with vertical trunk │, tags [+]/[!]/[-]/[?], and ──> arrows."""
+    clean = (raw_msg or "").strip()
+    tag_detected = None
+    actors = []
+
+    # Extract leading bracket tokens e.g. [+], [-], [?], [!], [Browser 1/4], [@username], [Mode Paralel]
+    while True:
+        m = re.match(r"^\[([^\]]+)\]\s*(.*)", clean)
+        if not m:
+            break
+        bracket = m.group(1).strip()
+        rem = m.group(2).strip()
+
+        if bracket in ("+", "?", "!", "-"):
+            tag_detected = f"[{bracket}]"
+            clean = rem
+        elif re.match(r"^(Browser|Akun|Slot|Mode|SISTEM)", bracket, re.IGNORECASE) or bracket.startswith("@"):
+            actors.append(bracket)
+            clean = rem
+        else:
+            break
+
+    # Also detect inline username prefix like "@user:"
+    m_user = re.match(r"^(@[a-zA-Z0-9._]+):\s*(.*)", clean)
+    if m_user:
+        actors.append(m_user.group(1))
+        clean = m_user.group(2).strip()
+
+    # Clean redundant status emojis
+    clean = re.sub(r'^[✓▲✖ℹ🌐🔑❤️💬🚀⚡]\s*', '', clean)
+
+    actor_str = " • ".join(actors) if actors else ""
+    if actor_str:
+        if cols < 80:
+            short_actor = actor_str.replace("Browser Cookie ", "B").replace("Browser ", "B")
+            actor_badge = f"{C_BOLD}{C_CYAN}[{short_actor[:18]}]{C_RESET}"
+        else:
+            actor_badge = f"{C_BOLD}{C_CYAN}[{actor_str[:32]}]{C_RESET}"
+    elif any(w in clean.lower() for w in ("chromium", "browser", "driver", "page", "cdp")):
+        actor_badge = f"{C_BLUE}[SISTEM BROWSER]{C_RESET}"
+    else:
+        actor_badge = f"{C_CYAN}[SISTEM LIVE]{C_RESET}"
+
+    lvl_low = (lvl or "info").lower()
+    if tag_detected == "[+]" or lvl_low == "success":
+        tag = f"{C_BOLD}{C_GREEN}[+]{C_RESET}"
+        arrow = f"{C_GREEN}──>{C_RESET}"
+        msg_out = f"{C_BOLD}{C_GREEN}{clean}{C_RESET}"
+    elif tag_detected == "[!]" or lvl_low in ("error", "fatal"):
+        tag = f"{C_BOLD}{C_RED}[!]{C_RESET}"
+        arrow = f"{C_RED}──>{C_RESET}"
+        msg_out = f"{C_BOLD}{C_RED}{clean}{C_RESET}"
+    elif tag_detected == "[!]" or lvl_low in ("warning", "fail"):
+        tag = f"{C_BOLD}{C_YELLOW}[!]{C_RESET}"
+        arrow = f"{C_YELLOW}──>{C_RESET}"
+        msg_out = f"{C_YELLOW}{clean}{C_RESET}"
+    elif tag_detected == "[?]" or any(k in clean.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
+        tag = f"{C_BOLD}{C_CYAN}[?]{C_RESET}"
+        arrow = f"{C_CYAN}──>{C_RESET}"
+        msg_out = f"{C_CYAN}{clean}{C_RESET}"
+    else:
+        tag = f"{C_BOLD}{C_BLUE}[-]{C_RESET}"
+        arrow = f"{C_CYAN}──>{C_RESET}"
+        msg_out = f"{C_WHITE}{clean}{C_RESET}"
+
+    branch = "└──" if is_last else "├──"
+    trunk_indent = "│ ├──" if (cols < 80 and not is_last) else ("│ └──" if cols < 80 else f"│   {branch}")
+
+    return f" {C_CYAN}{trunk_indent}{C_RESET} {C_DIM}[{ts}]{C_RESET} {tag} {arrow} {actor_badge} {arrow} {msg_out}"
+
+
 def run_delete_maps_stream(
     client: ServerClient,
     business_id: int,
@@ -2671,58 +2743,24 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                         ]
                         print_box(card_lines, width=c_w, title=f"{C_BOLD}{C_RED}TIKTOK LIVE (HP CARD){C_RESET}")
 
-                    # Render logs WITHOUT card, newest on top
-                    print(f"\n {C_CYAN}📋 Live Engine Logs (Terbaru di atas):{C_RESET}")
+                    # Render logs WITHOUT card, newest on top with Google Maps tree branch lines
+                    if cols >= 80:
+                        print(f"\n {C_CYAN}┌── [📋 LIVE PROCESS LOGS • TIKTOK LIVE ENGINE (Terbaru di atas)]{C_RESET}")
+                    else:
+                        print(f"\n {C_CYAN}┌── [📋 LIVE LOGS (Terbaru di atas)]{C_RESET}")
+
                     max_l = 3 if cols < 80 else 5
                     reversed_logs = list(reversed(logs[-max_l:])) if logs else []
                     if not reversed_logs:
-                        print(f"   {C_DIM}Menghubungkan browser Chromium ke siaran TikTok Live...{C_RESET}")
+                        trunk = "│ └──" if cols < 80 else "│   └──"
+                        print(f" {C_CYAN}{trunk}{C_RESET} {C_DIM}[--:--:--] [-] ──> [SISTEM LIVE] ──> Menghubungkan browser Chromium ke siaran TikTok Live...{C_RESET}")
                     else:
                         for idx, l in enumerate(reversed_logs):
                             lvl = (l.get("level") or "info").lower()
                             ts = (l.get("created_at") or "").split()[-1]
                             raw_msg = (l.get("message") or "").strip()
-
-                            tag = "[-]"
-                            col = C_BLUE
-                            clean_text = raw_msg
-                            if clean_text.startswith("[+]"):
-                                tag = "[+]"
-                                col = C_GREEN
-                                clean_text = clean_text[3:].strip()
-                            elif clean_text.startswith("[?]"):
-                                tag = "[?]"
-                                col = C_CYAN
-                                clean_text = clean_text[3:].strip()
-                            elif clean_text.startswith("[!]"):
-                                tag = "[!]"
-                                col = C_RED if lvl in ("error", "fatal") else C_YELLOW
-                                clean_text = clean_text[3:].strip()
-                            elif clean_text.startswith("[-]"):
-                                tag = "[-]"
-                                col = C_BLUE
-                                clean_text = clean_text[3:].strip()
-                            else:
-                                if lvl == "success":
-                                    tag = "[+]"
-                                    col = C_GREEN
-                                elif lvl in ("error", "fatal"):
-                                    tag = "[!]"
-                                    col = C_RED
-                                elif lvl in ("warning", "fail"):
-                                    tag = "[!]"
-                                    col = C_YELLOW
-                                elif any(k in clean_text.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
-                                    tag = "[?]"
-                                    col = C_CYAN
-                                else:
-                                    tag = "[-]"
-                                    col = C_BLUE
-
-                            clean_text = re.sub(r'^[✓▲✖ℹ🌐🔑❤️💬🚀⚡]\s*', '', clean_text)
-                            prefix = " ▶" if idx == 0 else "  "
-                            tag_badge = f"{C_BOLD}{col}{tag}{C_RESET}"
-                            print(f"{prefix} {C_DIM}[{ts}]{C_RESET} {tag_badge} {C_WHITE}{clean_text}{C_RESET}")
+                            is_last = (idx == len(reversed_logs) - 1)
+                            print(format_tiktok_live_log_line(ts, lvl, raw_msg, is_last=is_last, cols=cols))
 
                     # Render Ctrl+C as plain text WITHOUT card
                     if cols >= 80:

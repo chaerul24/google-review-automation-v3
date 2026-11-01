@@ -289,6 +289,7 @@ export default function Dashboard({ onLogout }) {
   const [isRotatingQueue, setIsRotatingQueue] = useState(true);
   const [isSimulationActive, setIsSimulationActive] = useState(false); // Standby by default until task starts
   const [completedCookieIds, setCompletedCookieIds] = useState(new Set());
+  const [usageFlowChoice, setUsageFlowChoice] = useState('auto'); // 'auto' | 'google_maps' | 'tiktok_live'
 
   const loadUsageData = async () => {
     try {
@@ -296,6 +297,9 @@ export default function Dashboard({ onLogout }) {
       const res = await api.getUsage();
       if (res && res.status === 'ok') {
         setUsageData(res);
+        if (res.all_tiktok_cookies && res.all_tiktok_cookies.length > 0 && (!tiktokCookies || tiktokCookies.length === 0)) {
+          setTikTokCookies(res.all_tiktok_cookies);
+        }
         if (res.task_execution?.is_running && res.task_execution?.mode) {
           setTaskExecutionMode(res.task_execution.mode);
         }
@@ -909,22 +913,50 @@ export default function Dashboard({ onLogout }) {
 
   const activeAccountsCount = emails.filter((e) => e.cookie_status === 'active').length;
 
-  // Dynamic Google Cookie Nodes for the Tentacle Flow Canvas (Matches ALL registered cookies)
+  // Automatic Task Flow Detection (TikTok Live vs Google Maps vs Idle Standby)
+  const detectedTaskType = usageData?.task_execution?.active_task_type; // 'tiktok_live' | 'google_maps' | 'idle'
+  const isLiveTaskRunning = Boolean(usageData?.task_execution?.is_running);
+  const activeFlowType = useMemo(() => {
+    if (usageFlowChoice !== 'auto') {
+      return usageFlowChoice;
+    }
+    if (isLiveTaskRunning && detectedTaskType && detectedTaskType !== 'idle') {
+      return detectedTaskType;
+    }
+    return 'google_maps';
+  }, [usageFlowChoice, isLiveTaskRunning, detectedTaskType]);
+
+  const isTikTokFlow = activeFlowType === 'tiktok_live';
+
+  // Dynamic Tentacle Flow Nodes (Automatically adapts between Google Maps and TikTok Live)
   const tentacleNodes = useMemo(() => {
-    // Include ALL cookies so both active and needs_login / expired cookies are rendered
-    const list = cookies.length > 0 ? cookies : [
-      { id: '181', email: 'muhmadaljannah@gmail.com', account_name: 'Muhammad Jannah', status: 'active' },
-      { id: '179', email: 'galoijul@gmail.com', account_name: 'Galo Ijul', status: 'active' },
-      { id: '175', email: 'cantikaayu0302@gmail.com', account_name: 'Cantika Ayu', status: 'needs_login' },
-      { id: '187', email: 'jonotayo7@gmail.com', account_name: 'Jono Tayo', status: 'active' },
-    ];
+    let list = [];
+    if (isTikTokFlow) {
+      const ttList = (tiktokCookiesList && tiktokCookiesList.length > 0)
+        ? tiktokCookiesList
+        : (usageData?.all_tiktok_cookies || []);
+      list = ttList.length > 0 ? ttList : [
+        { id: '1', username: '@bedadariyanglain21', nickname: 'Beda Dari Yang Lain', status: 'active' },
+        { id: '2', username: '@galoijul', nickname: 'Galo Ijul', status: 'active' },
+        { id: '3', username: '@tiktok_creator', nickname: 'TikTok Creator', status: 'needs_login' },
+      ];
+    } else {
+      list = cookies.length > 0 ? cookies : [
+        { id: '181', email: 'muhmadaljannah@gmail.com', account_name: 'Muhammad Jannah', status: 'active' },
+        { id: '179', email: 'galoijul@gmail.com', account_name: 'Galo Ijul', status: 'active' },
+        { id: '175', email: 'cantikaayu0302@gmail.com', account_name: 'Cantika Ayu', status: 'needs_login' },
+        { id: '187', email: 'jonotayo7@gmail.com', account_name: 'Jono Tayo', status: 'active' },
+      ];
+    }
 
     const N = list.length;
     const cx = 480;
     const cy = 300;
     const Rx = 340;
     const Ry = 220;
-    const colors = ['#F59E0B', '#38BDF8', '#10B981', '#A855F7', '#EC4899', '#06B6D4', '#6366F1', '#F97316'];
+    const colors = isTikTokFlow
+      ? ['#FE2C55', '#25F4EE', '#EC4899', '#06B6D4', '#A855F7', '#F43F5E', '#38BDF8', '#F59E0B']
+      : ['#F59E0B', '#38BDF8', '#10B981', '#A855F7', '#EC4899', '#06B6D4', '#6366F1', '#F97316'];
 
     // De Casteljau subdivision for cleanly severing the tentacle if needs_login
     const splitBezier = (p0, p1, p2, p3, t) => {
@@ -947,7 +979,6 @@ export default function Dashboard({ onLogout }) {
 
     return list.map((c, i) => {
       const alpha = (2 * Math.PI * i / N) - (Math.PI / 2);
-      // Alternating radii for staggered ring if N > 6
       const rScale = N > 6 ? ((i % 2 === 0) ? 1.0 : 0.76) : 0.90;
       const nodeX = cx + Rx * rScale * Math.cos(alpha);
       const nodeY = cy + Ry * rScale * Math.sin(alpha);
@@ -968,8 +999,10 @@ export default function Dashboard({ onLogout }) {
 
       const fullPathD = `M ${cx} ${cy} C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)}, ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)}, ${nodeX.toFixed(1)} ${nodeY.toFixed(1)}`;
 
-      const rawName = (c.account_name || c.email?.split('@')[0] || `Akun #${c.id}`).trim();
-      const displayName = rawName.length > 13 ? rawName.substring(0, 12) + '…' : rawName;
+      const rawName = isTikTokFlow
+        ? (c.username || c.nickname || `TikTok #${c.id}`).trim()
+        : (c.account_name || c.email?.split('@')[0] || `Akun #${c.id}`).trim();
+      const displayName = rawName.length > 14 ? rawName.substring(0, 13) + '…' : rawName;
 
       // Status check for severed connection
       const isNeedsLogin =
@@ -978,7 +1011,6 @@ export default function Dashboard({ onLogout }) {
         c.status === 'invalid' ||
         c.status === 'perlu_login';
 
-      // Severed tentacle paths and break coordinates
       const stump1 = splitBezier(p0, p1, p2, p3, 0.38).left;
       const stump2 = splitBezier(p0, p1, p2, p3, 0.74).right;
       const stump1Path = toPath(stump1);
@@ -987,7 +1019,6 @@ export default function Dashboard({ onLogout }) {
       const breakTip2 = stump2[0];
       const midBreak = { x: (breakTip1.x + breakTip2.x) / 2, y: (breakTip1.y + breakTip2.y) / 2 };
 
-      // Midpoint on cubic Bézier at t = 0.52 for the checkmark badge on tentacle
       const mt = 0.48;
       const t = 0.52;
       const midPoint = {
@@ -997,11 +1028,15 @@ export default function Dashboard({ onLogout }) {
 
       return {
         index: i,
-        id: `node_cookie_${c.id}`,
+        id: isTikTokFlow ? `node_tiktok_${c.id}` : `node_cookie_${c.id}`,
         realId: c.id,
         name: displayName,
         fullName: rawName,
-        email: c.email || `${rawName.toLowerCase()}@gmail.com`,
+        email: isTikTokFlow ? (c.username || `@user_${c.id}`) : (c.email || `${rawName.toLowerCase()}@gmail.com`),
+        username: c.username,
+        nickname: c.nickname,
+        avatar_url: c.avatar_url,
+        isTikTok: isTikTokFlow,
         status: c.status || 'active',
         isNeedsLogin,
         x: nodeX,
@@ -1017,7 +1052,7 @@ export default function Dashboard({ onLogout }) {
         animDur: `${(2.0 + (i % 5) * 0.3).toFixed(1)}s`,
       };
     });
-  }, [cookies]);
+  }, [cookies, tiktokCookiesList, usageData, isTikTokFlow]);
 
   // Filtered Accounts
   const filteredAccounts = useMemo(() => {
@@ -3393,15 +3428,22 @@ export default function Dashboard({ onLogout }) {
                 {(() => {
                   const liveTask = usageData?.task_execution;
                   const isLiveRunning = Boolean(liveTask?.is_running);
+                  const activeTaskType = liveTask?.active_task_type; // 'tiktok_live' | 'google_maps' | 'idle'
+                  const isTikTokRunning = isLiveRunning && activeTaskType === 'tiktok_live';
+                  const isGmapRunning = isLiveRunning && activeTaskType === 'google_maps';
+                  const isTikTok = isTikTokFlow;
                   const isTaskActive = isLiveRunning || isSimulationActive;
                   const activeMode = isLiveRunning ? (liveTask?.mode || 'queue') : taskExecutionMode;
                   const isParallel = activeMode === 'parallel';
                   const eligibleCookies = tentacleNodes.filter((n) => !n.isNeedsLogin);
                   const brokenCookies = tentacleNodes.filter((n) => n.isNeedsLogin);
 
-                  const liveActiveEmail = liveTask?.active_emails?.[0];
-                  const liveTurnNode = liveActiveEmail
-                    ? eligibleCookies.find((c) => c.email === liveActiveEmail)
+                  const liveActiveTarget = isTikTok
+                    ? (liveTask?.tiktok_live?.active_account?.username || (eligibleCookies[0]?.email))
+                    : liveTask?.active_emails?.[0];
+
+                  const liveTurnNode = liveActiveTarget
+                    ? eligibleCookies.find((c) => c.email === liveActiveTarget || c.username === liveActiveTarget)
                     : null;
                   const activeTurnNode = liveTurnNode || (eligibleCookies.length > 0 ? eligibleCookies[rotationIndex % eligibleCookies.length] : null);
                   const currentActiveCookieId = isTaskActive && activeTurnNode ? activeTurnNode.id : null;
@@ -3429,26 +3471,38 @@ export default function Dashboard({ onLogout }) {
                     <>
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-3 border-b border-slate-800/80 text-xs text-slate-400 mb-2 gap-2.5">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
+                          <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${isTikTok ? 'bg-pink-500' : 'bg-cyan-500'}`} />
                           <span className="font-mono text-[11px] text-slate-200 font-semibold">
-                            Model & Worker Topology ({tentacleNodes.length} Akun Terdaftar)
+                            Topology: {tentacleNodes.length} Akun {isTikTok ? 'TikTok' : 'Google'}
                           </span>
 
                           {/* Live Task Badge vs Standby State */}
-                          {isLiveRunning ? (
-                            <span className="font-mono text-[10px] text-amber-300 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-700 font-bold flex items-center gap-1.5 animate-pulse">
+                          {isTikTokRunning ? (
+                            <span className="font-mono text-[10px] text-pink-300 bg-pink-950/80 px-2.5 py-0.5 rounded-full border border-pink-700 font-bold flex items-center gap-1.5 animate-pulse shadow-sm shadow-pink-900/40">
+                              <span className="w-1.5 h-1.5 rounded-full bg-pink-400" />
+                              TASK BERJALAN: TIKTOK LIVE ({liveTask.tiktok_live?.target_user || '@streamer'}) [TAP-TAP & CHAT]
+                            </span>
+                          ) : isGmapRunning ? (
+                            <span className="font-mono text-[10px] text-amber-300 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-700 font-bold flex items-center gap-1.5 animate-pulse shadow-sm shadow-amber-900/40">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                              TASK CLI BERJALAN: {liveTask.active_business_name || 'Maps Target'} [{isParallel ? 'PARALEL' : 'BERGILIR'}]
+                              TASK BERJALAN: GOOGLE MAP ({liveTask.active_business_name || 'Maps Target'}) [{isParallel ? 'PARALEL' : 'BERGILIR'}]
                             </span>
                           ) : isSimulationActive ? (
                             <span className="font-mono text-[10px] text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-700 font-bold flex items-center gap-1.5 animate-pulse">
                               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                              SIMULASI AKTIF [{isParallel ? 'MODE PARALEL' : 'MODE BERGILIR'}]
+                              SIMULASI {isTikTok ? 'TIKTOK LIVE' : 'GOOGLE MAP'} [{isParallel ? 'MODE PARALEL' : 'MODE BERGILIR'}]
                             </span>
                           ) : (
                             <span className="font-mono text-[10px] text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded-full border border-slate-700 flex items-center gap-1.5 font-medium">
                               <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                              STANDBY (Belum Mulai Jalankan Task)
+                              STANDBY (Pilih Flow / Jalankan Task)
+                            </span>
+                          )}
+
+                          {/* Auto-detected Indicator Badge */}
+                          {usageFlowChoice === 'auto' && isLiveRunning && (
+                            <span className="font-mono text-[10px] text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-700/80 flex items-center gap-1 font-semibold">
+                              <span>⚡ Auto: {isTikTok ? 'TikTok Live' : 'Google Map'}</span>
                             </span>
                           )}
 
@@ -3461,12 +3515,71 @@ export default function Dashboard({ onLogout }) {
                           )}
                         </div>
 
-                        {/* Mode Selector & Simulation Trigger */}
+                        {/* Task Flow Switcher & Mode Selector */}
                         <div className="flex items-center gap-2 flex-wrap">
+                          {/* Task Flow Switcher (Auto-Detect, Google Map, TikTok Live) */}
+                          <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
+                            <button
+                              onClick={() => {
+                                setUsageFlowChoice('auto');
+                                setSelectedNodeId('router');
+                              }}
+                              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                                usageFlowChoice === 'auto'
+                                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
+                                  : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                              title="Otomatis mendeteksi task yang sedang berjalan (TikTok Live atau Google Map)"
+                            >
+                              <span>🔄</span>
+                              <span>Auto-Detect</span>
+                              {isLiveRunning && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              )}
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setUsageFlowChoice('google_maps');
+                                setSelectedNodeId('router');
+                              }}
+                              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                                activeFlowType === 'google_maps' && usageFlowChoice !== 'auto'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
+                                  : activeFlowType === 'google_maps' && usageFlowChoice === 'auto'
+                                  ? 'text-amber-400/90 hover:text-amber-300'
+                                  : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                              title="Alur Google Maps: Google ➔ Map ➔ Review + Comment"
+                            >
+                              <span>🗺️</span>
+                              <span>Google Map</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setUsageFlowChoice('tiktok_live');
+                                setSelectedNodeId('router');
+                              }}
+                              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                                activeFlowType === 'tiktok_live' && usageFlowChoice !== 'auto'
+                                  ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40 shadow-xs'
+                                  : activeFlowType === 'tiktok_live' && usageFlowChoice === 'auto'
+                                  ? 'text-pink-400/90 hover:text-pink-300'
+                                  : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                              title="Alur TikTok Live: TikTok ➔ Web Live ➔ Tap-Tap & Chat"
+                            >
+                              <span>🎵</span>
+                              <span>TikTok Live</span>
+                            </button>
+                          </div>
+
+                          {/* Mode Selector (Bergilir vs Paralel) */}
                           <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
                             <button
                               onClick={() => setTaskExecutionMode('queue')}
-                              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
                                 !isParallel
                                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
                                   : 'text-slate-400 hover:text-slate-200'
@@ -3474,12 +3587,12 @@ export default function Dashboard({ onLogout }) {
                               title="Mode Bergilir: 1 Akun aktif bergantian saat task dijalankan"
                             >
                               <span>📋</span>
-                              <span>Mode Bergilir</span>
+                              <span>Bergilir</span>
                             </button>
 
                             <button
                               onClick={() => setTaskExecutionMode('parallel')}
-                              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
                                 isParallel
                                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                                   : 'text-slate-400 hover:text-slate-200'
@@ -3487,7 +3600,7 @@ export default function Dashboard({ onLogout }) {
                               title="Mode Paralel: Semua akun terhubung serentak saat task dijalankan"
                             >
                               <span>⚡</span>
-                              <span>Mode Paralel</span>
+                              <span>Paralel</span>
                             </button>
                           </div>
 
@@ -3816,19 +3929,31 @@ export default function Dashboard({ onLogout }) {
                                           : 'happy'
                                       }
                                       speechText={
-                                        selectedNodeId && selectedNodeId !== 'router'
-                                          ? completedNodeIds.has(selectedNodeId)
-                                            ? `${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'} ulasan selesai! ✓`
-                                            : `fokus ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'}!`
-                                          : !isTaskActive
-                                          ? (completedNodeIds.size > 0
-                                              ? `${completedNodeIds.size} ulasan selesai! ✓`
-                                              : brokenCookies.length > 0
-                                              ? `${brokenCookies.length} butuh login!`
-                                              : 'siap bertugas!')
-                                          : isParallel
-                                          ? 'paralel aktif! ⚡'
-                                          : `ulasan #${currentTurnNumber} 🚀`
+                                        isTikTok ? (
+                                          selectedNodeId && selectedNodeId !== 'router'
+                                            ? `tap-tap ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'live'}!`
+                                            : isTikTokRunning
+                                            ? `${(liveTask?.tiktok_live?.likes_sent || 0).toLocaleString()} likes ❤️`
+                                            : isTaskActive
+                                            ? `live ${liveTask?.tiktok_live?.target_user || '@target'} 🔥`
+                                            : brokenCookies.length > 0
+                                            ? `${brokenCookies.length} butuh login!`
+                                            : 'siap tap-tap live! 🎵'
+                                        ) : (
+                                          selectedNodeId && selectedNodeId !== 'router'
+                                            ? completedNodeIds.has(selectedNodeId)
+                                              ? `${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'} ulasan selesai! ✓`
+                                              : `fokus ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'}!`
+                                            : !isTaskActive
+                                            ? (completedNodeIds.size > 0
+                                                ? `${completedNodeIds.size} ulasan selesai! ✓`
+                                                : brokenCookies.length > 0
+                                                ? `${brokenCookies.length} butuh login!`
+                                                : 'siap bertugas!')
+                                            : isParallel
+                                            ? 'paralel aktif! ⚡'
+                                            : `ulasan #${currentTurnNumber} 🚀`
+                                        )
                                       }
                                     />
                                   </div>
@@ -3838,25 +3963,25 @@ export default function Dashboard({ onLogout }) {
                               {/* Eye Bot Core Badge Tag Underneath */}
                               <g transform="translate(480, 344)">
                                 <rect
-                                  x="-44"
+                                  x={isTikTok ? "-56" : "-44"}
                                   y="-9"
-                                  width="88"
+                                  width={isTikTok ? "112" : "88"}
                                   height="18"
                                   rx="5"
                                   fill="#070A11"
-                                  stroke={selectedNodeId === 'router' ? '#38BDF8' : '#334155'}
+                                  stroke={isTikTok ? '#FE2C55' : (selectedNodeId === 'router' ? '#38BDF8' : '#334155')}
                                   strokeWidth="1"
                                   opacity="0.95"
                                 />
                                 <circle
-                                  cx="-30"
+                                  cx={isTikTok ? "-42" : "-30"}
                                   cy="0"
                                   r="2.5"
                                   fill={isTaskActive ? '#10B981' : '#64748B'}
                                   className={isTaskActive ? 'animate-pulse' : ''}
                                 />
                                 <text
-                                  x="-20"
+                                  x={isTikTok ? "-32" : "-20"}
                                   y="3.2"
                                   fill="#E2E8F0"
                                   fontSize="9"
@@ -3864,7 +3989,7 @@ export default function Dashboard({ onLogout }) {
                                   fontFamily="monospace"
                                   letterSpacing="0.4"
                                 >
-                                  EYE BOT CORE
+                                  {isTikTok ? 'TIKTOK LIVE CORE' : 'EYE BOT MAPS CORE'}
                                 </text>
                               </g>
                             </g>
@@ -4081,7 +4206,7 @@ export default function Dashboard({ onLogout }) {
                                     )}
 
                                     {/* Sub-node 1: Google */}
-                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 1 - Autentikasi Akun Google`}>
+                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 1 - ${isTikTok ? "Autentikasi Akun TikTok (Cookie)" : "Autentikasi Akun Google"}`}>
                                       <rect
                                         x={node.x - 64}
                                         y={node.y + 21}
@@ -4131,7 +4256,7 @@ export default function Dashboard({ onLogout }) {
                                         fontWeight="bold"
                                         className="font-mono select-none"
                                       >
-                                        {isNeedsLogin ? '✕ Gagal' : isCompleted ? '✓ Google' : 'Google'}
+                                        {isNeedsLogin ? '✕ Gagal' : isCompleted ? (isTikTok ? '✓ TikTok' : '✓ Google') : (isTikTok ? 'TikTok' : 'Google')}
                                       </text>
                                     </g>
 
@@ -4182,7 +4307,7 @@ export default function Dashboard({ onLogout }) {
                                     </g>
 
                                     {/* Sub-node 2: Map */}
-                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 2 - Buka Google Maps Target Bisnis`}>
+                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 2 - ${isTikTok ? `Buka Live Stream ${liveTask?.tiktok_live?.target_user || "@target"} di Display :99` : "Buka Google Maps Target Bisnis"}`}>
                                       <rect
                                         x={node.x - 24}
                                         y={node.y + 21}
@@ -4232,7 +4357,7 @@ export default function Dashboard({ onLogout }) {
                                         fontWeight="bold"
                                         className="font-mono select-none"
                                       >
-                                        {isNeedsLogin ? '🔒 Map' : isCompleted ? '✓ Map' : 'Map'}
+                                        {isNeedsLogin ? (isTikTok ? '🔒 Live' : '🔒 Map') : isCompleted ? (isTikTok ? '✓ Live' : '✓ Map') : (isTikTok ? 'Live' : 'Map')}
                                       </text>
                                     </g>
 
@@ -4283,7 +4408,7 @@ export default function Dashboard({ onLogout }) {
                                     </g>
 
                                     {/* Sub-node 3: Review + Comment */}
-                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 3 - Pemberian Rating 5-Star & Komentar AI Gemini`}>
+                                    <g className="cursor-pointer" title={`${node.fullName}: Tahap 3 - ${isTikTok ? "Auto Tap-Tap Likes & Komentar Chat Live" : "Pemberian Rating 5-Star & Komentar AI Gemini"}`}>
                                       <rect
                                         x={node.x + 10}
                                         y={node.y + 21}
@@ -4333,7 +4458,7 @@ export default function Dashboard({ onLogout }) {
                                         fontWeight="bold"
                                         className="font-mono select-none"
                                       >
-                                        {isNeedsLogin ? '🔒 Review' : isCompleted ? '✓ Review+Komen' : 'Review+Comment'}
+                                        {isNeedsLogin ? (isTikTok ? '🔒 Tap' : '🔒 Review') : isCompleted ? (isTikTok ? '✓ Tap+Chat' : '✓ Review+Komen') : (isTikTok ? 'Tap+Chat' : 'Review+Comment')}
                                       </text>
                                     </g>
                                   </g>
@@ -4372,7 +4497,7 @@ export default function Dashboard({ onLogout }) {
                         </div>
                       </div>
 
-                      {/* Selected Node Telemetry HUD (Akun Cookie Telemetry) */}
+                      {/* Selected Node Telemetry HUD (Akun Cookie & Task Telemetry) */}
                       {(() => {
                         const selNode = tentacleNodes.find((n) => n.id === selectedNodeId);
                         const isRouter = selectedNodeId === 'router' || !selNode;
@@ -4383,13 +4508,20 @@ export default function Dashboard({ onLogout }) {
                         return (
                           <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                              {/* Telemetry Card 1: Active Node */}
                               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
                                 <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
                                 <span
                                   className="font-bold text-slate-100 font-mono text-xs truncate block"
                                   title={
                                     isRouter
-                                      ? !isTaskActive
+                                      ? isTikTok
+                                        ? !isTaskActive
+                                          ? 'Eye Bot TikTok Hub (Standby)'
+                                          : isTikTokRunning
+                                          ? `Eye Bot TikTok ➔ ${liveTask?.tiktok_live?.target_user || '@target'}`
+                                          : 'Eye Bot TikTok Hub (Aktif)'
+                                        : !isTaskActive
                                         ? 'Eye Bot Core (Standby Hub)'
                                         : isParallel
                                         ? 'Eye Bot Core (Paralel Hub)'
@@ -4398,7 +4530,15 @@ export default function Dashboard({ onLogout }) {
                                   }
                                 >
                                   {isRouter ? (
-                                    !isTaskActive ? (
+                                    isTikTok ? (
+                                      !isTaskActive ? (
+                                        '🎵 Eye Bot TikTok (Standby)'
+                                      ) : isTikTokRunning ? (
+                                        `🔥 Eye Bot TikTok ➔ ${liveTask?.tiktok_live?.target_user || '@target'}`
+                                      ) : (
+                                        '🎵 Eye Bot TikTok (Hub)'
+                                      )
+                                    ) : !isTaskActive ? (
                                       '🤖 Eye Bot Core (Standby)'
                                     ) : isParallel ? (
                                       '⚡ Eye Bot Core (Paralel Hub)'
@@ -4412,13 +4552,16 @@ export default function Dashboard({ onLogout }) {
                                   ) : isCompletedNode ? (
                                     `✅ ${selNode.fullName} (SELESAI)`
                                   ) : (
-                                    `🍪 ${selNode.fullName}`
+                                    `${isTikTok ? '🎵' : '🍪'} ${selNode.fullName}`
                                   )}
                                 </span>
                               </div>
 
+                              {/* Telemetry Card 2: Target / Akun Identitas */}
                               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                                  {isTikTok ? 'Target Streamer & Akun' : 'Email Akun Google'}
+                                </span>
                                 <span
                                   className={`font-bold font-mono text-xs truncate block ${
                                     isNeedsLogin
@@ -4427,28 +4570,66 @@ export default function Dashboard({ onLogout }) {
                                       ? 'text-emerald-400'
                                       : isCompletedNode
                                       ? 'text-emerald-400'
+                                      : isTikTok
+                                      ? 'text-pink-400'
                                       : 'text-cyan-400'
                                   }`}
-                                  title={isRouter ? (!isTaskActive ? 'Eye Bot Dispatcher (Standby)' : isParallel ? 'Semua Akun Terhubung' : activeTurnNode?.email) : selNode.email}
+                                  title={
+                                    isRouter
+                                      ? isTikTok
+                                        ? `${liveTask?.tiktok_live?.target_user || '@evelyn.vln'} (Live Stream)`
+                                        : !isTaskActive
+                                        ? 'Eye Bot Dispatcher (Standby)'
+                                        : isParallel
+                                        ? 'Semua Akun Terhubung'
+                                        : activeTurnNode?.email
+                                      : isTikTok
+                                      ? `${selNode.fullName} (${selNode.username || selNode.email})`
+                                      : selNode.email
+                                  }
                                 >
                                   {isRouter ? (
-                                    !isTaskActive ? (
+                                    isTikTok ? (
+                                      `${liveTask?.tiktok_live?.target_user || '@evelyn.vln'} (${eligibleCookies.length} Akun TikTok)`
+                                    ) : !isTaskActive ? (
                                       `Eye Bot Dispatcher (${eligibleCookies.length} Akun Standby)`
                                     ) : isParallel ? (
                                       `Eye Bot Dispatcher (${eligibleCookies.length} Akun Paralel)`
                                     ) : (
                                       `${activeTurnNode?.email || 'Rotasi Antrean'}`
                                     )
+                                  ) : isTikTok ? (
+                                    `${selNode.username || selNode.email}`
                                   ) : (
                                     selNode.email
                                   )}
                                 </span>
                               </div>
 
+                              {/* Telemetry Card 3: Status Sesi Cookie */}
                               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                                  {isTikTok ? 'Status Sesi TikTok' : 'Status Sesi Cookie'}
+                                </span>
                                 {isRouter ? (
-                                  !isTaskActive ? (
+                                  isTikTok ? (
+                                    !isTaskActive ? (
+                                      <span className="font-bold text-slate-400 font-mono text-xs flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                        SISTEM STANDBY ({eligibleCookies.length} Sesi)
+                                      </span>
+                                    ) : isTikTokRunning ? (
+                                      <span className="font-bold text-pink-400 font-mono text-xs flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-pink-400 animate-pulse" />
+                                        SESI LIVE AKTIF (Display :99)
+                                      </span>
+                                    ) : (
+                                      <span className="font-bold text-cyan-400 font-mono text-xs flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                        SIMULASI TIKTOK AKTIF
+                                      </span>
+                                    )
+                                  ) : !isTaskActive ? (
                                     <span className="font-bold text-slate-400 font-mono text-xs flex items-center gap-1.5">
                                       <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
                                       SISTEM STANDBY (Belum Mulai Task)
@@ -4456,12 +4637,12 @@ export default function Dashboard({ onLogout }) {
                                   ) : isParallel ? (
                                     <span className="font-bold text-cyan-400 font-mono text-xs flex items-center gap-1.5">
                                       <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                                      SEMUA TENTAKEL TERHUBUNG (${eligibleCookies.length} Sesi)
+                                      SEMUA TENTAKEL TERHUBUNG ({eligibleCookies.length} Sesi)
                                     </span>
                                   ) : (
                                     <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                      MODE BERGILIR (Giliran #${currentTurnNumber} Aktif)
+                                      MODE BERGILIR (Giliran #{currentTurnNumber} Aktif)
                                     </span>
                                   )
                                 ) : isNeedsLogin ? (
@@ -4472,28 +4653,48 @@ export default function Dashboard({ onLogout }) {
                                 ) : isCurrentlyUsed ? (
                                   <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    SEDANG DIGUNAKAN BOT
+                                    {isTikTok ? 'SEDANG LIVE (AKTIF)' : 'SEDANG DIGUNAKAN BOT'}
                                   </span>
                                 ) : isCompletedNode ? (
                                   <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                    ✓ SELESAI (ULASAN TERPOSTING)
+                                    {isTikTok ? '✓ SESI TERVERIFIKASI' : '✓ SELESAI (ULASAN TERPOSTING)'}
                                   </span>
                                 ) : (
                                   <span className="font-bold text-slate-300 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                    {isParallel ? 'PARALEL TERHUBUNG' : 'STANDBY (SIAP DIGUNAKAN)'}
+                                    {isTikTok ? 'SESI AKTIF (VALID)' : isParallel ? 'PARALEL TERHUBUNG' : 'STANDBY (SIAP DIGUNAKAN)'}
                                   </span>
                                 )}
                               </div>
 
+                              {/* Telemetry Card 4: Kesiapan / Aktivitas */}
                               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                                  {isTikTok ? 'Aktivitas TikTok Live' : 'Kesiapan Bot Maps'}
+                                </span>
                                 {isNeedsLogin ? (
                                   <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                     OFFLINE (TENTAKEL PUTUS)
                                   </span>
+                                ) : isTikTok ? (
+                                  isTikTokRunning ? (
+                                    <span className="font-bold text-pink-400 font-mono text-xs flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-pink-400 animate-pulse" />
+                                      TAP-TAP AKTIF ({(liveTask?.tiktok_live?.likes_sent || 0).toLocaleString()} LIKES)
+                                    </span>
+                                  ) : isTaskActive ? (
+                                    <span className="font-bold text-cyan-400 font-mono text-xs flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                                      SIMULASI STREAM AKTIF
+                                    </span>
+                                  ) : (
+                                    <span className="font-bold text-slate-400 font-mono text-xs flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                      STANDBY (Siap Tap & Chat)
+                                    </span>
+                                  )
                                 ) : isCurrentlyUsed ? (
                                   <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -4518,16 +4719,22 @@ export default function Dashboard({ onLogout }) {
                               </div>
                             </div>
 
-                            {/* Alur Eksekusi Bot: Google > Map > Review + Comment */}
+                            {/* Alur Eksekusi Bot: Google Maps vs TikTok Live 3-Stage Pipeline */}
                             <div className="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3.5 flex flex-col gap-2.5">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pb-2 border-b border-slate-800/80">
                                 <div className="flex items-center gap-2">
-                                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                                  <span className={`w-2 h-2 rounded-full animate-pulse ${isTikTok ? 'bg-pink-400' : 'bg-cyan-400'}`} />
                                   <span className="text-[11px] font-bold text-slate-200 tracking-wide font-mono uppercase">
-                                    Alur Eksekusi Bot: Google ➔ Map ➔ Review + Comment
+                                    {isTikTok
+                                      ? 'Alur Eksekusi Bot: TikTok (Auth) ➔ Web Live Stream ➔ Auto Tap-Tap & Chat'
+                                      : 'Alur Eksekusi Bot: Google ➔ Map ➔ Review + Comment'}
                                   </span>
                                   {!isRouter && (
-                                    <span className="text-[10px] text-cyan-300 font-mono font-semibold bg-cyan-950/70 border border-cyan-800/80 px-2 py-0.5 rounded">
+                                    <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border ${
+                                      isTikTok
+                                        ? 'text-pink-300 bg-pink-950/70 border-pink-800/80'
+                                        : 'text-cyan-300 bg-cyan-950/70 border-cyan-800/80'
+                                    }`}>
                                       {selNode?.name}
                                     </span>
                                   )}
@@ -4535,14 +4742,20 @@ export default function Dashboard({ onLogout }) {
                                 <span className="text-[10px] font-mono font-bold text-slate-400">
                                   {isRouter ? (
                                     isTaskActive ? (
-                                      isParallel ? '⚡ Semua Akun Aktif Paralel' : `⚡ Giliran #${currentTurnNumber} Aktif`
+                                      isTikTok ? (
+                                        isTikTokRunning
+                                          ? `⚡ Stream ${liveTask?.tiktok_live?.target_user || '@target'} Aktif`
+                                          : '⚡ Simulasi Stream Aktif'
+                                      ) : (
+                                        isParallel ? '⚡ Semua Akun Aktif Paralel' : `⚡ Giliran #${currentTurnNumber} Aktif`
+                                      )
                                     ) : (
-                                      `${tentacleNodes.length} Akun Terdaftar (Standby)`
+                                      `${tentacleNodes.length} Akun ${isTikTok ? 'TikTok' : 'Google'} (Standby)`
                                     )
                                   ) : isCompletedNode ? (
                                     '✓ Semua Tahap Selesai (100%)'
                                   ) : isNeedsLogin ? (
-                                    '✕ Terputus di Tahap 1 Google (0%)'
+                                    `✕ Terputus di Tahap 1 ${isTikTok ? 'TikTok' : 'Google'} (0%)`
                                   ) : isCurrentlyUsed ? (
                                     '⚡ Sedang Berjalan (Aktif)'
                                   ) : (
@@ -4552,7 +4765,7 @@ export default function Dashboard({ onLogout }) {
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
-                                {/* Tahap 1: Google Auth */}
+                                {/* Tahap 1: Auth */}
                                 <div
                                   className={`rounded-lg p-2.5 border transition-all ${
                                     !isRouter && isNeedsLogin
@@ -4560,13 +4773,15 @@ export default function Dashboard({ onLogout }) {
                                       : !isRouter && isCompletedNode
                                       ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-300'
                                       : isCurrentlyUsed || (isRouter && isTaskActive)
-                                      ? 'bg-sky-950/40 border-sky-600/80 text-sky-200'
+                                      ? isTikTok
+                                        ? 'bg-pink-950/40 border-pink-600/80 text-pink-200'
+                                        : 'bg-sky-950/40 border-sky-600/80 text-sky-200'
                                       : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
                                   }`}
                                 >
                                   <div className="flex items-center justify-between mb-1">
                                     <span className="font-bold flex items-center gap-1.5 text-[11px]">
-                                      <span>🌐</span> 1. Google (Auth)
+                                      <span>{isTikTok ? '🎵' : '🌐'}</span> 1. {isTikTok ? 'TikTok (Auth)' : 'Google (Auth)'}
                                     </span>
                                     <span
                                       className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
@@ -4575,7 +4790,9 @@ export default function Dashboard({ onLogout }) {
                                           : !isRouter && isCompletedNode
                                           ? 'bg-emerald-900/80 text-emerald-200'
                                           : isCurrentlyUsed || (isRouter && isTaskActive)
-                                          ? 'bg-sky-900/80 text-sky-200 animate-pulse'
+                                          ? isTikTok
+                                            ? 'bg-pink-900/80 text-pink-200 animate-pulse'
+                                            : 'bg-sky-900/80 text-sky-200 animate-pulse'
                                           : 'bg-slate-700/60 text-slate-400'
                                       }`}
                                     >
@@ -4589,17 +4806,27 @@ export default function Dashboard({ onLogout }) {
                                     </span>
                                   </div>
                                   <p className="text-[10px] opacity-80 leading-relaxed">
-                                    {!isRouter && isNeedsLogin
-                                      ? 'Sesi cookie login kadaluarsa / invalid, perlu login ulang.'
-                                      : !isRouter && isCompletedNode
-                                      ? 'Profil Google aktif & terverifikasi sukses.'
-                                      : isRouter
-                                      ? `Memverifikasi sesi cookie dari ${tentacleNodes.length} akun Google.`
-                                      : 'Sesi akun Google & profil browser review.'}
+                                    {isTikTok ? (
+                                      !isRouter && isNeedsLogin
+                                        ? 'Sesi cookie login TikTok kadaluarsa (sid_guard / sessionid), perlu login ulang.'
+                                        : !isRouter && isCompletedNode
+                                        ? 'Profil & cookie TikTok aktif terverifikasi sukses.'
+                                        : isRouter
+                                        ? `Memverifikasi sesi cookie dari ${tentacleNodes.length} akun TikTok.`
+                                        : 'Sesi akun TikTok terautentikasi untuk live streaming.'
+                                    ) : (
+                                      !isRouter && isNeedsLogin
+                                        ? 'Sesi cookie login kadaluarsa / invalid, perlu login ulang.'
+                                        : !isRouter && isCompletedNode
+                                        ? 'Profil Google aktif & terverifikasi sukses.'
+                                        : isRouter
+                                        ? `Memverifikasi sesi cookie dari ${tentacleNodes.length} akun Google.`
+                                        : 'Sesi akun Google & profil browser review.'
+                                    )}
                                   </p>
                                 </div>
 
-                                {/* Tahap 2: Google Maps */}
+                                {/* Tahap 2: Live Stream vs Google Maps */}
                                 <div
                                   className={`rounded-lg p-2.5 border transition-all ${
                                     !isRouter && isNeedsLogin
@@ -4613,7 +4840,7 @@ export default function Dashboard({ onLogout }) {
                                 >
                                   <div className="flex items-center justify-between mb-1">
                                     <span className="font-bold flex items-center gap-1.5 text-[11px]">
-                                      <span>📍</span> 2. Google Maps
+                                      <span>{isTikTok ? '📺' : '📍'}</span> 2. {isTikTok ? 'Live Stream (Display :99)' : 'Google Maps'}
                                     </span>
                                     <span
                                       className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
@@ -4631,22 +4858,32 @@ export default function Dashboard({ onLogout }) {
                                         : !isRouter && isCompletedNode
                                         ? '✓ LOADED'
                                         : isCurrentlyUsed || (isRouter && isTaskActive)
-                                        ? '⚡ NAVIGASI'
+                                        ? isTikTok ? '⚡ STREAM' : '⚡ NAVIGASI'
                                         : 'STANDBY'}
                                     </span>
                                   </div>
                                   <p className="text-[10px] opacity-80 leading-relaxed">
-                                    {!isRouter && isNeedsLogin
-                                      ? 'Terkunci karena sesi Google belum terautentikasi.'
-                                      : !isRouter && isCompletedNode
-                                      ? 'Listing target bisnis Google Maps berhasil dibuka.'
-                                      : isRouter
-                                      ? 'Membuka URL tempat bisnis target di Google Maps.'
-                                      : 'Navigasi otomatis ke URL tempat Google Maps target.'}
+                                    {isTikTok ? (
+                                      !isRouter && isNeedsLogin
+                                        ? 'Terkunci karena sesi TikTok belum terautentikasi.'
+                                        : !isRouter && isCompletedNode
+                                        ? `Halaman live ${liveTask?.tiktok_live?.target_user || '@streamer'} berhasil dibuka.`
+                                        : isRouter
+                                        ? `Membuka siaran live streaming di Chromium Virtual Display :99.`
+                                        : `Navigasi otomatis ke ${liveTask?.tiktok_live?.target_user || '@target'}/live.`
+                                    ) : (
+                                      !isRouter && isNeedsLogin
+                                        ? 'Terkunci karena sesi Google belum terautentikasi.'
+                                        : !isRouter && isCompletedNode
+                                        ? 'Listing target bisnis Google Maps berhasil dibuka.'
+                                        : isRouter
+                                        ? 'Membuka URL tempat bisnis target di Google Maps.'
+                                        : 'Navigasi otomatis ke URL tempat Google Maps target.'
+                                    )}
                                   </p>
                                 </div>
 
-                                {/* Tahap 3: Review + Comment */}
+                                {/* Tahap 3: Tap-Tap & Chat vs Review + Comment */}
                                 <div
                                   className={`rounded-lg p-2.5 border transition-all ${
                                     !isRouter && isNeedsLogin
@@ -4654,13 +4891,15 @@ export default function Dashboard({ onLogout }) {
                                       : !isRouter && isCompletedNode
                                       ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-300'
                                       : isCurrentlyUsed || (isRouter && isTaskActive)
-                                      ? 'bg-amber-950/40 border-amber-600/80 text-amber-200'
+                                      ? isTikTok
+                                        ? 'bg-pink-950/40 border-pink-600/80 text-pink-200'
+                                        : 'bg-amber-950/40 border-amber-600/80 text-amber-200'
                                       : 'bg-slate-800/40 border-slate-700/60 text-slate-300'
                                   }`}
                                 >
                                   <div className="flex items-center justify-between mb-1">
                                     <span className="font-bold flex items-center gap-1.5 text-[11px]">
-                                      <span>⭐</span> 3. Review + Comment
+                                      <span>{isTikTok ? '❤️' : '⭐'}</span> 3. {isTikTok ? 'Tap-Tap & Auto Chat' : 'Review + Comment'}
                                     </span>
                                     <span
                                       className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
@@ -4669,51 +4908,65 @@ export default function Dashboard({ onLogout }) {
                                           : !isRouter && isCompletedNode
                                           ? 'bg-emerald-900/80 text-emerald-200'
                                           : isCurrentlyUsed || (isRouter && isTaskActive)
-                                          ? 'bg-amber-900/80 text-amber-200 animate-pulse'
+                                          ? isTikTok
+                                            ? 'bg-pink-900/80 text-pink-200 animate-pulse'
+                                            : 'bg-amber-900/80 text-amber-200 animate-pulse'
                                           : 'bg-slate-700/60 text-slate-400'
                                       }`}
                                     >
                                       {!isRouter && isNeedsLogin
                                         ? '🔒 LOCKED'
                                         : !isRouter && isCompletedNode
-                                        ? '✓ 5-STAR POSTED'
+                                        ? isTikTok ? '✓ SELESAI' : '✓ 5-STAR POSTED'
                                         : isCurrentlyUsed || (isRouter && isTaskActive)
-                                        ? '⚡ SUBMIT'
+                                        ? isTikTok ? '⚡ TAP-TAP' : '⚡ SUBMIT'
                                         : 'STANDBY'}
                                     </span>
                                   </div>
                                   <p className="text-[10px] opacity-80 leading-relaxed">
-                                    {!isRouter && isNeedsLogin
-                                      ? 'Terkunci karena tidak dapat memposting tanpa sesi Google.'
-                                      : !isRouter && isCompletedNode
-                                      ? 'Ulasan bintang 5 & komentar AI sukses terposting publik.'
-                                      : isRouter
-                                      ? 'Gemini AI menghasilkan ulasan bintang 5 & komentar unik.'
-                                      : 'Injeksi ulasan bintang 5 + komentar AI Gemini natural.'}
+                                    {isTikTok ? (
+                                      !isRouter && isNeedsLogin
+                                        ? 'Terkunci karena tidak dapat berinteraksi tanpa sesi akun TikTok.'
+                                        : !isRouter && isCompletedNode
+                                        ? 'Tap-tap likes & pengiriman pesan live chat sukses.'
+                                        : isRouter
+                                        ? `Auto tap-tap likes berkecepatan tinggi & kirim chat live motivasi.`
+                                        : `Eksekusi klik tap-tap likes & kirim komentar chat motivasi.`
+                                    ) : (
+                                      !isRouter && isNeedsLogin
+                                        ? 'Terkunci karena tidak dapat memposting tanpa sesi Google.'
+                                        : !isRouter && isCompletedNode
+                                        ? 'Ulasan bintang 5 & komentar AI sukses terposting publik.'
+                                        : isRouter
+                                        ? 'Gemini AI menghasilkan ulasan bintang 5 & komentar unik.'
+                                        : 'Injeksi ulasan bintang 5 + komentar AI Gemini natural.'
+                                    )}
                                   </p>
                                 </div>
                               </div>
                             </div>
 
-                            {/* Disconnected Cookie Alert Callout with 1-Click Action to Cookies Tab */}
+                            {/* Disconnected Cookie Alert Callout with 1-Click Action */}
                             {isNeedsLogin && (
                               <div className="bg-rose-950/40 border border-rose-800/70 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
                                 <div className="flex items-center gap-2.5 text-rose-200">
                                   <span className="text-base">⚠️</span>
                                   <div>
                                     <p className="font-semibold text-rose-300">
-                                      Sesi Akun Google Terputus (Perlu Login Ulang)
+                                      {isTikTok ? 'Sesi Akun TikTok Terputus (Perlu Login Ulang)' : 'Sesi Akun Google Terputus (Perlu Login Ulang)'}
                                     </p>
                                     <p className="text-[11px] text-rose-300/80">
-                                      Tentakel routing ke akun ini otomatis diputus demi mencegah bot Google Maps gagal saat posting ulasan.
+                                      {isTikTok
+                                        ? 'Tentakel routing ke akun ini otomatis diputus demi mencegah bot TikTok Live gagal tap-tap atau chat.'
+                                        : 'Tentakel routing ke akun ini otomatis diputus demi mencegah bot Google Maps gagal saat posting ulasan.'}
                                     </p>
                                   </div>
                                 </div>
                                 <button
-                                  onClick={() => setActiveTab('cookies')}
+                                  onClick={() => setActiveTab(isTikTok ? 'tiktok_cookies' : 'cookies')}
                                   className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-lg text-xs whitespace-nowrap cursor-pointer transition-colors shadow-sm self-start sm:self-auto"
                                 >
-                                  Perbarui Cookie di Akun Google →
+                                  {isTikTok ? 'Perbarui Cookie di Akun TikTok →' : 'Perbarui Cookie di Akun Google →'}
                                 </button>
                               </div>
                             )}
@@ -4731,9 +4984,11 @@ export default function Dashboard({ onLogout }) {
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
                     <div>
                       <h3 className="font-bold text-xs sm:text-sm text-slate-100 tracking-wider uppercase">
-                        RECENT REQUESTS
+                        {isTikTokFlow ? 'RECENT REQUESTS & LIVE LOGS' : 'RECENT REQUESTS'}
                       </h3>
-                      <p className="text-[10px] text-slate-400">Log ulasan bot per akun cookie</p>
+                      <p className="text-[10px] text-slate-400">
+                        {isTikTokFlow ? 'Log interaksi TikTok Live & bot ulasan' : 'Log ulasan bot per akun cookie'}
+                      </p>
                     </div>
                     <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800">
                       {usageData?.recent_requests?.length || 5} LOGS

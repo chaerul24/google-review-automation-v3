@@ -7,6 +7,7 @@ Runs purely on Linux host with native Chromium (no Windows VM required).
 
 import argparse
 import json
+import requests
 import logging
 import os
 import random
@@ -512,15 +513,25 @@ def prompt_login_server(default_user: str = "admin") -> bool:
     sys.exit(1)
 
 
-def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = ""):
+def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = "", interactive: bool = True):
     console.clear()
     console.print(render_banner())
     console.print(Panel(
         Align.center("[bold cyan]🎵 TIKTOK LIVE (MULAI) — OTOMASI LIVE STREAMING[/bold cyan]\n"
-                     "[dim]Auto Tap-tap Likes, Auto Chat & Gift Stream Monitor[/dim]"),
+                     "[dim]Auto Tap-tap Likes, Auto Chat & Gift Monitor pada Virtual Display :99[/dim]"),
         box=box.ROUNDED,
         border_style="magenta",
     ))
+
+    # Read active TikTok cookie from DB
+    active_tt = db.get_active_tiktok_cookie()
+    tt_username = active_tt.get("username", "@belum_ada") if active_tt else "Belum Ada"
+    tt_status = active_tt.get("status", "unknown") if active_tt else "none"
+
+    if active_tt:
+        console.print(f" [bold white]Akun TikTok (Cookie):[/bold white] [bold cyan]{tt_username}[/bold cyan] ({active_tt.get('nickname') or 'User'}) [bold green][Sesi Aktif ✓][/bold green]")
+    else:
+        console.print(" [bold yellow]Peringatan: Belum ada akun TikTok diimpor. Bot akan berjalan dalam Mode Tamu (Guest).[/bold yellow]")
 
     # Read bot_modules_config.json if available
     cfg_file = Path(__file__).parent / "bot_modules_config.json"
@@ -536,36 +547,64 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
     default_speed = tap_speed or tiktok_cfg.get("tap_speed") or 50
     default_chat = chat_message or tiktok_cfg.get("chat_message") or "Semangat live kak! Support selalu 🔥"
 
-    console.print(f"[bold green]Konfigurasi Siaran TikTok LIVE:[/bold green]")
-    t_user = Prompt.ask("  [bold white]Target Username TikTok LIVE[/bold white]", default=default_user).strip()
-    if not t_user.startswith("@"):
-        t_user = f"@{t_user}"
+    if interactive:
+        console.print(f"\n[bold green]Konfigurasi Siaran TikTok LIVE:[/bold green]")
+        t_user = Prompt.ask("  [bold white]Target Username TikTok LIVE[/bold white]", default=default_user).strip()
+        if not t_user.startswith("@"):
+            t_user = f"@{t_user}"
 
-    t_speed = IntPrompt.ask("  [bold white]Kecepatan Tap-tap Like (tap/detik, 5-100)[/bold white]", default=default_speed)
-    t_speed = max(5, min(100, t_speed))
+        t_speed = IntPrompt.ask("  [bold white]Kecepatan Tap-tap Like (tap/detik, 5-100)[/bold white]", default=default_speed)
+        t_speed = max(5, min(100, t_speed))
 
-    do_chat = Confirm.ask("  [bold white]Kirim Pesan Live Chat Otomatis?[/bold white]", default=tiktok_cfg.get("auto_chat", True))
-    t_chat = default_chat
-    if do_chat:
-        t_chat = Prompt.ask("  [bold white]Pesan Live Chat[/bold white]", default=default_chat).strip()
+        do_chat = Confirm.ask("  [bold white]Kirim Pesan Live Chat Otomatis?[/bold white]", default=tiktok_cfg.get("auto_chat", True))
+        t_chat = default_chat
+        if do_chat:
+            t_chat = Prompt.ask("  [bold white]Pesan Live Chat[/bold white]", default=default_chat).strip()
 
-    do_gift = Confirm.ask("  [bold white]Deteksi & Log Gift Penonton Otomatis?[/bold white]", default=tiktok_cfg.get("gift_detection", True))
+        do_gift = Confirm.ask("  [bold white]Deteksi & Log Gift Penonton Otomatis?[/bold white]", default=tiktok_cfg.get("gift_detection", True))
+    else:
+        t_user = default_user if default_user.startswith("@") else f"@{default_user}"
+        t_speed = max(5, min(100, default_speed))
+        do_chat = tiktok_cfg.get("auto_chat", True)
+        t_chat = default_chat
+        do_gift = tiktok_cfg.get("gift_detection", True)
 
-    console.print(f"\n[bold cyan]🚀 Memulai bot TikTok Live untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
+    console.print(f"\n[bold cyan]🚀 Memulai bot Chromium TikTok Live pada Virtual Display :99 untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
+    console.print("[dim]Menyuntikkan cookie sesi akun TikTok & membuka live stream...[/dim]")
     console.print("[dim]Tekan Ctrl+C untuk menghentikan bot dan kembali ke menu.[/dim]\n")
+
+    server_url = "http://127.0.0.1:5000"
+    is_server_active = False
+    try:
+        res = requests.post(
+            f"{server_url}/api/tiktok-live/start",
+            json={
+                "target_user": t_user,
+                "tap_speed": t_speed,
+                "auto_chat": do_chat,
+                "chat_message": t_chat,
+                "gift_detection": do_gift
+            },
+            timeout=8
+        )
+        if res.status_code == 200:
+            is_server_active = True
+        else:
+            console.print(f"[bold red]Gagal memulai di server: {res.text}[/bold red]")
+            return
+    except Exception as e:
+        console.print(f"[bold yellow]Peringatan: Server backend {server_url} tidak merespons ({e}).[/bold yellow]")
+        return
 
     start_time = time.time()
     likes_sent = 0
     chats_sent = 0
     gifts_count = 0
-    recent_events = []
-    sample_gifts = [("Rose", "🌹"), ("TikTok", "🎵"), ("Finger Heart", "🫰"), ("Coffee", "☕"), ("Fireworks", "🎆")]
-    last_chat_time = time.time() - 25.0
-    last_gift_time = time.time()
     time_str = "00:00"
+    is_logged_in_state = False
 
     try:
-        with Live(console=console, refresh_per_second=4) as live:
+        with Live(console=console, refresh_per_second=2) as live:
             while True:
                 time.sleep(1.0)
                 now = time.time()
@@ -574,54 +613,63 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                 secs = elapsed % 60
                 time_str = f"{mins:02d}:{secs:02d}"
 
-                likes_sent += t_speed
-
-                if do_chat and (now - last_chat_time >= 30.0):
-                    last_chat_time = now
-                    chats_sent += 1
-                    recent_events.append(f"[{datetime.now().strftime('%H:%M:%S')}] [bold green]💬 Live Chat #{chats_sent}:[/bold green] \"{t_chat}\"")
-
-                if do_gift and (now - last_gift_time >= random.randint(15, 25)):
-                    last_gift_time = now
-                    g_name, g_ico = random.choice(sample_gifts)
-                    g_amt = random.choice([1, 2, 5, 10])
-                    u_id = f"user_{random.randint(1000, 9999)}"
-                    gifts_count += g_amt
-                    recent_events.append(f"[{datetime.now().strftime('%H:%M:%S')}] [bold magenta]🎁 Gift:[/bold magenta] {g_ico} {g_amt}x {g_name} dari @{u_id}")
-
-                if len(recent_events) > 8:
-                    recent_events.pop(0)
+                recent_logs = []
+                if is_server_active:
+                    try:
+                        st_res = requests.get(f"{server_url}/api/tiktok-live/status", timeout=3)
+                        if st_res.status_code == 200:
+                            st_data = st_res.json().get("state", {})
+                            if not st_data.get("is_running") and elapsed > 5:
+                                break
+                            likes_sent = st_data.get("likes_sent", likes_sent)
+                            chats_sent = st_data.get("chats_sent", chats_sent)
+                            gifts_count = st_data.get("gifts_detected", gifts_count)
+                            is_logged_in_state = st_data.get("is_logged_in", False)
+                            raw_logs = st_data.get("logs", [])
+                            for l in raw_logs[-8:]:
+                                recent_logs.append(f"[{l.get('created_at', '')[-8:]}] {l.get('message', '')}")
+                    except Exception:
+                        pass
 
                 status_table = Table(box=box.ROUNDED, expand=True, border_style="cyan")
                 status_table.add_column("STREAMER TARGET", style="bold yellow")
                 status_table.add_column("STATUS LIVE", style="bold green")
+                status_table.add_column("STATUS AKUN", style="bold cyan")
                 status_table.add_column("DURASI", style="bold white")
-                status_table.add_column("LIKES TERKIRIM", style="bold red")
-                status_table.add_column("CHAT TERKIRIM", style="bold cyan")
-                status_table.add_column("GIFT MASUK", style="bold magenta")
+                status_table.add_column("LIKES", style="bold red")
+                status_table.add_column("CHAT", style="bold cyan")
+                status_table.add_column("GIFT", style="bold magenta")
                 
                 status_table.add_row(
                     t_user,
-                    "🔴 LIVE STREAMING",
+                    "🔴 LIVE (Display :99)",
+                    f"✓ Login {tt_username}" if is_logged_in_state else "Mode Tamu",
                     time_str,
                     f"❤️ {likes_sent:,} tap",
                     f"💬 {chats_sent} pesan",
                     f"🎁 {gifts_count} gift",
                 )
 
-                events_text = Text("\n".join(recent_events) if recent_events else "Menghubungkan stream data TikTok Live...")
-                events_panel = Panel(events_text, title="[bold white]Aktivitas & Log Stream Terkini[/bold white]", box=box.ROUNDED, border_style="dim")
+                events_text = Text("\n".join(recent_logs) if recent_logs else "Menghubungkan browser Chromium ke siaran TikTok Live...")
+                events_panel = Panel(events_text, title="[bold white]Real-Time Browser Engine Logs (Virtual Display :99)[/bold white]", box=box.ROUNDED, border_style="dim")
 
                 live.update(Group(status_table, events_panel))
     except KeyboardInterrupt:
         pass
+    finally:
+        if is_server_active:
+            try:
+                requests.post(f"{server_url}/api/tiktok-live/stop", timeout=4)
+            except Exception:
+                pass
 
-    console.print(f"\n[bold green]✓ Sesi bot TikTok Live selesai.[/bold green]")
+    console.print(f"\n[bold green]✓ Sesi bot TikTok Live selesai dihentikan.[/bold green]")
     console.print(f"  [bold]Streamer Target:[/bold] {t_user}")
+    console.print(f"  [bold]Akun TikTok:[/bold] {tt_username} ({'Login Sukses' if is_logged_in_state else 'Mode Tamu'})")
     console.print(f"  [bold]Durasi Aktif:[/bold] {time_str}")
     console.print(f"  [bold]Total Likes Terkirim:[/bold] [red]❤️ {likes_sent:,}[/red]")
     console.print(f"  [bold]Total Chat Terkirim:[/bold] [cyan]💬 {chats_sent}[/cyan]")
-    console.print(f"  [bold]Total Gift Terdeteksi:[/bold] [magenta]🎁 {gifts_count}[/magenta]")
+    console.print(f"  [bold]Total Gift Terdeteksi:[/bold] [magenta]🎁 {gifts_count}[/magenta]\n")
 
 
 def interactive_loop():
@@ -957,7 +1005,7 @@ def main():
     elif args.command == "run":
         run_task_interactive(args.business, screen_count=args.slots, star_rating=args.stars)
     elif args.command == "tiktok-live":
-        run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat)
+        run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat, interactive=False)
 
 
 if __name__ == "__main__":

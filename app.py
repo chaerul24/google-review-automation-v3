@@ -1439,6 +1439,62 @@ def api_usage():
         ]
         recent_requests.extend(demo_items)
 
+    # Live task execution info (Mode Bergilir vs Mode Paralel from CLI / Web)
+    task_exec = {
+        "is_running": False,
+        "mode": "queue",  # "queue" (bergilir) or "parallel" (paralel)
+        "active_emails": [],
+        "pending_emails": [],
+        "active_business_name": None,
+        "display_count": 1,
+    }
+    with db.get_db() as conn:
+        rev_rows = conn.execute("""
+            SELECT r.id, r.business_id, e.email, COALESCE(c.account_name, e.account_name, '') as account_name,
+                   b.name as business_name, r.status
+            FROM reviews r
+            JOIN emails e ON r.email_id = e.id
+            LEFT JOIN cookies c ON e.email = c.email
+            LEFT JOIN businesses b ON r.business_id = b.id
+            WHERE r.status = 'reviewing'
+            ORDER BY r.id ASC
+        """).fetchall()
+
+        pend_rows = conn.execute("""
+            SELECT r.id, r.business_id, e.email, COALESCE(c.account_name, e.account_name, '') as account_name,
+                   b.name as business_name, r.status
+            FROM reviews r
+            JOIN emails e ON r.email_id = e.id
+            LEFT JOIN cookies c ON e.email = c.email
+            LEFT JOIN businesses b ON r.business_id = b.id
+            WHERE r.status = 'pending'
+            ORDER BY r.id ASC LIMIT 20
+        """).fetchall()
+
+    if rev_rows:
+        task_exec["is_running"] = True
+        task_exec["active_emails"] = [r["email"] for r in rev_rows]
+        task_exec["active_business_name"] = rev_rows[0]["business_name"]
+        biz_id = rev_rows[0]["business_id"]
+        cfg = db.get_review_config(biz_id) if biz_id else {}
+        sc = cfg.get("screen_count", 1)
+        task_exec["mode"] = "parallel" if (sc > 1 or len(rev_rows) > 1) else "queue"
+        task_exec["display_count"] = sc
+    elif pend_rows:
+        biz_id = pend_rows[0]["business_id"]
+        cfg = db.get_review_config(biz_id) if biz_id else {}
+        sc = cfg.get("screen_count", 1)
+        task_exec["mode"] = "parallel" if sc > 1 else "queue"
+        task_exec["pending_emails"] = [r["email"] for r in pend_rows]
+        task_exec["active_business_name"] = pend_rows[0]["business_name"]
+        task_exec["display_count"] = sc
+        try:
+            res_p = subprocess.run(["pgrep", "-f", "worker.py"], capture_output=True, text=True)
+            if res_p.stdout.strip():
+                task_exec["is_running"] = True
+        except Exception:
+            pass
+
     return jsonify({
         "status": "ok",
         "total_requests": total_requests,
@@ -1446,6 +1502,7 @@ def api_usage():
         "cached_tokens": cached_tokens,
         "output_tokens": output_tokens,
         "recent_requests": recent_requests,
+        "task_execution": task_exec,
     })
 
 

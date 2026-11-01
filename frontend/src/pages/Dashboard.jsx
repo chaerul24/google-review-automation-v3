@@ -254,6 +254,9 @@ export default function Dashboard({ onLogout }) {
   const [usageSubTab, setUsageSubTab] = useState('overview'); // 'overview' | 'details'
   const [usageSearchQuery, setUsageSearchQuery] = useState('');
   const [canvasZoom, setCanvasZoom] = useState(1);
+  const [taskExecutionMode, setTaskExecutionMode] = useState('queue'); // 'queue' (Mode Bergilir) | 'parallel' (Mode Paralel)
+  const [rotationIndex, setRotationIndex] = useState(0);
+  const [isRotatingQueue, setIsRotatingQueue] = useState(true);
 
   const loadUsageData = async () => {
     try {
@@ -261,6 +264,9 @@ export default function Dashboard({ onLogout }) {
       const res = await api.getUsage();
       if (res && res.status === 'ok') {
         setUsageData(res);
+        if (res.task_execution?.is_running && res.task_execution?.mode) {
+          setTaskExecutionMode(res.task_execution.mode);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch usage analytics:', err);
@@ -272,8 +278,19 @@ export default function Dashboard({ onLogout }) {
   useEffect(() => {
     if (activeTab === 'usage') {
       loadUsageData();
+      const interval = setInterval(loadUsageData, 2500);
+      return () => clearInterval(interval);
     }
   }, [activeTab]);
+
+  // Auto-advance turn in Mode Bergilir (rotates active connected cookie every 3.2s)
+  useEffect(() => {
+    if (activeTab !== 'usage' || taskExecutionMode !== 'queue' || !isRotatingQueue) return;
+    const interval = setInterval(() => {
+      setRotationIndex((prev) => prev + 1);
+    }, 3200);
+    return () => clearInterval(interval);
+  }, [activeTab, taskExecutionMode, isRotatingQueue]);
 
   // ── Load All Data ─────────────────────────────────────────────────────────────
   const loadDashboardData = async (silent = false) => {
@@ -2755,491 +2772,751 @@ export default function Dashboard({ onLogout }) {
               {/* Left Column: The Tentacle Neural Graph Canvas */}
               <div className="xl:col-span-8 bg-[#0B0F19] border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl relative overflow-hidden flex flex-col">
                 {/* Top Toolbar inside Canvas */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800/80 text-xs text-slate-400 mb-2 gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
-                    <span className="font-mono text-[11px] text-slate-200 font-semibold">
-                      Model & Worker Topology ({tentacleNodes.length} Akun Terdaftar)
-                    </span>
-                    {tentacleNodes.some((n) => n.isNeedsLogin) && (
-                      <span className="font-mono text-[10px] text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-800 animate-pulse flex items-center gap-1 font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                        {tentacleNodes.filter((n) => n.isNeedsLogin).length} TENTAKEL TERPUTUS (PERLU LOGIN)
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/70">
-                      LIVE ROUTING ACTIVE
-                    </span>
-                  </div>
-                </div>
-
-                {/* Tentacle SVG Interactive Canvas */}
-                <div
-                  className="relative w-full rounded-xl overflow-hidden bg-[#0A0D14] border border-slate-800/70 flex items-center justify-center p-2"
-                  style={{
-                    backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.12) 1.2px, transparent 1.2px)',
-                    backgroundSize: '24px 24px',
-                  }}
-                >
-                  <div
-                    className="w-full flex items-center justify-center transition-transform duration-200"
-                    style={{ transform: `scale(${canvasZoom})`, transformOrigin: 'center center' }}
-                  >
-                    <svg
-                      viewBox="0 0 960 600"
-                      className="w-full h-auto select-none overflow-visible max-h-[560px]"
-                      preserveAspectRatio="xMidYMid meet"
-                    >
-                      <defs>
-                        <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
-                          <feGaussianBlur stdDeviation="4" result="blur" />
-                          <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                          </feMerge>
-                        </filter>
-                        <filter id="glow-amber" x="-25%" y="-25%" width="150%" height="150%">
-                          <feGaussianBlur stdDeviation="5" result="blur" />
-                          <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                          </feMerge>
-                        </filter>
-                        <filter id="glow-rose" x="-20%" y="-20%" width="140%" height="140%">
-                          <feGaussianBlur stdDeviation="4" result="blur" />
-                          <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                          </feMerge>
-                        </filter>
-                        <filter id="glow-node" x="-20%" y="-20%" width="140%" height="140%">
-                          <feGaussianBlur stdDeviation="3" result="blur" />
-                          <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                          </feMerge>
-                        </filter>
-                      </defs>
-
-                      {/* Dynamic Tentacle Strands & Energy Particles (1 per registered cookie) */}
-                      {tentacleNodes.map((node) => {
-                        const isSelected = selectedNodeId === node.id || selectedNodeId === 'router';
-
-                        // JIKA STATUS "PERLU LOGIN" -> TENTAKEL TERPUTUS DENGAN PERCIKAN LISTRIK (SPARKS)
-                        if (node.isNeedsLogin) {
-                          return (
-                            <g key={`tentacle-${node.id}`} className="transition-opacity duration-300">
-                              {/* Severed Stump 1: Dari Router menuju titik patahan (Break Tip 1) */}
-                              <path
-                                d={node.stump1Path}
-                                fill="none"
-                                stroke="#EF4444"
-                                strokeWidth={isSelected ? '6.5' : '4.5'}
-                                opacity={isSelected ? 0.45 : 0.22}
-                                filter="url(#glow-rose)"
-                              />
-                              <path
-                                d={node.stump1Path}
-                                fill="none"
-                                stroke="#F87171"
-                                strokeWidth="2.2"
-                                strokeLinecap="round"
-                                opacity={isSelected ? 0.95 : 0.65}
-                              />
-                              {/* Pulse partikel yang tertahan & mendesis di ujung tunggul tentakel */}
-                              <circle r="3" fill="#EF4444" filter="url(#glow-rose)">
-                                <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
-                              </circle>
-                              <circle r="1.3" fill="#FFFFFF">
-                                <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
-                              </circle>
-
-                              {/* Percikan Listrik Putus di Ujung Patahan (Sparking Electrical Crackles) */}
-                              <circle cx={node.breakTip1.x} cy={node.breakTip1.y} r="4.5" fill="#EF4444" opacity="0.8">
-                                <animate attributeName="r" values="3.5;6.5;3.5" dur="0.8s" repeatCount="indefinite" />
-                                <animate attributeName="opacity" values="0.9;0.3;0.9" dur="0.8s" repeatCount="indefinite" />
-                              </circle>
-                              <circle cx={node.breakTip1.x} cy={node.breakTip1.y} r="2" fill="#FFFFFF" />
-
-                              {/* Celah Patahan: Garis putus-putus merah peringatan */}
-                              <line
-                                x1={node.breakTip1.x}
-                                y1={node.breakTip1.y}
-                                x2={node.breakTip2.x}
-                                y2={node.breakTip2.y}
-                                stroke="#EF4444"
-                                strokeWidth="1.2"
-                                strokeDasharray="3 4"
-                                opacity="0.35"
-                              />
-
-                              {/* Indikator Peringatan Sambungan Terputus (✕ Disconnected Badge) */}
-                              <g
-                                className="cursor-pointer group/badge"
-                                onClick={() => setSelectedNodeId(node.id)}
-                              >
-                                <circle
-                                  cx={node.midBreak.x}
-                                  cy={node.midBreak.y}
-                                  r="9"
-                                  fill="#1C1917"
-                                  stroke="#EF4444"
-                                  strokeWidth="1.4"
-                                />
-                                <text
-                                  x={node.midBreak.x}
-                                  y={node.midBreak.y + 3.2}
-                                  textAnchor="middle"
-                                  fill="#F87171"
-                                  fontSize="8.5"
-                                  fontWeight="bold"
-                                >
-                                  ✕
-                                </text>
-                              </g>
-
-                              {/* Severed Stump 2: Sisa tentakel lemas menggantung dari node akun */}
-                              <path
-                                d={node.stump2Path}
-                                fill="none"
-                                stroke="#7F1D1D"
-                                strokeWidth="3.5"
-                                opacity="0.3"
-                              />
-                              <path
-                                d={node.stump2Path}
-                                fill="none"
-                                stroke="#991B1B"
-                                strokeWidth="1.8"
-                                strokeLinecap="round"
-                                strokeDasharray="4 2"
-                                opacity="0.75"
-                              />
-                              <circle cx={node.breakTip2.x} cy={node.breakTip2.y} r="2.5" fill="#EF4444" opacity="0.7" />
-                            </g>
-                          );
-                        }
-
-                        // TENTAKEL UTUH & AKTIF (NORMAL)
-                        return (
-                          <g key={`tentacle-${node.id}`} className="transition-opacity duration-300">
-                            {/* Outer Glow Path */}
-                            <path
-                              d={node.pathD}
-                              fill="none"
-                              stroke={node.color}
-                              strokeWidth={isSelected ? '7' : '4.5'}
-                              opacity={isSelected ? 0.35 : 0.12}
-                              filter="url(#glow-cyan)"
-                            />
-                            {/* Core Glowing Tentacle Strand */}
-                            <path
-                              d={node.pathD}
-                              fill="none"
-                              stroke={node.color}
-                              strokeWidth="2.2"
-                              strokeLinecap="round"
-                              opacity={isSelected ? 0.95 : 0.55}
-                            />
-                            {/* Fine Energy Fiber (Dashed) */}
-                            <path
-                              d={node.pathD}
-                              fill="none"
-                              stroke="#FFFFFF"
-                              strokeWidth="0.8"
-                              strokeDasharray="4 4"
-                              opacity={isSelected ? 0.6 : 0.25}
-                            />
-                            {/* Traveling Electrical Pulse Particle (Glow) */}
-                            <circle r="3.5" fill={node.color} filter="url(#glow-cyan)">
-                              <animateMotion dur={node.animDur} repeatCount="indefinite" path={node.pathD} />
-                            </circle>
-                            {/* Traveling Electrical Pulse Particle (White Core) */}
-                            <circle r="1.5" fill="#FFFFFF">
-                              <animateMotion dur={node.animDur} repeatCount="indefinite" path={node.pathD} />
-                            </circle>
-                          </g>
-                        );
-                      })}
-
-                      {/* Central Router Hub (Dispatch Core) */}
-                      <g
-                        onClick={() => setSelectedNodeId('router')}
-                        className="cursor-pointer group select-none"
-                      >
-                        <rect
-                          x="420"
-                          y="276"
-                          width="120"
-                          height="48"
-                          rx="10"
-                          fill="#D97706"
-                          opacity="0.25"
-                          filter="url(#glow-amber)"
-                        />
-                        <rect
-                          x="420"
-                          y="276"
-                          width="120"
-                          height="48"
-                          rx="10"
-                          fill="#18130B"
-                          stroke="#F59E0B"
-                          strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.6}
-                          className="transition-all duration-200 group-hover:stroke-amber-300"
-                        />
-                        <text
-                          x="480"
-                          y="305"
-                          textAnchor="middle"
-                          fill="#FEF3C7"
-                          fontSize="13"
-                          fontWeight="bold"
-                          letterSpacing="0.5"
-                        >
-                          Router
-                        </text>
-                        <circle cx="440" cy="300" r="4" fill="#F59E0B" />
-                        <circle cx="520" cy="300" r="4" fill="#F59E0B" opacity="0.8" />
-                      </g>
-
-                      {/* Dynamic Cookie Account Nodes (1 Node per registered cookie) */}
-                      {tentacleNodes.map((node) => {
-                        const isSelected = selectedNodeId === node.id;
-                        const pillW = 126;
-                        const pillH = 28;
-                        const pillX = node.x - pillW / 2;
-                        const pillY = node.y - pillH / 2;
-                        const isNeedsLogin = node.isNeedsLogin;
-
-                        return (
-                          <g
-                            key={`node-${node.id}`}
-                            onClick={() => setSelectedNodeId(node.id)}
-                            className="cursor-pointer group select-none"
-                          >
-                            {isSelected && (
-                              <rect
-                                x={pillX - 2}
-                                y={pillY - 2}
-                                width={pillW + 4}
-                                height={pillH + 4}
-                                rx="9"
-                                fill={node.color}
-                                opacity="0.35"
-                                filter={isNeedsLogin ? 'url(#glow-rose)' : 'url(#glow-node)'}
-                              />
-                            )}
-                            <rect
-                              x={pillX}
-                              y={pillY}
-                              width={pillW}
-                              height={pillH}
-                              rx="7"
-                              fill={isNeedsLogin ? '#1C1316' : '#0F172A'}
-                              stroke={node.color}
-                              strokeWidth={isSelected ? 2.2 : (isNeedsLogin ? 1.5 : 1.2)}
-                              strokeDasharray={isNeedsLogin ? '5 2.5' : undefined}
-                              className="transition-all duration-200 group-hover:brightness-125"
-                            />
-                            <text
-                              x={node.x - 8}
-                              y={node.y + 3.5}
-                              textAnchor="middle"
-                              fill={isNeedsLogin ? '#FDA4AF' : '#F1F5F9'}
-                              fontSize="9.5"
-                              fontWeight="bold"
-                              className="transition-all duration-200 group-hover:fill-white font-mono"
-                            >
-                              {node.name}
-                            </text>
-
-                            {/* Live status dot or red warning dot */}
-                            {isNeedsLogin ? (
-                              <g>
-                                <circle
-                                  cx={node.x + pillW / 2 - 12}
-                                  cy={node.y}
-                                  r="3.2"
-                                  fill="#EF4444"
-                                />
-                                <circle
-                                  cx={node.x + pillW / 2 - 12}
-                                  cy={node.y}
-                                  r="5"
-                                  fill="#EF4444"
-                                  opacity="0.3"
-                                  className="animate-ping"
-                                />
-                              </g>
-                            ) : (
-                              <circle
-                                cx={node.x + pillW / 2 - 12}
-                                cy={node.y}
-                                r="3.2"
-                                fill="#10B981"
-                              />
-                            )}
-
-                            {/* PERLU LOGIN sub-badge under pill */}
-                            {isNeedsLogin && (
-                              <g>
-                                <rect
-                                  x={node.x - 33}
-                                  y={node.y + 16}
-                                  width="66"
-                                  height="13"
-                                  rx="3"
-                                  fill="#450A0A"
-                                  stroke="#991B1B"
-                                  strokeWidth="0.8"
-                                />
-                                <text
-                                  x={node.x}
-                                  y={node.y + 25.5}
-                                  textAnchor="middle"
-                                  fill="#FCA5A5"
-                                  fontSize="7.5"
-                                  fontWeight="bold"
-                                  letterSpacing="0.3"
-                                >
-                                  PERLU LOGIN
-                                </text>
-                              </g>
-                            )}
-                          </g>
-                        );
-                      })}
-                    </svg>
-                  </div>
-
-                  {/* Canvas Zoom Controls (Bottom Left) */}
-                  <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1 text-slate-300 z-10">
-                    <button
-                      onClick={() => setCanvasZoom((prev) => Math.max(0.8, prev - 0.1))}
-                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs cursor-pointer"
-                      title="Zoom Out"
-                    >
-                      -
-                    </button>
-                    <span className="text-[10px] font-mono px-1 font-bold">
-                      {Math.round(canvasZoom * 100)}%
-                    </span>
-                    <button
-                      onClick={() => setCanvasZoom((prev) => Math.min(1.5, prev + 0.1))}
-                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs cursor-pointer"
-                      title="Zoom In"
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={() => setCanvasZoom(1)}
-                      className="px-1.5 py-0.5 text-[10px] hover:bg-slate-800 rounded text-slate-400 cursor-pointer"
-                      title="Reset Zoom"
-                    >
-                      Fit
-                    </button>
-                  </div>
-                </div>
-
-                {/* Selected Node Telemetry HUD (Akun Cookie Telemetry) */}
                 {(() => {
-                  const selNode = tentacleNodes.find((n) => n.id === selectedNodeId);
-                  const isRouter = selectedNodeId === 'router' || !selNode;
-                  const totalCount = tentacleNodes.length;
-                  const activeCount = tentacleNodes.filter((n) => !n.isNeedsLogin).length;
-                  const isNeedsLogin = !isRouter && selNode?.isNeedsLogin;
+                  const liveTask = usageData?.task_execution;
+                  const isLiveRunning = Boolean(liveTask?.is_running);
+                  const activeMode = isLiveRunning ? (liveTask?.mode || 'queue') : taskExecutionMode;
+                  const isParallel = activeMode === 'parallel';
+                  const eligibleCookies = tentacleNodes.filter((n) => !n.isNeedsLogin);
+                  const brokenCookies = tentacleNodes.filter((n) => n.isNeedsLogin);
+
+                  const liveActiveEmail = liveTask?.active_emails?.[0];
+                  const liveTurnNode = liveActiveEmail
+                    ? eligibleCookies.find((c) => c.email === liveActiveEmail)
+                    : null;
+                  const activeTurnNode = liveTurnNode || (eligibleCookies.length > 0 ? eligibleCookies[rotationIndex % eligibleCookies.length] : null);
+                  const currentActiveCookieId = activeTurnNode ? activeTurnNode.id : null;
+                  const currentTurnNumber = eligibleCookies.length > 0 ? (rotationIndex % eligibleCookies.length) + 1 : 1;
 
                   return (
-                    <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
-                          <span
-                            className="font-bold text-slate-100 font-mono text-xs truncate block"
-                            title={isRouter ? 'Router (Job Core)' : selNode.fullName}
-                          >
-                            {isRouter
-                              ? '⚡ Router (Job Core)'
-                              : isNeedsLogin
-                              ? `⚠️ ${selNode.fullName} (TERPUTUS)`
-                              : `🍪 ${selNode.fullName}`}
+                    <>
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-3 border-b border-slate-800/80 text-xs text-slate-400 mb-2 gap-2.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
+                          <span className="font-mono text-[11px] text-slate-200 font-semibold">
+                            Model & Worker Topology ({tentacleNodes.length} Akun Terdaftar)
                           </span>
-                        </div>
 
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
-                          <span
-                            className={`font-bold font-mono text-xs truncate block ${
-                              isNeedsLogin ? 'text-rose-400' : 'text-cyan-400'
-                            }`}
-                            title={isRouter ? 'Dispatcher / Load Balancer' : selNode.email}
-                          >
-                            {isRouter ? `Dispatcher (${activeCount}/${totalCount} Aktif)` : selNode.email}
-                          </span>
-                        </div>
-
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
-                          {isRouter ? (
-                            <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              ONLINE ({activeCount} Sesi Aktif)
-                            </span>
-                          ) : isNeedsLogin ? (
-                            <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                              PERLU LOGIN (SESI TERPUTUS)
+                          {/* Live Task Badge */}
+                          {isLiveRunning ? (
+                            <span className="font-mono text-[10px] text-amber-300 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-700 font-bold flex items-center gap-1.5 animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              TASK CLI BERJALAN: {liveTask.active_business_name || 'Maps Target'} [{isParallel ? 'PARALEL' : 'BERGILIR'}]
                             </span>
                           ) : (
-                            <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                            <span className="font-mono text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/70 flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              SESI AKTIF (VALID)
+                              SISTEM STANDBY (SIAP JALAN)
+                            </span>
+                          )}
+
+                          {/* Broken Tentacle Badge */}
+                          {brokenCookies.length > 0 && (
+                            <span className="font-mono text-[10px] text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-800 animate-pulse flex items-center gap-1 font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              {brokenCookies.length} TENTAKEL TERPUTUS (PERLU LOGIN)
                             </span>
                           )}
                         </div>
 
-                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
-                          {isNeedsLogin ? (
-                            <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                              OFFLINE (TENTAKEL PUTUS)
-                            </span>
-                          ) : (
-                            <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              READY TO POST
-                            </span>
+                        {/* Interactive Execution Mode Switcher Controls */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
+                            <button
+                              onClick={() => setTaskExecutionMode('queue')}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                !isParallel
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                                  : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                              title="Mode Bergilir: 1 Akun aktif bergantian memposting ulasan"
+                            >
+                              <span>📋</span>
+                              <span>Mode Bergilir</span>
+                            </button>
+
+                            <button
+                              onClick={() => setTaskExecutionMode('parallel')}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                isParallel
+                                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                                  : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                              title="Mode Paralel: Semua akun terhubung serentak di virtual display"
+                            >
+                              <span>⚡</span>
+                              <span>Mode Paralel</span>
+                            </button>
+                          </div>
+
+                          {!isParallel && !isLiveRunning && (
+                            <button
+                              onClick={() => setIsRotatingQueue(!isRotatingQueue)}
+                              className={`px-2 py-1 rounded-md text-[10px] font-mono border transition-all cursor-pointer flex items-center gap-1 ${
+                                isRotatingQueue
+                                  ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60'
+                                  : 'bg-slate-800/60 text-slate-400 border-slate-700/60'
+                              }`}
+                              title="Toggle rotasi otomatis simulasi giliran akun"
+                            >
+                              <span>{isRotatingQueue ? '↻' : '⏸'}</span>
+                              <span>{isRotatingQueue ? 'Rotasi: ON' : 'Rotasi: PAUSE'}</span>
+                            </button>
                           )}
                         </div>
                       </div>
 
-                      {/* Disconnected Cookie Alert Callout with 1-Click Action to Cookies Tab */}
-                      {isNeedsLogin && (
-                        <div className="bg-rose-950/40 border border-rose-800/70 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-                          <div className="flex items-center gap-2.5 text-rose-200">
-                            <span className="text-base">⚠️</span>
-                            <div>
-                              <p className="font-semibold text-rose-300">
-                                Sesi Akun Google Terputus (Perlu Login Ulang)
-                              </p>
-                              <p className="text-[11px] text-rose-300/80">
-                                Tentakel routing ke akun ini otomatis diputus demi mencegah bot Google Maps gagal saat posting ulasan.
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setActiveTab('cookies')}
-                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-lg text-xs whitespace-nowrap cursor-pointer transition-colors shadow-sm self-start sm:self-auto"
+                      {/* Tentacle SVG Interactive Canvas */}
+                      <div
+                        className="relative w-full rounded-xl overflow-hidden bg-[#0A0D14] border border-slate-800/70 flex items-center justify-center p-2"
+                        style={{
+                          backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.12) 1.2px, transparent 1.2px)',
+                          backgroundSize: '24px 24px',
+                        }}
+                      >
+                        <div
+                          className="w-full flex items-center justify-center transition-transform duration-200"
+                          style={{ transform: `scale(${canvasZoom})`, transformOrigin: 'center center' }}
+                        >
+                          <svg
+                            viewBox="0 0 960 600"
+                            className="w-full h-auto select-none overflow-visible max-h-[560px]"
+                            preserveAspectRatio="xMidYMid meet"
                           >
-                            Perbarui Cookie di Akun Google →
+                            <defs>
+                              <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="4" result="blur" />
+                                <feMerge>
+                                  <feMergeNode in="blur" />
+                                  <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                              </filter>
+                              <filter id="glow-amber" x="-25%" y="-25%" width="150%" height="150%">
+                                <feGaussianBlur stdDeviation="5" result="blur" />
+                                <feMerge>
+                                  <feMergeNode in="blur" />
+                                  <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                              </filter>
+                              <filter id="glow-rose" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="4" result="blur" />
+                                <feMerge>
+                                  <feMergeNode in="blur" />
+                                  <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                              </filter>
+                              <filter id="glow-node" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="3" result="blur" />
+                                <feMerge>
+                                  <feMergeNode in="blur" />
+                                  <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                              </filter>
+                            </defs>
+
+                            {/* Dynamic Tentacle Strands & Energy Particles (Mode Bergilir vs Mode Paralel) */}
+                            {tentacleNodes.map((node) => {
+                              const isSelected = selectedNodeId === node.id || selectedNodeId === 'router';
+
+                              // 1. KONDISI PERLU LOGIN: TENTAKEL TERPUTUS TOTAL
+                              if (node.isNeedsLogin) {
+                                return (
+                                  <g key={`tentacle-${node.id}`} className="transition-opacity duration-300">
+                                    <path
+                                      d={node.stump1Path}
+                                      fill="none"
+                                      stroke="#EF4444"
+                                      strokeWidth={isSelected ? '6.5' : '4.5'}
+                                      opacity={isSelected ? 0.45 : 0.22}
+                                      filter="url(#glow-rose)"
+                                    />
+                                    <path
+                                      d={node.stump1Path}
+                                      fill="none"
+                                      stroke="#F87171"
+                                      strokeWidth="2.2"
+                                      strokeLinecap="round"
+                                      opacity={isSelected ? 0.95 : 0.65}
+                                    />
+                                    <circle r="3" fill="#EF4444" filter="url(#glow-rose)">
+                                      <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
+                                    </circle>
+                                    <circle r="1.3" fill="#FFFFFF">
+                                      <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
+                                    </circle>
+
+                                    {/* Percikan Listrik Putus di Titik Patahan */}
+                                    <circle cx={node.breakTip1.x} cy={node.breakTip1.y} r="4.5" fill="#EF4444" opacity="0.8">
+                                      <animate attributeName="r" values="3.5;6.5;3.5" dur="0.8s" repeatCount="indefinite" />
+                                      <animate attributeName="opacity" values="0.9;0.3;0.9" dur="0.8s" repeatCount="indefinite" />
+                                    </circle>
+                                    <circle cx={node.breakTip1.x} cy={node.breakTip1.y} r="2" fill="#FFFFFF" />
+
+                                    {/* Celah Patahan: Garis putus-putus merah peringatan */}
+                                    <line
+                                      x1={node.breakTip1.x}
+                                      y1={node.breakTip1.y}
+                                      x2={node.breakTip2.x}
+                                      y2={node.breakTip2.y}
+                                      stroke="#EF4444"
+                                      strokeWidth="1.2"
+                                      strokeDasharray="3 4"
+                                      opacity="0.35"
+                                    />
+
+                                    {/* Indikator Peringatan Sambungan Terputus (✕ Disconnected Badge) */}
+                                    <g
+                                      className="cursor-pointer group/badge"
+                                      onClick={() => setSelectedNodeId(node.id)}
+                                    >
+                                      <circle
+                                        cx={node.midBreak.x}
+                                        cy={node.midBreak.y}
+                                        r="9"
+                                        fill="#1C1917"
+                                        stroke="#EF4444"
+                                        strokeWidth="1.4"
+                                      />
+                                      <text
+                                        x={node.midBreak.x}
+                                        y={node.midBreak.y + 3.2}
+                                        textAnchor="middle"
+                                        fill="#F87171"
+                                        fontSize="8.5"
+                                        fontWeight="bold"
+                                      >
+                                        ✕
+                                      </text>
+                                    </g>
+
+                                    {/* Sisa tentakel lemas menggantung dari node akun */}
+                                    <path
+                                      d={node.stump2Path}
+                                      fill="none"
+                                      stroke="#7F1D1D"
+                                      strokeWidth="3.5"
+                                      opacity="0.3"
+                                    />
+                                    <path
+                                      d={node.stump2Path}
+                                      fill="none"
+                                      stroke="#991B1B"
+                                      strokeWidth="1.8"
+                                      strokeLinecap="round"
+                                      strokeDasharray="4 2"
+                                      opacity="0.75"
+                                    />
+                                    <circle cx={node.breakTip2.x} cy={node.breakTip2.y} r="2.5" fill="#EF4444" opacity="0.7" />
+                                  </g>
+                                );
+                              }
+
+                              // 2. KONDISI NORMAL: CEK APAKAH AKTIF TERHUBUNG
+                              // Mode Paralel: SEMUA akun aktif terhubung!
+                              // Mode Bergilir: HANYA akun yang sedang dipakai (activeCookieId) yang terhubung!
+                              const isConnected = isParallel ? true : (node.id === currentActiveCookieId);
+
+                              if (isConnected) {
+                                // TENTAKEL AKTIF TERHUBUNG (PENUH DAYA & ENERGI PULSE)
+                                return (
+                                  <g key={`tentacle-${node.id}`} className="transition-all duration-500">
+                                    <path
+                                      d={node.pathD}
+                                      fill="none"
+                                      stroke={node.color}
+                                      strokeWidth={isSelected ? '7.5' : '5'}
+                                      opacity={isSelected ? 0.45 : 0.25}
+                                      filter="url(#glow-cyan)"
+                                    />
+                                    <path
+                                      d={node.pathD}
+                                      fill="none"
+                                      stroke={node.color}
+                                      strokeWidth="2.6"
+                                      strokeLinecap="round"
+                                      opacity={1}
+                                    />
+                                    <path
+                                      d={node.pathD}
+                                      fill="none"
+                                      stroke="#FFFFFF"
+                                      strokeWidth="0.9"
+                                      strokeDasharray="4 4"
+                                      opacity={0.65}
+                                    />
+                                    {/* Partikel Listrik Mengalir Cepat dari Router ke Cookie */}
+                                    <circle r="4" fill={node.color} filter="url(#glow-cyan)">
+                                      <animateMotion dur="1.3s" repeatCount="indefinite" path={node.pathD} />
+                                    </circle>
+                                    <circle r="1.8" fill="#FFFFFF">
+                                      <animateMotion dur="1.3s" repeatCount="indefinite" path={node.pathD} />
+                                    </circle>
+                                  </g>
+                                );
+                              }
+
+                              // TENTAKEL STANDBY / MENUNGGU GILIRAN (MODE BERGILIR)
+                              return (
+                                <g key={`tentacle-${node.id}`} className="transition-all duration-500">
+                                  <path
+                                    d={node.pathD}
+                                    fill="none"
+                                    stroke="#334155"
+                                    strokeWidth="1.2"
+                                    strokeDasharray="3 5"
+                                    opacity="0.22"
+                                  />
+                                </g>
+                              );
+                            })}
+
+                            {/* Central Router Hub (Dispatch Core) */}
+                            <g
+                              onClick={() => setSelectedNodeId('router')}
+                              className="cursor-pointer group select-none"
+                            >
+                              <rect
+                                x="420"
+                                y="276"
+                                width="120"
+                                height="48"
+                                rx="10"
+                                fill="#D97706"
+                                opacity="0.25"
+                                filter="url(#glow-amber)"
+                              />
+                              <rect
+                                x="420"
+                                y="276"
+                                width="120"
+                                height="48"
+                                rx="10"
+                                fill="#18130B"
+                                stroke="#F59E0B"
+                                strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.6}
+                                className="transition-all duration-200 group-hover:stroke-amber-300"
+                              />
+                              <text
+                                x="480"
+                                y="305"
+                                textAnchor="middle"
+                                fill="#FEF3C7"
+                                fontSize="13"
+                                fontWeight="bold"
+                                letterSpacing="0.5"
+                              >
+                                Router
+                              </text>
+                              <circle cx="440" cy="300" r="4" fill="#F59E0B" />
+                              <circle cx="520" cy="300" r="4" fill="#F59E0B" opacity="0.8" />
+                            </g>
+
+                            {/* Dynamic Cookie Account Nodes (1 Node per registered cookie) */}
+                            {tentacleNodes.map((node) => {
+                              const isSelected = selectedNodeId === node.id;
+                              const pillW = 126;
+                              const pillH = 28;
+                              const pillX = node.x - pillW / 2;
+                              const pillY = node.y - pillH / 2;
+                              const isNeedsLogin = node.isNeedsLogin;
+                              const isTurnActive = !isParallel && node.id === currentActiveCookieId;
+                              const isConnected = isParallel || isTurnActive;
+
+                              return (
+                                <g
+                                  key={`node-${node.id}`}
+                                  onClick={() => setSelectedNodeId(node.id)}
+                                  className="cursor-pointer group select-none transition-all duration-300"
+                                >
+                                  {/* Halo Glow for Active / Selected Node */}
+                                  {(isSelected || isTurnActive) && (
+                                    <rect
+                                      x={pillX - 2}
+                                      y={pillY - 2}
+                                      width={pillW + 4}
+                                      height={pillH + 4}
+                                      rx="9"
+                                      fill={isNeedsLogin ? '#EF4444' : node.color}
+                                      opacity={isTurnActive ? '0.45' : '0.35'}
+                                      filter={isNeedsLogin ? 'url(#glow-rose)' : 'url(#glow-node)'}
+                                    />
+                                  )}
+
+                                  <rect
+                                    x={pillX}
+                                    y={pillY}
+                                    width={pillW}
+                                    height={pillH}
+                                    rx="7"
+                                    fill={
+                                      isNeedsLogin
+                                        ? '#1C1316'
+                                        : isTurnActive
+                                        ? '#132038'
+                                        : '#0F172A'
+                                    }
+                                    stroke={
+                                      isNeedsLogin
+                                        ? '#EF4444'
+                                        : isTurnActive
+                                        ? node.color
+                                        : isParallel
+                                        ? node.color
+                                        : '#334155'
+                                    }
+                                    strokeWidth={
+                                      isSelected
+                                        ? 2.4
+                                        : isTurnActive
+                                        ? 2.2
+                                        : isNeedsLogin
+                                        ? 1.5
+                                        : isParallel
+                                        ? 1.2
+                                        : 1.0
+                                    }
+                                    strokeDasharray={isNeedsLogin ? '5 2.5' : undefined}
+                                    opacity={!isConnected && !isNeedsLogin ? 0.65 : 1.0}
+                                    className="transition-all duration-300 group-hover:brightness-125"
+                                  />
+
+                                  <text
+                                    x={node.x - 8}
+                                    y={node.y + 3.5}
+                                    textAnchor="middle"
+                                    fill={
+                                      isNeedsLogin
+                                        ? '#FDA4AF'
+                                        : isTurnActive
+                                        ? '#FFFFFF'
+                                        : isConnected
+                                        ? '#F1F5F9'
+                                        : '#94A3B8'
+                                    }
+                                    fontSize="9.5"
+                                    fontWeight="bold"
+                                    className="transition-all duration-200 group-hover:fill-white font-mono"
+                                  >
+                                    {node.name}
+                                  </text>
+
+                                  {/* Status indicator dot */}
+                                  {isNeedsLogin ? (
+                                    <g>
+                                      <circle
+                                        cx={node.x + pillW / 2 - 12}
+                                        cy={node.y}
+                                        r="3.2"
+                                        fill="#EF4444"
+                                      />
+                                      <circle
+                                        cx={node.x + pillW / 2 - 12}
+                                        cy={node.y}
+                                        r="5"
+                                        fill="#EF4444"
+                                        opacity="0.3"
+                                        className="animate-ping"
+                                      />
+                                    </g>
+                                  ) : isTurnActive ? (
+                                    <g>
+                                      <circle
+                                        cx={node.x + pillW / 2 - 12}
+                                        cy={node.y}
+                                        r="3.5"
+                                        fill="#10B981"
+                                      />
+                                      <circle
+                                        cx={node.x + pillW / 2 - 12}
+                                        cy={node.y}
+                                        r="5.5"
+                                        fill="#10B981"
+                                        opacity="0.4"
+                                        className="animate-ping"
+                                      />
+                                    </g>
+                                  ) : (
+                                    <circle
+                                      cx={node.x + pillW / 2 - 12}
+                                      cy={node.y}
+                                      r="3.2"
+                                      fill="#10B981"
+                                      opacity={isConnected ? 1.0 : 0.5}
+                                    />
+                                  )}
+
+                                  {/* Sub-badge di bawah Pill: Status Bergilir / Paralel / Perlu Login */}
+                                  {isNeedsLogin ? (
+                                    <g>
+                                      <rect
+                                        x={node.x - 33}
+                                        y={node.y + 16}
+                                        width="66"
+                                        height="13"
+                                        rx="3"
+                                        fill="#450A0A"
+                                        stroke="#991B1B"
+                                        strokeWidth="0.8"
+                                      />
+                                      <text
+                                        x={node.x}
+                                        y={node.y + 25.5}
+                                        textAnchor="middle"
+                                        fill="#FCA5A5"
+                                        fontSize="7.5"
+                                        fontWeight="bold"
+                                        letterSpacing="0.3"
+                                      >
+                                        PERLU LOGIN
+                                      </text>
+                                    </g>
+                                  ) : isTurnActive ? (
+                                    <g>
+                                      <rect
+                                        x={node.x - 38}
+                                        y={node.y + 16}
+                                        width="76"
+                                        height="13"
+                                        rx="3"
+                                        fill="#064E3B"
+                                        stroke="#059669"
+                                        strokeWidth="0.9"
+                                      />
+                                      <text
+                                        x={node.x}
+                                        y={node.y + 25.5}
+                                        textAnchor="middle"
+                                        fill="#6EE7B7"
+                                        fontSize="7.2"
+                                        fontWeight="bold"
+                                        letterSpacing="0.2"
+                                      >
+                                        SEDANG DIPAKAI 🚀
+                                      </text>
+                                    </g>
+                                  ) : !isParallel ? (
+                                    <g>
+                                      <rect
+                                        x={node.x - 34}
+                                        y={node.y + 16}
+                                        width="68"
+                                        height="12"
+                                        rx="3"
+                                        fill="#0F172A"
+                                        stroke="#1E293B"
+                                        strokeWidth="0.7"
+                                      />
+                                      <text
+                                        x={node.x}
+                                        y={node.y + 24.5}
+                                        textAnchor="middle"
+                                        fill="#64748B"
+                                        fontSize="6.8"
+                                        fontWeight="medium"
+                                      >
+                                        MENUNGGU GILIRAN
+                                      </text>
+                                    </g>
+                                  ) : (
+                                    <g>
+                                      <rect
+                                        x={node.x - 32}
+                                        y={node.y + 16}
+                                        width="64"
+                                        height="12"
+                                        rx="3"
+                                        fill="#082F49"
+                                        stroke="#0284C7"
+                                        strokeWidth="0.7"
+                                      />
+                                      <text
+                                        x={node.x}
+                                        y={node.y + 24.5}
+                                        textAnchor="middle"
+                                        fill="#7DD3FC"
+                                        fontSize="6.8"
+                                        fontWeight="bold"
+                                      >
+                                        PARALEL AKTIF
+                                      </text>
+                                    </g>
+                                  )}
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        </div>
+
+                        {/* Canvas Zoom Controls (Bottom Left) */}
+                        <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1 text-slate-300 z-10">
+                          <button
+                            onClick={() => setCanvasZoom((prev) => Math.max(0.8, prev - 0.1))}
+                            className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs cursor-pointer"
+                            title="Zoom Out"
+                          >
+                            -
+                          </button>
+                          <span className="text-[10px] font-mono px-1 font-bold">
+                            {Math.round(canvasZoom * 100)}%
+                          </span>
+                          <button
+                            onClick={() => setCanvasZoom((prev) => Math.min(1.5, prev + 0.1))}
+                            className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs cursor-pointer"
+                            title="Zoom In"
+                          >
+                            +
+                          </button>
+                          <button
+                            onClick={() => setCanvasZoom(1)}
+                            className="px-1.5 py-0.5 text-[10px] hover:bg-slate-800 rounded text-slate-400 cursor-pointer"
+                            title="Reset Zoom"
+                          >
+                            Fit
                           </button>
                         </div>
-                      )}
-                    </div>
+                      </div>
+
+                      {/* Selected Node Telemetry HUD (Akun Cookie Telemetry) */}
+                      {(() => {
+                        const selNode = tentacleNodes.find((n) => n.id === selectedNodeId);
+                        const isRouter = selectedNodeId === 'router' || !selNode;
+                        const isNeedsLogin = !isRouter && selNode?.isNeedsLogin;
+                        const isCurrentlyUsed = !isParallel && selNode?.id === currentActiveCookieId;
+
+                        return (
+                          <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
+                                <span
+                                  className="font-bold text-slate-100 font-mono text-xs truncate block"
+                                  title={
+                                    isRouter
+                                      ? isParallel
+                                        ? 'Router (Paralel Broadcast)'
+                                        : `Router ➔ ${activeTurnNode?.fullName || 'Dispatcher'}`
+                                      : selNode.fullName
+                                  }
+                                >
+                                  {isRouter ? (
+                                    isParallel ? (
+                                      '⚡ Router (Paralel Hub)'
+                                    ) : (
+                                      `⚡ Router ➔ ${activeTurnNode?.fullName || 'Akun'}`
+                                    )
+                                  ) : isNeedsLogin ? (
+                                    `⚠️ ${selNode.fullName} (TERPUTUS)`
+                                  ) : isCurrentlyUsed ? (
+                                    `🚀 ${selNode.fullName} (DIGUNAKAN)`
+                                  ) : (
+                                    `🍪 ${selNode.fullName}`
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
+                                <span
+                                  className={`font-bold font-mono text-xs truncate block ${
+                                    isNeedsLogin
+                                      ? 'text-rose-400'
+                                      : isCurrentlyUsed
+                                      ? 'text-emerald-400'
+                                      : 'text-cyan-400'
+                                  }`}
+                                  title={isRouter ? (isParallel ? 'Semua Akun Terhubung' : activeTurnNode?.email) : selNode.email}
+                                >
+                                  {isRouter ? (
+                                    isParallel ? (
+                                      `Dispatcher (${eligibleCookies.length} Akun Paralel)`
+                                    ) : (
+                                      `${activeTurnNode?.email || 'Rotasi Antrean'}`
+                                    )
+                                  ) : (
+                                    selNode.email
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
+                                {isRouter ? (
+                                  isParallel ? (
+                                    <span className="font-bold text-cyan-400 font-mono text-xs flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                                      SEMUA TENTAKEL TERHUBUNG (${eligibleCookies.length} Sesi)
+                                    </span>
+                                  ) : (
+                                    <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                      MODE BERGILIR (Giliran #${currentTurnNumber} Aktif)
+                                    </span>
+                                  )
+                                ) : isNeedsLogin ? (
+                                  <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                                    PERLU LOGIN (SESI TERPUTUS)
+                                  </span>
+                                ) : isCurrentlyUsed ? (
+                                  <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    SEDANG DIGUNAKAN BOT
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-slate-300 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    {isParallel ? 'PARALEL TERHUBUNG' : 'STANDBY ANTRIAN'}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
+                                {isNeedsLogin ? (
+                                  <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                    OFFLINE (TENTAKEL PUTUS)
+                                  </span>
+                                ) : isCurrentlyUsed ? (
+                                  <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    RUNNING (POSTING ULASAN)
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    {isParallel ? 'RUNNING MULTI-DISPLAY' : 'READY TO POST'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Disconnected Cookie Alert Callout with 1-Click Action to Cookies Tab */}
+                            {isNeedsLogin && (
+                              <div className="bg-rose-950/40 border border-rose-800/70 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                                <div className="flex items-center gap-2.5 text-rose-200">
+                                  <span className="text-base">⚠️</span>
+                                  <div>
+                                    <p className="font-semibold text-rose-300">
+                                      Sesi Akun Google Terputus (Perlu Login Ulang)
+                                    </p>
+                                    <p className="text-[11px] text-rose-300/80">
+                                      Tentakel routing ke akun ini otomatis diputus demi mencegah bot Google Maps gagal saat posting ulasan.
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => setActiveTab('cookies')}
+                                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-lg text-xs whitespace-nowrap cursor-pointer transition-colors shadow-sm self-start sm:self-auto"
+                                >
+                                  Perbarui Cookie di Akun Google →
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </>
                   );
                 })()}
               </div>

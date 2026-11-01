@@ -292,6 +292,57 @@ def print_recent_logs(business_id: Optional[int] = None, limit: int = 15):
     console.print(table)
 
 
+# ── Process & Emergency Stop Control ────────────────────────────────────────
+
+def stop_all_running_tasks():
+    """Menghentikan seluruh proses otomatisasi yang sedang berjalan:
+    1. Stop TikTok Live streaming bot & matikan display :99
+    2. Stop worker Google Maps & batalkan tugas yang sedang berjalan
+    3. Kembalikan review yang berstatus 'reviewing' menjadi 'pending'
+    4. Kill seluruh proses worker, bot, dan Chromium automation
+    """
+    console.print("\n[bold red]🛑 Menghentikan seluruh proses otomatisasi & menutup browser Chromium...[/bold red]")
+
+    # 1. Stop TikTok Live via API
+    try:
+        requests.post("http://127.0.0.1:5000/api/tiktok-live/stop", timeout=3)
+    except Exception:
+        pass
+
+    # 2. Stop workers via API
+    try:
+        requests.post("http://127.0.0.1:5000/api/cli/emergency-stop", timeout=3)
+    except Exception:
+        pass
+    try:
+        requests.post("http://127.0.0.1:5000/api/worker/emergency-stop", timeout=3)
+    except Exception:
+        pass
+
+    # 3. Direct process termination on host
+    try:
+        subprocess.run(["systemctl", "stop", "google-review-worker.service"], timeout=5, check=False)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["pkill", "-9", "-f", r"python.*worker\.py"], check=False)
+        subprocess.run(["pkill", "-9", "-f", r"python.*bot\.py"], check=False)
+        subprocess.run(["pkill", "-9", "-f", "chromium.*--user-data-dir"], check=False)
+        subprocess.run(["pkill", "-9", "-f", "chromium.*tiktok"], check=False)
+        subprocess.run(["pkill", "-9", "-f", "chromedriver"], check=False)
+    except Exception:
+        pass
+
+    # 4. Database cleanup: reset reviewing -> pending
+    try:
+        with db.get_db() as conn:
+            conn.execute("UPDATE reviews SET status = 'pending' WHERE status = 'reviewing'")
+    except Exception:
+        pass
+
+    console.print("[bold green]✓ Seluruh bot, worker, dan browser Chromium berhasil dihentikan bersih.[/bold green]\n")
+
+
 # ── Live Terminal Review Task Runner ──────────────────────────────────────────
 
 def run_task_interactive(business_id: int, screen_count: int = 1, star_rating: int = 5):
@@ -346,78 +397,83 @@ def run_task_interactive(business_id: int, screen_count: int = 1, star_rating: i
 
     # Live UI update loop
     spinner = Spinner("dots", style="bold cyan")
-    with Live(console=console, refresh_per_second=3) as live:
-        start_time = time.time()
-        while not is_done:
-            elapsed = int(time.time() - start_time)
+    try:
+        with Live(console=console, refresh_per_second=3) as live:
+            start_time = time.time()
+            while not is_done:
+                elapsed = int(time.time() - start_time)
 
-            # Query current active/pending reviews
-            with db.get_db() as conn:
-                cur_reviews = conn.execute("""
-                    SELECT r.id, r.status, r.star_rating, r.review_text, e.email
-                    FROM reviews r
-                    JOIN emails e ON r.email_id = e.id
-                    WHERE r.business_id = ?
-                    ORDER BY r.id ASC
-                """, (business_id,)).fetchall()
+                # Query current active/pending reviews
+                with db.get_db() as conn:
+                    cur_reviews = conn.execute("""
+                        SELECT r.id, r.status, r.star_rating, r.review_text, e.email
+                        FROM reviews r
+                        JOIN emails e ON r.email_id = e.id
+                        WHERE r.business_id = ?
+                        ORDER BY r.id ASC
+                    """, (business_id,)).fetchall()
 
-                recent_logs = conn.execute("""
-                    SELECT created_at, level, message
-                    FROM process_logs
-                    WHERE business_id = ?
-                    ORDER BY id DESC LIMIT 5
-                """, (business_id,)).fetchall()
+                    recent_logs = conn.execute("""
+                        SELECT created_at, level, message
+                        FROM process_logs
+                        WHERE business_id = ?
+                        ORDER BY id DESC LIMIT 5
+                    """, (business_id,)).fetchall()
 
-            # Build slots table
-            slots_table = Table(box=box.ROUNDED, expand=True, header_style="bold cyan")
-            slots_table.add_column("Slot / Display", justify="center", width=16)
-            slots_table.add_column("Akun Google", style="bold white", width=28)
-            slots_table.add_column("Rating", justify="center", width=10)
-            slots_table.add_column("Status Engine", width=26)
+                # Build slots table
+                slots_table = Table(box=box.ROUNDED, expand=True, header_style="bold cyan")
+                slots_table.add_column("Slot / Display", justify="center", width=16)
+                slots_table.add_column("Akun Google", style="bold white", width=28)
+                slots_table.add_column("Rating", justify="center", width=10)
+                slots_table.add_column("Status Engine", width=26)
 
-            for idx, rev in enumerate(cur_reviews[:screen_count]):
-                disp = SLOT_DISPLAYS.get(idx, f":{99 + idx}")
-                st = rev["status"]
-                if st == "reviewed":
-                    status_str = "[bold green]✓ Selesai Terbit[/bold green]"
-                elif st == "reviewing":
-                    status_str = f"{spinner.render(time.time())} [bold yellow]Sedang Memproses...[/bold yellow]"
-                elif st == "failed":
-                    status_str = "[bold red]✖ Gagal[/bold red]"
-                else:
-                    status_str = "[dim]Menunggu Giliran[/dim]"
+                for idx, rev in enumerate(cur_reviews[:screen_count]):
+                    disp = SLOT_DISPLAYS.get(idx, f":{99 + idx}")
+                    st = rev["status"]
+                    if st == "reviewed":
+                        status_str = "[bold green]✓ Selesai Terbit[/bold green]"
+                    elif st == "reviewing":
+                        status_str = f"{spinner.render(time.time())} [bold yellow]Sedang Memproses...[/bold yellow]"
+                    elif st == "failed":
+                        status_str = "[bold red]✖ Gagal[/bold red]"
+                    else:
+                        status_str = "[dim]Menunggu Giliran[/dim]"
 
-                stars_badge = f"[yellow]{'★' * (rev['star_rating'] or 5)}[/yellow]"
-                slots_table.add_row(
-                    f"Slot {idx + 1} ({disp})",
-                    rev["email"],
-                    stars_badge,
-                    status_str
+                    stars_badge = f"[yellow]{'★' * (rev['star_rating'] or 5)}[/yellow]"
+                    slots_table.add_row(
+                        f"Slot {idx + 1} ({disp})",
+                        rev["email"],
+                        stars_badge,
+                        status_str
+                    )
+
+                # Build logs panel
+                log_lines = []
+                for l in reversed(recent_logs):
+                    lvl = l["level"]
+                    col = "green" if lvl == "success" else ("red" if lvl in ("error", "fatal") else ("yellow" if lvl == "warning" else "white"))
+                    log_lines.append(f"[dim]{l['created_at'].split()[-1]}[/dim] [{col}]{l['message']}[/{col}]")
+
+                logs_text = "\n".join(log_lines) if log_lines else "[dim]Menunggu event engine...[/dim]"
+                logs_panel = Panel(logs_text, title="📋 Live Engine Logs", box=box.ROUNDED, border_style="dim")
+
+                panel_main = Panel(
+                    Group(
+                        slots_table,
+                        logs_panel,
+                        Text(f"⏱ Waktu Berjalan: {elapsed} detik • Tekan Ctrl+C untuk membatalkan dan stop semua task", justify="center", style="dim")
+                    ),
+                    title=f"⚡ Status Eksekusi Chromium Native ({biz['name']})",
+                    border_style="bright_blue",
+                    box=box.ROUNDED
                 )
 
-            # Build logs panel
-            log_lines = []
-            for l in reversed(recent_logs):
-                lvl = l["level"]
-                col = "green" if lvl == "success" else ("red" if lvl in ("error", "fatal") else ("yellow" if lvl == "warning" else "white"))
-                log_lines.append(f"[dim]{l['created_at'].split()[-1]}[/dim] [{col}]{l['message']}[/{col}]")
-
-            logs_text = "\n".join(log_lines) if log_lines else "[dim]Menunggu event engine...[/dim]"
-            logs_panel = Panel(logs_text, title="📋 Live Engine Logs", box=box.ROUNDED, border_style="dim")
-
-            panel_main = Panel(
-                Group(
-                    slots_table,
-                    logs_panel,
-                    Text(f"⏱ Waktu Berjalan: {elapsed} detik • Tekan Ctrl+C untuk membatalkan", justify="center", style="dim")
-                ),
-                title=f"⚡ Status Eksekusi Chromium Native ({biz['name']})",
-                border_style="bright_blue",
-                box=box.ROUNDED
-            )
-
-            live.update(panel_main)
-            time.sleep(0.4)
+                live.update(panel_main)
+                time.sleep(0.4)
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow]⚠️ Ctrl+C terdeteksi saat menjalankan ulasan Google Maps![/bold yellow]")
+        stop_all_running_tasks()
+        return False
 
     t.join(timeout=2.0)
     console.print()
@@ -655,7 +711,9 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
 
                 live.update(Group(status_table, events_panel))
     except KeyboardInterrupt:
-        pass
+        console.print("\n[bold yellow]⚠️ Ctrl+C terdeteksi saat siaran TikTok Live berjalan![/bold yellow]")
+        stop_all_running_tasks()
+        return
     finally:
         if is_server_active:
             try:
@@ -692,7 +750,12 @@ def interactive_loop():
         console.print("  [bold yellow][0][/bold yellow] 🚪 [bold red]Keluar[/bold red]")
         console.print("[bold cyan]───────────────────────────────────────────────────────────────────────[/bold cyan]")
 
-        choice = Prompt.ask("\n[bold green]Pilih menu[/bold green]", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], default="1")
+        try:
+            choice = Prompt.ask("\n[bold green]Pilih menu[/bold green]", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], default="1")
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[bold yellow]⚠️ Ctrl+C terdeteksi.[/bold yellow]")
+            stop_all_running_tasks()
+            break
 
         if choice == "0":
             console.print("\n[dim]Sampai jumpa![/dim]")
@@ -949,63 +1012,64 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.command:
-        # Interactive TUI mode
-        try:
+    try:
+        if not args.command:
+            # Interactive TUI mode
             interactive_loop()
-        except KeyboardInterrupt:
-            console.print("\n[dim]Dibatalkan oleh pengguna. Keluar.[/dim]")
-            sys.exit(0)
-    elif args.command == "status":
-        console.print(render_banner())
-    elif args.command == "businesses":
-        print_businesses_table()
-    elif args.command == "cookies":
-        print_cookies_table()
-        if args.check:
-            import requests as _req
-            import time as _t
-            with db.get_db() as conn:
-                all_accounts = conn.execute(
-                    "SELECT email, auth_method, oauth_access_token, oauth_refresh_token, "
-                    "oauth_token_expiry, cookie_json FROM cookies ORDER BY id ASC"
-                ).fetchall()
+        elif args.command == "status":
+            console.print(render_banner())
+        elif args.command == "businesses":
+            print_businesses_table()
+        elif args.command == "cookies":
+            print_cookies_table()
+            if args.check:
+                import requests as _req
+                import time as _t
+                with db.get_db() as conn:
+                    all_accounts = conn.execute(
+                        "SELECT email, auth_method, oauth_access_token, oauth_refresh_token, "
+                        "oauth_token_expiry, cookie_json FROM cookies ORDER BY id ASC"
+                    ).fetchall()
 
-            console.print("\n[bold cyan]🔍 Memverifikasi semua akun...[/bold cyan]")
-            for row in all_accounts:
-                em = row["email"]
-                method = row["auth_method"] or "cookie"
-                if method == "oauth":
-                    # Check via token validity
-                    token = db.get_valid_oauth_token(em)
-                    if token:
-                        try:
-                            ui = _req.get(
-                                "https://www.googleapis.com/oauth2/v3/tokeninfo",
-                                params={"access_token": token},
-                                timeout=8,
-                            )
-                            if ui.status_code == 200:
-                                console.print(f"[green]● [OAuth] {em}: AKTIF ✓[/green]")
-                            else:
-                                console.print(f"[yellow]▲ [OAuth] {em}: Token invalid (HTTP {ui.status_code})[/yellow]")
-                        except Exception as e:
-                            console.print(f"[yellow]▲ [OAuth] {em}: Tidak dapat verifikasi ({e})[/yellow]")
+                console.print("\n[bold cyan]🔍 Memverifikasi semua akun...[/bold cyan]")
+                for row in all_accounts:
+                    em = row["email"]
+                    method = row["auth_method"] or "cookie"
+                    if method == "oauth":
+                        # Check via token validity
+                        token = db.get_valid_oauth_token(em)
+                        if token:
+                            try:
+                                ui = _req.get(
+                                    "https://www.googleapis.com/oauth2/v3/tokeninfo",
+                                    params={"access_token": token},
+                                    timeout=8,
+                                )
+                                if ui.status_code == 200:
+                                    console.print(f"[green]● [OAuth] {em}: AKTIF ✓[/green]")
+                                else:
+                                    console.print(f"[yellow]▲ [OAuth] {em}: Token invalid (HTTP {ui.status_code})[/yellow]")
+                            except Exception as e:
+                                console.print(f"[yellow]▲ [OAuth] {em}: Tidak dapat verifikasi ({e})[/yellow]")
+                        else:
+                            console.print(f"[red]✖ [OAuth] {em}: Token kedaluwarsa, perlu re-auth[/red]")
                     else:
-                        console.print(f"[red]✖ [OAuth] {em}: Token kedaluwarsa, perlu re-auth[/red]")
-                else:
-                    sm = session_manager.SessionManager()
-                    res = sm.validate_account_cookie(em, target_domain="google.com")
-                    col = "green" if res.is_valid else "red"
-                    console.print(f"[{col}]● [Cookie] {em}: {res.status.value} ({res.reason})[/{col}]")
-    elif args.command == "logs":
-        print_recent_logs(business_id=args.business, limit=args.lines)
-    elif args.command == "test-browser":
-        test_chromium_native(display=args.display)
-    elif args.command == "run":
-        run_task_interactive(args.business, screen_count=args.slots, star_rating=args.stars)
-    elif args.command == "tiktok-live":
-        run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat, interactive=False)
+                        sm = session_manager.SessionManager()
+                        res = sm.validate_account_cookie(em, target_domain="google.com")
+                        col = "green" if res.is_valid else "red"
+                        console.print(f"[{col}]● [Cookie] {em}: {res.status.value} ({res.reason})[/{col}]")
+        elif args.command == "logs":
+            print_recent_logs(business_id=args.business, limit=args.lines)
+        elif args.command == "test-browser":
+            test_chromium_native(display=args.display)
+        elif args.command == "run":
+            run_task_interactive(args.business, screen_count=args.slots, star_rating=args.stars)
+        elif args.command == "tiktok-live":
+            run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat, interactive=False)
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow]⚠️ Ctrl+C terdeteksi. Menghentikan semua tugas otomasi...[/bold yellow]")
+        stop_all_running_tasks()
+        sys.exit(0)
 
 
 if __name__ == "__main__":

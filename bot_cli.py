@@ -324,6 +324,16 @@ class ServerClient:
     def stop_task(self, business_id: int) -> Dict[str, Any]:
         return self._request(f"/api/businesses/{business_id}/stop-bot", method="POST")
 
+    def emergency_stop(self) -> Dict[str, Any]:
+        """Emergency stop all workers, reviews, TikTok Live, and Chromium browsers."""
+        try:
+            return self._request("/api/cli/emergency-stop", method="POST")
+        except Exception:
+            try:
+                return self._request("/api/worker/emergency-stop", method="POST")
+            except Exception:
+                return {}
+
     def get_logs(self, business_id: int) -> Dict[str, Any]:
         return self._request(f"/api/businesses/{business_id}/process-log")
 
@@ -2200,8 +2210,17 @@ def run_delete_maps_stream(
     except KeyboardInterrupt:
         sys.stdout.write("\r\033[K")
         print(f" {C_CYAN}│{C_RESET}")
-        print(f" {C_CYAN}└──{C_RESET} {C_YELLOW}! Pemantauan live dihentikan oleh user. Pembersihan ulasan tetap berjalan di server.{C_RESET}")
-        return True
+        print(f" {C_CYAN}└──{C_RESET} {C_BOLD}{C_RED}🛑 Ctrl+C Terdeteksi: Menghentikan proses pembersihan ulasan di server...{C_RESET}")
+        try:
+            client.stop_task(business_id)
+            print(f"     {C_GREEN}✓ Proses pembersihan ulasan di server berhasil dihentikan.{C_RESET}")
+        except Exception:
+            pass
+        try:
+            client.emergency_stop()
+        except Exception:
+            pass
+        return False
 
     sys.stdout.write("\r\033[K")
     elapsed = int(time.time() - start_time)
@@ -2406,8 +2425,18 @@ def run_task_stream(
     except KeyboardInterrupt:
         sys.stdout.write("\r\033[K")
         print(f" {C_CYAN}│{C_RESET}")
-        print(f" {C_CYAN}└──{C_RESET} {C_YELLOW}! Pemantauan live dihentikan oleh user. Tugas ulasan tetap berjalan di background server.{C_RESET}")
-        return True
+        print(f" {C_CYAN}└──{C_RESET} {C_BOLD}{C_RED}🛑 Ctrl+C Terdeteksi: Menghentikan seluruh proses ulasan & menutup browser di server...{C_RESET}")
+        try:
+            client.stop_task(business_id)
+            print(f"     {C_GREEN}✓ Tugas ulasan Google Maps di server berhasil dihentikan.{C_RESET}")
+        except Exception as e:
+            print(f"     {C_YELLOW}Catatan stop task: {e}{C_RESET}")
+        try:
+            client.emergency_stop()
+            print(f"     {C_GREEN}✓ Seluruh worker dan browser Chromium berhasil dipaksa berhenti.{C_RESET}")
+        except Exception:
+            pass
+        return False
 
     sys.stdout.write("\r\033[K")
     elapsed = int(time.time() - start_time)
@@ -2567,12 +2596,16 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
             time.sleep(0.2)
 
     except (KeyboardInterrupt, EOFError):
-        print(f"\n\n {C_YELLOW}Menghentikan bot TikTok Live...{C_RESET}")
+        print(f"\n\n {C_BOLD}{C_RED}🛑 Ctrl+C Terdeteksi: Menghentikan bot TikTok Live & menutup Chromium :99...{C_RESET}")
         try:
             client.stop_tiktok_live()
             print(f" {C_GREEN}✓ Bot TikTok Live berhasil dihentikan.{C_RESET}")
         except Exception as e:
             print(f" {C_RED}Gagal mengirim sinyal stop: {e}{C_RESET}")
+        try:
+            client.emergency_stop()
+        except Exception:
+            pass
 
     input(f"\n {C_DIM}Tekan Enter untuk kembali ke menu utama...{C_RESET}")
 
@@ -2638,7 +2671,11 @@ def interactive_menu(client: ServerClient):
         try:
             choice = input(f" {C_GREEN}Pilih menu [0-11] (default 1): {C_RESET}").strip() or "1"
         except (KeyboardInterrupt, EOFError):
-            print("\n Keluar.")
+            print(f"\n {C_BOLD}{C_RED}🛑 Keluar dari program. Menghentikan semua task aktif...{C_RESET}")
+            try:
+                client.emergency_stop()
+            except Exception:
+                pass
             break
 
         if choice == "0":
@@ -2948,67 +2985,75 @@ def main():
             print(f"{C_RED}✖ Gagal login dengan akun {args.user}: {exc}{C_RESET}")
             sys.exit(1)
 
-    if not args.command:
-        # Masuk sesi interaktif: prompt login terlebih dahulu, lalu tampilkan daftar menu
-        interactive_menu(client)
-    else:
-        # Non-interactive command: jika belum authenticated, prompt login dahulu
-        if not client.api_key:
-            prompt_login(client, default_user=args.user or "admin")
+    try:
+        if not args.command:
+            # Masuk sesi interaktif: prompt login terlebih dahulu, lalu tampilkan daftar menu
+            interactive_menu(client)
+        else:
+            # Non-interactive command: jika belum authenticated, prompt login dahulu
+            if not client.api_key:
+                prompt_login(client, default_user=args.user or "admin")
 
-        if args.command == "status":
-            info = client.get_status()
-            print_banner(client, info)
-        elif args.command == "businesses":
-            print_businesses(client.get_businesses())
-        elif args.command == "accounts":
-            print_accounts(client.get_accounts())
-        elif args.command == "cookies":
-            st = client.get_status()
-            print_cookies_table(st.get("cookies", []))
-        elif args.command == "cookie-add":
-            if not client.is_admin:
-                print(f"{C_RED}✖ Fitur tambah cookie hanya untuk akun Administrator.{C_RESET}")
-                sys.exit(1)
-            raw = args.json or ""
-            if not raw and args.file:
-                with open(os.path.expanduser(args.file), "r", encoding="utf-8") as f:
-                    raw = f.read()
-            if not raw:
-                print(f"{C_RED}✖ Masukkan --json atau --file.{C_RESET}")
-                sys.exit(1)
-            res = client.add_cookie(raw, email=args.email)
-            print(f"{C_GREEN}✓ Cookie berhasil disimpan untuk akun '{res.get('email')}'! Status: {res.get('session_status')}{C_RESET}")
-        elif args.command == "cookie-del":
-            if not client.is_admin:
-                print(f"{C_RED}✖ Fitur hapus cookie hanya untuk akun Administrator.{C_RESET}")
-                sys.exit(1)
-            if not args.id and not args.email:
-                print(f"{C_RED}✖ Masukkan --id atau --email untuk dihapus.{C_RESET}")
-                sys.exit(1)
-            res = client.delete_cookie(cookie_id=args.id, email=args.email)
-            print(f"{C_GREEN}✓ {res.get('message', 'Cookie berhasil dihapus.')}{C_RESET}")
-        elif args.command == "queue":
-            res = client.get_queue(args.business)
-            print_queue_table(res.get("queue", []))
-        elif args.command == "run":
-            run_task_stream(client, args.business, count=args.slots, star_rating=args.stars, mode=args.mode, delay=args.delay)
-        elif args.command == "tiktok-live":
-            handle_tiktok_live_menu(client)
-        elif args.command == "review-del":
-            if args.maps:
-                run_delete_maps_stream(
-                    client,
-                    args.business,
-                    scope_label="Semua Akun Master" if args.all_accounts else "Akun Review Terbit",
-                    all_accounts=args.all_accounts,
-                )
-            elif args.review_id:
-                res = client.delete_single_review(args.business, args.review_id)
-                print(f"{C_GREEN}✓ Review #{args.review_id} berhasil dihapus dari database.{C_RESET}")
-            else:
-                res = client.delete_all_reviews(args.business)
-                print(f"{C_GREEN}✓ {res.get('message', 'Semua ulasan di database berhasil dihapus.')}{C_RESET}")
+            if args.command == "status":
+                info = client.get_status()
+                print_banner(client, info)
+            elif args.command == "businesses":
+                print_businesses(client.get_businesses())
+            elif args.command == "accounts":
+                print_accounts(client.get_accounts())
+            elif args.command == "cookies":
+                st = client.get_status()
+                print_cookies_table(st.get("cookies", []))
+            elif args.command == "cookie-add":
+                if not client.is_admin:
+                    print(f"{C_RED}✖ Fitur tambah cookie hanya untuk akun Administrator.{C_RESET}")
+                    sys.exit(1)
+                raw = args.json or ""
+                if not raw and args.file:
+                    with open(os.path.expanduser(args.file), "r", encoding="utf-8") as f:
+                        raw = f.read()
+                if not raw:
+                    print(f"{C_RED}✖ Masukkan --json atau --file.{C_RESET}")
+                    sys.exit(1)
+                res = client.add_cookie(raw, email=args.email)
+                print(f"{C_GREEN}✓ Cookie berhasil disimpan untuk akun '{res.get('email')}'! Status: {res.get('session_status')}{C_RESET}")
+            elif args.command == "cookie-del":
+                if not client.is_admin:
+                    print(f"{C_RED}✖ Fitur hapus cookie hanya untuk akun Administrator.{C_RESET}")
+                    sys.exit(1)
+                if not args.id and not args.email:
+                    print(f"{C_RED}✖ Masukkan --id atau --email untuk dihapus.{C_RESET}")
+                    sys.exit(1)
+                res = client.delete_cookie(cookie_id=args.id, email=args.email)
+                print(f"{C_GREEN}✓ {res.get('message', 'Cookie berhasil dihapus.')}{C_RESET}")
+            elif args.command == "queue":
+                res = client.get_queue(args.business)
+                print_queue_table(res.get("queue", []))
+            elif args.command == "run":
+                run_task_stream(client, args.business, count=args.slots, star_rating=args.stars, mode=args.mode, delay=args.delay)
+            elif args.command == "tiktok-live":
+                handle_tiktok_live_menu(client)
+            elif args.command == "review-del":
+                if args.maps:
+                    run_delete_maps_stream(
+                        client,
+                        args.business,
+                        scope_label="Semua Akun Master" if args.all_accounts else "Akun Review Terbit",
+                        all_accounts=args.all_accounts,
+                    )
+                elif args.review_id:
+                    res = client.delete_single_review(args.business, args.review_id)
+                    print(f"{C_GREEN}✓ Review #{args.review_id} berhasil dihapus dari database.{C_RESET}")
+                else:
+                    res = client.delete_all_reviews(args.business)
+                    print(f"{C_GREEN}✓ {res.get('message', 'Semua ulasan di database berhasil dihapus.')}{C_RESET}")
+    except KeyboardInterrupt:
+        print(f"\n {C_BOLD}{C_RED}🛑 Ctrl+C Terdeteksi: Menghentikan seluruh proses otomasi di server...{C_RESET}")
+        try:
+            client.emergency_stop()
+        except Exception:
+            pass
+        sys.exit(0)
 
 
 if __name__ == "__main__":

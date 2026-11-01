@@ -376,7 +376,7 @@ def inject_security_context():
 def protect_csrf():
     if request.path in {"/login", "/api/login", "/logout", "/api/logout", "/api/csrf-token", "/api/cli/login", "/api/cli/register"} or request.path.startswith("/api/vm/") or request.path.startswith("/download/") or request.path.startswith("/api/cli/"):
         return
-    if request.path.startswith("/api/tiktok-live/") and request.remote_addr in ("127.0.0.1", "localhost", "::1"):
+    if (request.path.startswith("/api/tiktok-live/") or request.path == "/api/worker/emergency-stop") and request.remote_addr in ("127.0.0.1", "localhost", "::1"):
         return
     api_key = request.headers.get("X-API-Key")
     expected_key = os.environ.get("APP_PASSWORD", "")
@@ -2594,13 +2594,21 @@ def api_worker_status():
 
 def force_stop_all_workers(business_id=None):
     """
-    Force stop all review workers, browsers, and background schedulers:
+    Force stop all review workers, TikTok Live, browsers, and background schedulers:
+    0. Stop TikTok Live runner if active and close Display :99 browser.
     1. Stop systemd continuous background service (google-review-worker.service).
     2. Terminate all worker.py and bot.py processes with SIGKILL.
     3. Terminate all Chromium automation processes and chromedrivers.
     4. Reset stuck 'reviewing' jobs to 'pending' (or delete queue if business_id specified).
     5. Pause drip campaign auto-replenishment so it doesn't queue jobs again.
     """
+    # 0. Stop TikTok Live runner if active
+    try:
+        if 'tiktok_live_runner' in globals() and tiktok_live_runner and tiktok_live_runner.is_running:
+            tiktok_live_runner.stop()
+    except Exception as e:
+        logger.warning("Failed stopping tiktok_live_runner: %s", e)
+
     # 1. Stop systemd continuous service
     try:
         subprocess.run(["systemctl", "stop", "google-review-worker.service"], timeout=5, check=False)
@@ -2617,6 +2625,7 @@ def force_stop_all_workers(business_id=None):
     # 3. Kill all automated Chromium and chromedriver instances
     try:
         subprocess.run(["pkill", "-9", "-f", "chromium.*--user-data-dir"], check=False)
+        subprocess.run(["pkill", "-9", "-f", "chromium.*tiktok"], check=False)
         subprocess.run(["pkill", "-9", "-f", "chromedriver"], check=False)
     except Exception as e:
         logger.warning("Failed pkill chromium: %s", e)
@@ -2649,8 +2658,15 @@ def force_stop_all_workers(business_id=None):
 
 
 @app.route("/api/worker/emergency-stop", methods=["POST"])
-@login_required
+@app.route("/api/cli/emergency-stop", methods=["POST"])
 def api_worker_emergency_stop():
+    # Allow localhost, valid session, or valid X-API-Key
+    if request.remote_addr not in ("127.0.0.1", "localhost", "::1"):
+        api_key = request.headers.get("X-API-Key")
+        expected_key = os.environ.get("APP_PASSWORD", "")
+        is_api_key_valid = api_key and expected_key and hmac.compare_digest(api_key, expected_key)
+        if not session.get("logged_in") and not is_api_key_valid:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
     res = force_stop_all_workers()
     return jsonify(res)
 

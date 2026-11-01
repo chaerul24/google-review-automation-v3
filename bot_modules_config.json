@@ -12,10 +12,10 @@
     "enabled": true,
     "name": "TikTok Live",
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
-    "target_user": "@butterflybuble0",
+    "target_user": "@cutmey1231",
     "tap_speed": 50,
     "auto_chat": true,
-    "chat_message": "Semangat live kak! Support selalu 🔥",
+    "chat_message": "Halo kak",
     "gift_detection": false
   },
   "youtube_live": {

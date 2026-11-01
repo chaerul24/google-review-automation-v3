@@ -598,6 +598,49 @@ export default function Dashboard({ onLogout }) {
 
   const activeAccountsCount = emails.filter((e) => e.cookie_status === 'active').length;
 
+  // Dynamic Google Cookie Nodes for the Tentacle Flow Canvas
+  const cookieNodes = useMemo(() => {
+    const activeList = cookies.filter((c) => c.status === 'active' || !c.status);
+    const pool = activeList.length > 0 ? activeList : cookies;
+    const defaults = [
+      { name: 'Muhammad Jannah', email: 'muhmadaljannah@gmail.com', id: '181' },
+      { name: 'Galo Ijul', email: 'galoijul@gmail.com', id: '179' },
+      { name: 'Cantika Ayu', email: 'cantikaayu0302@gmail.com', id: '173' },
+      { name: 'Jono Tayo', email: 'jonotayo7@gmail.com', id: '187' },
+    ];
+
+    const getNode = (idx) => {
+      if (pool[idx]) {
+        const item = pool[idx];
+        const rawName = (item.account_name || item.email?.split('@')[0] || `Akun #${item.id}`).trim();
+        const displayName = rawName.length > 15 ? rawName.substring(0, 14) + '…' : rawName;
+        return {
+          id: `node_cookie_${item.id}`,
+          name: displayName,
+          fullName: rawName,
+          email: item.email || `${rawName.toLowerCase()}@gmail.com`,
+          status: item.status || 'active',
+          realId: item.id,
+        };
+      }
+      return {
+        id: `node_cookie_def_${idx}`,
+        name: defaults[idx].name,
+        fullName: defaults[idx].name,
+        email: defaults[idx].email,
+        status: 'active',
+        realId: defaults[idx].id,
+      };
+    };
+
+    return {
+      top: getNode(0),
+      right: getNode(1),
+      left: getNode(2),
+      bottom: getNode(3),
+    };
+  }, [cookies]);
+
   // Filtered Accounts
   const filteredAccounts = useMemo(() => {
     return emails.filter((acc) => {
@@ -2715,137 +2758,133 @@ export default function Dashboard({ onLogout }) {
                       </linearGradient>
                     </defs>
 
-                    {/* Tentacle 1: Router -> Antigravity (Top) */}
+                    {/* Tentacle 1: Router -> Cookie Account 1 (Top) */}
                     <g className="transition-opacity duration-300">
-                      {/* Outer organic blurred glow */}
                       <path
-                        d="M 380 185 C 360 140, 400 115, 380 88"
+                        d="M 380 185 C 360 140, 400 115, 380 91"
                         fill="none"
                         stroke="#38BDF8"
                         strokeWidth="9"
-                        opacity={selectedNodeId === 'antigravity' || selectedNodeId === 'router' ? 0.35 : 0.15}
+                        opacity={selectedNodeId === cookieNodes.top.id || selectedNodeId === 'router' ? 0.35 : 0.15}
                         filter="url(#glow-cyan)"
                       />
-                      {/* Main colored body line */}
                       <path
-                        d="M 380 185 C 360 140, 400 115, 380 88"
+                        d="M 380 185 C 360 140, 400 115, 380 91"
                         fill="none"
                         stroke="url(#tentacle-antigravity)"
                         strokeWidth="3"
                         strokeLinecap="round"
-                        opacity={selectedNodeId === 'antigravity' || selectedNodeId === 'router' ? 1 : 0.6}
+                        opacity={selectedNodeId === cookieNodes.top.id || selectedNodeId === 'router' ? 1 : 0.6}
                       />
-                      {/* Core neon pulse line */}
                       <path
-                        d="M 380 185 C 360 140, 400 115, 380 88"
+                        d="M 380 185 C 360 140, 400 115, 380 91"
                         fill="none"
                         stroke="#FFFFFF"
                         strokeWidth="1.2"
                         strokeDasharray="6 4"
                       />
-                      {/* Traveling electrical energy pulse particles */}
                       <circle r="4" fill="#67E8F9" filter="url(#glow-cyan)">
-                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 88" />
+                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 91" />
                       </circle>
                       <circle r="1.8" fill="#FFFFFF">
-                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 88" />
+                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 91" />
                       </circle>
                     </g>
 
-                    {/* Tentacle 2: Router -> CodeBuddy (Right) */}
+                    {/* Tentacle 2: Router -> Cookie Account 2 (Right) */}
                     <g className="transition-opacity duration-300">
                       <path
-                        d="M 440 210 C 490 200, 525 220, 555 210"
+                        d="M 440 210 C 470 200, 495 220, 525 210"
                         fill="none"
                         stroke="#3B82F6"
                         strokeWidth="9"
-                        opacity={selectedNodeId === 'codebuddy' || selectedNodeId === 'router' ? 0.35 : 0.15}
+                        opacity={selectedNodeId === cookieNodes.right.id || selectedNodeId === 'router' ? 0.35 : 0.15}
                         filter="url(#glow-cyan)"
                       />
                       <path
-                        d="M 440 210 C 490 200, 525 220, 555 210"
+                        d="M 440 210 C 470 200, 495 220, 525 210"
                         fill="none"
                         stroke="url(#tentacle-codebuddy)"
                         strokeWidth="3"
                         strokeLinecap="round"
-                        opacity={selectedNodeId === 'codebuddy' || selectedNodeId === 'router' ? 1 : 0.6}
+                        opacity={selectedNodeId === cookieNodes.right.id || selectedNodeId === 'router' ? 1 : 0.6}
                       />
                       <path
-                        d="M 440 210 C 490 200, 525 220, 555 210"
+                        d="M 440 210 C 470 200, 495 220, 525 210"
                         fill="none"
                         stroke="#FFFFFF"
                         strokeWidth="1.2"
                         strokeDasharray="6 4"
                       />
                       <circle r="4" fill="#60A5FA" filter="url(#glow-cyan)">
-                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 490 200, 525 220, 555 210" />
+                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 470 200, 495 220, 525 210" />
                       </circle>
                       <circle r="1.8" fill="#FFFFFF">
-                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 490 200, 525 220, 555 210" />
+                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 470 200, 495 220, 525 210" />
                       </circle>
                     </g>
 
-                    {/* Tentacle 3: Router -> OpenCode Free (Left) */}
+                    {/* Tentacle 3: Router -> Cookie Account 3 (Left) */}
                     <g className="transition-opacity duration-300">
                       <path
-                        d="M 320 210 C 280 220, 245 200, 215 210"
+                        d="M 320 210 C 290 220, 265 200, 235 210"
                         fill="none"
                         stroke="#10B981"
                         strokeWidth="8"
-                        opacity={selectedNodeId === 'opencode' || selectedNodeId === 'router' ? 0.3 : 0.12}
+                        opacity={selectedNodeId === cookieNodes.left.id || selectedNodeId === 'router' ? 0.3 : 0.12}
                         filter="url(#glow-cyan)"
                       />
                       <path
-                        d="M 320 210 C 280 220, 245 200, 215 210"
+                        d="M 320 210 C 290 220, 265 200, 235 210"
                         fill="none"
                         stroke="url(#tentacle-opencode)"
                         strokeWidth="2.5"
                         strokeLinecap="round"
-                        opacity={selectedNodeId === 'opencode' || selectedNodeId === 'router' ? 1 : 0.5}
+                        opacity={selectedNodeId === cookieNodes.left.id || selectedNodeId === 'router' ? 1 : 0.5}
                       />
                       <path
-                        d="M 320 210 C 280 220, 245 200, 215 210"
+                        d="M 320 210 C 290 220, 265 200, 235 210"
                         fill="none"
                         stroke="#FFFFFF"
                         strokeWidth="1"
                         strokeDasharray="5 5"
                       />
                       <circle r="3.5" fill="#34D399">
-                        <animateMotion dur="2.8s" repeatCount="indefinite" path="M 320 210 C 280 220, 245 200, 215 210" />
+                        <animateMotion dur="2.8s" repeatCount="indefinite" path="M 320 210 C 290 220, 265 200, 235 210" />
                       </circle>
                     </g>
 
-                    {/* Tentacle 4: Router -> OpenAI Codex (Bottom) */}
+                    {/* Tentacle 4: Router -> Cookie Account 4 (Bottom) */}
                     <g className="transition-opacity duration-300">
                       <path
-                        d="M 380 235 C 395 270, 365 300, 380 325"
+                        d="M 380 235 C 395 270, 365 295, 380 325"
                         fill="none"
                         stroke="#A855F7"
                         strokeWidth="8"
-                        opacity={selectedNodeId === 'codex' || selectedNodeId === 'router' ? 0.3 : 0.12}
+                        opacity={selectedNodeId === cookieNodes.bottom.id || selectedNodeId === 'router' ? 0.3 : 0.12}
                       />
                       <path
-                        d="M 380 235 C 395 270, 365 300, 380 325"
+                        d="M 380 235 C 395 270, 365 295, 380 325"
                         fill="none"
                         stroke="url(#tentacle-codex)"
                         strokeWidth="2.5"
                         strokeLinecap="round"
-                        opacity={selectedNodeId === 'codex' || selectedNodeId === 'router' ? 1 : 0.5}
+                        opacity={selectedNodeId === cookieNodes.bottom.id || selectedNodeId === 'router' ? 1 : 0.5}
                       />
                       <path
-                        d="M 380 235 C 395 270, 365 300, 380 325"
+                        d="M 380 235 C 395 270, 365 295, 380 325"
                         fill="none"
                         stroke="#FFFFFF"
                         strokeWidth="1"
                         strokeDasharray="5 5"
                       />
                       <circle r="3.5" fill="#C084FC">
-                        <animateMotion dur="3s" repeatCount="indefinite" path="M 380 235 C 395 270, 365 300, 380 325" />
+                        <animateMotion dur="3s" repeatCount="indefinite" path="M 380 235 C 395 270, 365 295, 380 325" />
                       </circle>
                     </g>
 
                     {/* ================================================================= */}
-                    {/* NODES (Exact Styling from User's Reference Screenshot)             */}
+                    {/* NODES: Central Router & 4 Active Google Cookie Accounts           */}
                     {/* ================================================================= */}
 
                     {/* 1. NODE CENTER: Router (Amber Glowing Box) */}
@@ -2853,7 +2892,6 @@ export default function Dashboard({ onLogout }) {
                       onClick={() => setSelectedNodeId('router')}
                       className="cursor-pointer group"
                     >
-                      {/* Pulsing halo */}
                       <rect
                         x="320"
                         y="186"
@@ -2882,100 +2920,100 @@ export default function Dashboard({ onLogout }) {
                       <circle cx="340" cy="210" r="5" fill="#F59E0B" opacity="0.8" />
                     </g>
 
-                    {/* 2. NODE TOP: Antigravity (Pill with Amber/Gold Border) */}
+                    {/* 2. NODE TOP: Akun Cookie #1 (Pill with Amber/Gold Border) */}
                     <g
-                      onClick={() => setSelectedNodeId('antigravity')}
+                      onClick={() => setSelectedNodeId(cookieNodes.top.id)}
                       className="cursor-pointer group"
                     >
                       <rect
-                        x="315"
+                        x="295"
                         y="55"
-                        width="130"
+                        width="170"
                         height="36"
                         rx="8"
                         fill="#0F172A"
                         stroke="#F59E0B"
-                        strokeWidth={selectedNodeId === 'antigravity' ? 2 : 1.3}
+                        strokeWidth={selectedNodeId === cookieNodes.top.id ? 2 : 1.3}
                         className="transition-all"
                       />
-                      <text x="345" y="78" fill="#FDE68A" fontSize="12" fontWeight="bold">
-                        Antigravity
+                      <text x="375" y="78" textAnchor="middle" fill="#FDE68A" fontSize="11" fontWeight="bold">
+                        {cookieNodes.top.name}
                       </text>
-                      <circle cx="425" cy="73" r="3.5" fill="#F59E0B" />
+                      <circle cx="452" cy="73" r="3.5" fill="#10B981" />
                     </g>
 
-                    {/* 3. NODE RIGHT: CodeBuddy (Pill with Electric Blue Border) */}
+                    {/* 3. NODE RIGHT: Akun Cookie #2 (Pill with Electric Blue Border) */}
                     <g
-                      onClick={() => setSelectedNodeId('codebuddy')}
+                      onClick={() => setSelectedNodeId(cookieNodes.right.id)}
                       className="cursor-pointer group"
                     >
                       <rect
-                        x="545"
+                        x="525"
                         y="192"
-                        width="125"
+                        width="165"
                         height="36"
                         rx="8"
                         fill="#0F172A"
                         stroke="#38BDF8"
-                        strokeWidth={selectedNodeId === 'codebuddy' ? 2 : 1.3}
+                        strokeWidth={selectedNodeId === cookieNodes.right.id ? 2 : 1.3}
                         className="transition-all"
                       />
-                      <text x="568" y="215" fill="#BAE6FD" fontSize="12" fontWeight="bold">
-                        CodeBuddy
+                      <text x="602" y="215" textAnchor="middle" fill="#BAE6FD" fontSize="11" fontWeight="bold">
+                        {cookieNodes.right.name}
                       </text>
-                      <circle cx="650" cy="210" r="3.5" fill="#38BDF8" />
+                      <circle cx="678" cy="210" r="3.5" fill="#10B981" />
                     </g>
 
-                    {/* 4. NODE LEFT: OpenCode Free (Pill with Slate/Cyan Border) */}
+                    {/* 4. NODE LEFT: Akun Cookie #3 (Pill with Emerald Border) */}
                     <g
-                      onClick={() => setSelectedNodeId('opencode')}
+                      onClick={() => setSelectedNodeId(cookieNodes.left.id)}
                       className="cursor-pointer group"
                     >
                       <rect
-                        x="95"
+                        x="70"
                         y="192"
-                        width="125"
+                        width="165"
                         height="36"
                         rx="8"
                         fill="#0F172A"
-                        stroke="#475569"
-                        strokeWidth={selectedNodeId === 'opencode' ? 2 : 1.2}
+                        stroke="#10B981"
+                        strokeWidth={selectedNodeId === cookieNodes.left.id ? 2 : 1.2}
                         className="transition-all"
                       />
-                      <text x="112" y="215" fill="#CBD5E1" fontSize="11" fontWeight="medium">
-                        OpenCode Free
+                      <text x="147" y="215" textAnchor="middle" fill="#A7F3D0" fontSize="11" fontWeight="bold">
+                        {cookieNodes.left.name}
                       </text>
-                      <circle cx="202" cy="210" r="3" fill="#10B981" />
+                      <circle cx="223" cy="210" r="3.5" fill="#10B981" />
                     </g>
 
-                    {/* 5. NODE BOTTOM: OpenAI Codex (Pill with Slate/Purple Border) */}
+                    {/* 5. NODE BOTTOM: Akun Cookie #4 (Pill with Purple Border) */}
                     <g
-                      onClick={() => setSelectedNodeId('codex')}
+                      onClick={() => setSelectedNodeId(cookieNodes.bottom.id)}
                       className="cursor-pointer group"
                     >
                       <rect
-                        x="315"
+                        x="295"
                         y="325"
-                        width="130"
+                        width="170"
                         height="36"
                         rx="8"
                         fill="#0F172A"
-                        stroke="#475569"
-                        strokeWidth={selectedNodeId === 'codex' ? 2 : 1.2}
+                        stroke="#A855F7"
+                        strokeWidth={selectedNodeId === cookieNodes.bottom.id ? 2 : 1.2}
                         className="transition-all"
                       />
-                      <text x="338" y="348" fill="#94A3B8" fontSize="11" fontWeight="medium">
-                        OpenAI Codex
+                      <text x="375" y="348" textAnchor="middle" fill="#E9D5FF" fontSize="11" fontWeight="bold">
+                        {cookieNodes.bottom.name}
                       </text>
-                      <circle cx="425" cy="343" r="3" fill="#A855F7" />
+                      <circle cx="452" cy="343" r="3.5" fill="#10B981" />
                     </g>
                   </svg>
 
-                  {/* Canvas Zoom Controls (Bottom Left, like in Screenshot) */}
+                  {/* Canvas Zoom Controls (Bottom Left) */}
                   <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1 text-slate-300">
                     <button
                       onClick={() => setCanvasZoom((prev) => Math.max(0.8, prev - 0.1))}
-                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs"
+                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs cursor-pointer"
                       title="Zoom Out"
                     >
                       -
@@ -2985,14 +3023,14 @@ export default function Dashboard({ onLogout }) {
                     </span>
                     <button
                       onClick={() => setCanvasZoom((prev) => Math.min(1.5, prev + 0.1))}
-                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs"
+                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs cursor-pointer"
                       title="Zoom In"
                     >
                       +
                     </button>
                     <button
                       onClick={() => setCanvasZoom(1)}
-                      className="px-1.5 py-0.5 text-[10px] hover:bg-slate-800 rounded text-slate-400"
+                      className="px-1.5 py-0.5 text-[10px] hover:bg-slate-800 rounded text-slate-400 cursor-pointer"
                       title="Reset Zoom"
                     >
                       Fit
@@ -3000,52 +3038,49 @@ export default function Dashboard({ onLogout }) {
                   </div>
                 </div>
 
-                {/* Selected Node Telemetry HUD */}
+                {/* Selected Node Telemetry HUD (Akun Cookie Telemetry) */}
                 <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
                     <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
-                    <span className="font-bold text-slate-100 font-mono text-xs">
-                      {selectedNodeId === 'router' && '⚡ Router (Core Dispatcher)'}
-                      {selectedNodeId === 'antigravity' && 'Antigravity (Gemini 2.5 Flash)'}
-                      {selectedNodeId === 'codebuddy' && 'CodeBuddy (Chromium Engine)'}
-                      {selectedNodeId === 'opencode' && 'OpenCode Free (Cookie Pool)'}
-                      {selectedNodeId === 'codex' && 'OpenAI Codex (Maps Submitter)'}
+                    <span className="font-bold text-slate-100 font-mono text-xs truncate block">
+                      {selectedNodeId === 'router' && '⚡ Router (Job Core)'}
+                      {selectedNodeId === cookieNodes.top.id && `🍪 ${cookieNodes.top.fullName}`}
+                      {selectedNodeId === cookieNodes.right.id && `🍪 ${cookieNodes.right.fullName}`}
+                      {selectedNodeId === cookieNodes.left.id && `🍪 ${cookieNodes.left.fullName}`}
+                      {selectedNodeId === cookieNodes.bottom.id && `🍪 ${cookieNodes.bottom.fullName}`}
                     </span>
                   </div>
 
                   <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Throughput Rate</span>
-                    <span className="font-bold text-cyan-400 font-mono text-xs">
-                      {selectedNodeId === 'router' && '42.8k tok/min'}
-                      {selectedNodeId === 'antigravity' && '28.4k tok/min'}
-                      {selectedNodeId === 'codebuddy' && '12.1k tok/min'}
-                      {selectedNodeId === 'opencode' && '8.5k tok/min'}
-                      {selectedNodeId === 'codex' && '5.2k tok/min'}
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
+                    <span className="font-bold text-cyan-400 font-mono text-xs truncate block">
+                      {selectedNodeId === 'router' && 'Dispatcher / Hub'}
+                      {selectedNodeId === cookieNodes.top.id && cookieNodes.top.email}
+                      {selectedNodeId === cookieNodes.right.id && cookieNodes.right.email}
+                      {selectedNodeId === cookieNodes.left.id && cookieNodes.left.email}
+                      {selectedNodeId === cookieNodes.bottom.id && cookieNodes.bottom.email}
                     </span>
                   </div>
 
                   <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Avg Latency</span>
-                    <span className="font-bold text-amber-400 font-mono text-xs">
-                      {selectedNodeId === 'router' && '14ms'}
-                      {selectedNodeId === 'antigravity' && '185ms'}
-                      {selectedNodeId === 'codebuddy' && '45ms'}
-                      {selectedNodeId === 'opencode' && '82ms'}
-                      {selectedNodeId === 'codex' && '110ms'}
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
+                    <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      {selectedNodeId === 'router' ? 'ONLINE (16 Sesi)' : 'SESI AKTIF (VALID)'}
                     </span>
                   </div>
 
                   <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Node Health</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
                     <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      100% OPERATIONAL
+                      READY TO POST
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Right Column: RECENT REQUESTS (Matching User's Reference Screenshot) */}
+              {/* Right Column: RECENT REQUESTS */}
               <div className="xl:col-span-4 bg-[#0B0F19] border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col justify-between text-white">
                 <div>
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
@@ -3053,7 +3088,7 @@ export default function Dashboard({ onLogout }) {
                       <h3 className="font-bold text-xs sm:text-sm text-slate-100 tracking-wider uppercase">
                         RECENT REQUESTS
                       </h3>
-                      <p className="text-[10px] text-slate-400">Model telemetry & execution logs</p>
+                      <p className="text-[10px] text-slate-400">Log ulasan bot per akun cookie</p>
                     </div>
                     <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800">
                       {usageData?.recent_requests?.length || 5} LOGS
@@ -3065,7 +3100,7 @@ export default function Dashboard({ onLogout }) {
                     <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Filter model..."
+                      placeholder="Cari akun atau target maps..."
                       value={usageSearchQuery}
                       onChange={(e) => setUsageSearchQuery(e.target.value)}
                       className="w-full pl-8 pr-3 py-1.5 bg-slate-900/80 border border-slate-800 rounded-xl text-[11px] text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
@@ -3077,6 +3112,7 @@ export default function Dashboard({ onLogout }) {
                     {(usageData?.recent_requests || [])
                       .filter((req) =>
                         (req.model || '').toLowerCase().includes(usageSearchQuery.toLowerCase()) ||
+                        (req.account_name || '').toLowerCase().includes(usageSearchQuery.toLowerCase()) ||
                         (req.business_name || '').toLowerCase().includes(usageSearchQuery.toLowerCase())
                       )
                       .map((req, idx) => (
@@ -3085,8 +3121,8 @@ export default function Dashboard({ onLogout }) {
                           className="bg-slate-900/70 border border-slate-800/90 rounded-xl p-2.5 hover:border-slate-700 transition-all font-mono text-[11px]"
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-cyan-400 font-bold truncate max-w-[140px]">
-                              {req.model}
+                            <span className="text-cyan-400 font-bold truncate max-w-[160px]" title={req.model}>
+                              {req.account_name || req.model}
                             </span>
                             <span className="text-[10px] text-emerald-400 bg-emerald-950/70 px-1.5 py-0.2 rounded border border-emerald-800/60 font-sans font-bold">
                               {req.status}
@@ -3094,7 +3130,7 @@ export default function Dashboard({ onLogout }) {
                           </div>
 
                           <div className="text-[10px] text-slate-400 truncate mb-1.5 font-sans">
-                            {req.business_name}
+                            {req.business_name} • <span className="font-mono text-slate-500">{req.model}</span>
                           </div>
 
                           <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/50">
@@ -3108,7 +3144,7 @@ export default function Dashboard({ onLogout }) {
                 </div>
 
                 <div className="pt-3 border-t border-slate-800/80 mt-3 text-[10px] text-slate-500 flex items-center justify-between">
-                  <span>Routing Engine: Native Chromium :99</span>
+                  <span>Routing: Native Headless :99</span>
                   <button
                     onClick={loadUsageData}
                     className="text-cyan-400 hover:underline cursor-pointer"

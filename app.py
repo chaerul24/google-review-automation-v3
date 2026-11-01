@@ -1397,17 +1397,30 @@ def api_usage():
                ORDER BY r.id DESC LIMIT 15"""
         ).fetchall()
 
+    cookies_list = db.get_all_cookies()
+    cookie_pool = [
+        {"email": c["email"], "name": c.get("account_name") or c["email"].split("@")[0]}
+        for c in cookies_list if c.get("email")
+    ]
+    if not cookie_pool:
+        cookie_pool = [
+            {"email": "muhmadaljannah@gmail.com", "name": "Muhammad Jannah"},
+            {"email": "cantikaayu0302@gmail.com", "name": "Cantika Ayu"},
+            {"email": "galoijul@gmail.com", "name": "Galo Ijul"},
+            {"email": "jonotayo7@gmail.com", "name": "Jono Tayo"},
+        ]
+
     recent_requests = []
-    models_pool = ["o-deepseek-v3", "gemini-2.5-flash", "gemini-2.5-flash-lite", "chromium-headless-core", "antigravity-llm"]
     for idx, row in enumerate(rows):
-        m = models_pool[idx % len(models_pool)]
+        c_acc = cookie_pool[idx % len(cookie_pool)]
         st = "200 OK" if row["status"] == "reviewed" else ("202 Queued" if row["status"] == "pending" else "400 Error")
         latency = f"{115 + (idx * 37) % 190}ms"
         in_tok = 1840 + (idx * 160) % 950
         out_tok = 210 + (idx * 45) % 140
         recent_requests.append({
             "id": row["id"],
-            "model": m,
+            "model": c_acc["email"],
+            "account_name": c_acc["name"],
             "business_name": row["business_name"] or "Target Bisnis Maps",
             "status": st,
             "latency": latency,
@@ -1418,11 +1431,11 @@ def api_usage():
 
     if len(recent_requests) < 6:
         demo_items = [
-            {"id": 901, "model": "o-deepseek-v3", "business_name": "Toko BERKAH 99", "status": "200 OK", "latency": "142ms", "input_tokens": 2420, "output_tokens": 310, "timestamp": "12m ago"},
-            {"id": 902, "model": "gemini-2.5-flash", "business_name": "CV TRI USAHA PEMALANG", "status": "200 OK", "latency": "188ms", "input_tokens": 1950, "output_tokens": 280, "timestamp": "25m ago"},
-            {"id": 903, "model": "gemini-2.5-flash-lite", "business_name": "Bengkel Motor BrayAn", "status": "200 OK", "latency": "115ms", "input_tokens": 1640, "output_tokens": 220, "timestamp": "42m ago"},
-            {"id": 904, "model": "chromium-headless-core", "business_name": "Musholah Nurul Hakim", "status": "200 OK", "latency": "295ms", "input_tokens": 850, "output_tokens": 140, "timestamp": "1h ago"},
-            {"id": 905, "model": "antigravity-llm", "business_name": "Klinik Pratama Sehat", "status": "200 OK", "latency": "160ms", "input_tokens": 3100, "output_tokens": 420, "timestamp": "2h ago"},
+            {"id": 901, "model": "muhmadaljannah@gmail.com", "account_name": "Muhammad Jannah", "business_name": "Toko BERKAH 99", "status": "200 OK", "latency": "142ms", "input_tokens": 2420, "output_tokens": 310, "timestamp": "12m ago"},
+            {"id": 902, "model": "cantikaayu0302@gmail.com", "account_name": "Cantika Ayu", "business_name": "CV TRI USAHA PEMALANG", "status": "200 OK", "latency": "188ms", "input_tokens": 1950, "output_tokens": 280, "timestamp": "25m ago"},
+            {"id": 903, "model": "galoijul@gmail.com", "account_name": "Galo Ijul", "business_name": "Bengkel Motor BrayAn", "status": "200 OK", "latency": "115ms", "input_tokens": 1640, "output_tokens": 220, "timestamp": "42m ago"},
+            {"id": 904, "model": "jonotayo7@gmail.com", "account_name": "Jono Tayo", "business_name": "Musholah Nurul Hakim", "status": "200 OK", "latency": "295ms", "input_tokens": 850, "output_tokens": 140, "timestamp": "1h ago"},
+            {"id": 905, "model": "jonoboyo865@gmail.com", "account_name": "Jono Boyo", "business_name": "Klinik Pratama Sehat", "status": "200 OK", "latency": "160ms", "input_tokens": 3100, "output_tokens": 420, "timestamp": "2h ago"},
         ]
         recent_requests.extend(demo_items)
 

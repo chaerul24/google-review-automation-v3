@@ -401,4 +401,9 @@ export const api = {
   async getScreenLogs(limit = 25) {
     return request(`/api/screen/logs?limit=${limit}`);
   },
+
+  // Usage & Token Analytics
+  async getUsage() {
+    return request('/api/usage');
+  },
 };

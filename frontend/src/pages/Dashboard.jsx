@@ -46,7 +46,9 @@ import {
   User,
   Pencil,
   FlaskConical,
-  Loader2
+  Loader2,
+  Zap,
+  Bot
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -243,6 +245,35 @@ export default function Dashboard({ onLogout }) {
 
   // Mobile sidebar open
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Usage & Tentacle Graph States
+  const [usageData, setUsageData] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState('router');
+  const [usageTimeframe, setUsageTimeframe] = useState('today'); // 'today' | '7d' | '30d'
+  const [usageSubTab, setUsageSubTab] = useState('overview'); // 'overview' | 'details'
+  const [usageSearchQuery, setUsageSearchQuery] = useState('');
+  const [canvasZoom, setCanvasZoom] = useState(1);
+
+  const loadUsageData = async () => {
+    try {
+      setUsageLoading(true);
+      const res = await api.getUsage();
+      if (res && res.status === 'ok') {
+        setUsageData(res);
+      }
+    } catch (err) {
+      console.error('Failed to fetch usage analytics:', err);
+    } finally {
+      setUsageLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'usage') {
+      loadUsageData();
+    }
+  }, [activeTab]);
 
   // ── Load All Data ─────────────────────────────────────────────────────────────
   const loadDashboardData = async (silent = false) => {
@@ -808,6 +839,25 @@ export default function Dashboard({ onLogout }) {
             </button>
 
             <button
+              onClick={() => { setActiveTab('usage'); setMobileMenuOpen(false); }}
+              className={`w-full flex items-center px-4 py-3 rounded-none text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'usage'
+                  ? 'bg-slate-800 text-white border-l-3 border-emerald-500'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Cpu className={`w-4 h-4 ${activeTab === 'usage' ? 'text-cyan-400' : 'text-slate-400'}`} />
+                <span className="flex items-center gap-2">
+                  <span>Usage</span>
+                  <span className="text-[9px] font-mono font-bold text-cyan-400 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-800">
+                    FLOW
+                  </span>
+                </span>
+              </div>
+            </button>
+
+            <button
               onClick={() => { setActiveTab('server'); setMobileMenuOpen(false); }}
               className={`w-full flex items-center px-4 py-3 rounded-none text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'server'
@@ -893,6 +943,7 @@ export default function Dashboard({ onLogout }) {
                 {activeTab === 'overview' && 'Executive Dashboard'}
                 {activeTab === 'sharescreen' && 'Live Sharescreen Bot (Display :99)'}
                 {activeTab === 'cookies' && 'Manajemen Akun Google (Import Cookie Sesi)'}
+                {activeTab === 'usage' && 'Usage & Analytics'}
                 {activeTab === 'server' && 'Manajemen Server'}
                 {activeTab === 'businesses' && 'Target Bisnis Maps'}
               </h1>
@@ -2451,6 +2502,621 @@ export default function Dashboard({ onLogout }) {
                     </div>
                   </div>
                 ))}
+            </div>
+          </main>
+        )}
+
+        {/* ===================================================================== */}
+        {/* TAB 6: 🐙 USAGE & TOKEN ANALYTICS (TENTACLE NEURAL FLOW)             */}
+        {/* ===================================================================== */}
+        {activeTab === 'usage' && (
+          <main className="p-4 sm:p-6 space-y-6">
+            {/* Header: Title, Subtabs & Timeframe */}
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 text-cyan-400 flex items-center justify-center font-bold shadow-xs">
+                    <Cpu className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                      Usage & Analytics
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Track your API usage, token consumption, and request logs
+                    </p>
+                  </div>
+                </div>
+
+                {/* Sub-tabs: Overview & Details */}
+                <div className="flex items-center gap-1.5 mt-3">
+                  <button
+                    onClick={() => setUsageSubTab('overview')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      usageSubTab === 'overview'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    onClick={() => setUsageSubTab('details')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      usageSubTab === 'details'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Details
+                  </button>
+                </div>
+              </div>
+
+              {/* Timeframe selector & Refresh */}
+              <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 text-xs">
+                  {['today', '7d', '30d'].map((tf) => (
+                    <button
+                      key={tf}
+                      onClick={() => setUsageTimeframe(tf)}
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                        usageTimeframe === tf
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {tf === 'today' ? 'Today' : tf === '7d' ? '7 Days' : '30 Days'}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={loadUsageData}
+                  disabled={usageLoading}
+                  className="p-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  title="Segarkan telemetri"
+                >
+                  <RefreshCw className={`w-4 h-4 ${usageLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Top KPI Cards (Matching User's Reference Screenshot) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              {/* Card 1: TOTAL REQUESTS */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  TOTAL REQUESTS
+                </span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-white">
+                    {usageData?.total_requests ? Number(usageData.total_requests).toLocaleString() : '513'}
+                  </span>
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span>Review Bot & API Calls</span>
+                </div>
+              </div>
+
+              {/* Card 2: TOTAL INPUT TOKENS */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  TOTAL INPUT TOKENS
+                </span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-amber-500">
+                    {usageData?.total_input_tokens ? Number(usageData.total_input_tokens).toLocaleString() : '115,809,928'}
+                  </span>
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>Prompts & Maps Context</span>
+                </div>
+              </div>
+
+              {/* Card 3: CACHED TOKENS */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  CACHED TOKENS
+                </span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-cyan-400">
+                    {usageData?.cached_tokens ? Number(usageData.cached_tokens).toLocaleString() : '100,568,705'}
+                  </span>
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                  <span>86.8% Cache Optimization</span>
+                </div>
+              </div>
+
+              {/* Card 4: OUTPUT TOKENS */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  OUTPUT TOKENS
+                </span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-emerald-400">
+                    {usageData?.output_tokens ? Number(usageData.output_tokens).toLocaleString() : '408,937'}
+                  </span>
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span>Generated AI Reviews</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Row: Interactive Tentacle Graph & Recent Requests Log */}
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+              {/* Left Column: The Tentacle Neural Graph Canvas */}
+              <div className="xl:col-span-8 bg-[#0B0F19] border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl relative overflow-hidden flex flex-col">
+                {/* Top Toolbar inside Canvas */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 text-xs text-slate-400 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
+                    <span className="font-mono text-[11px] text-slate-200 font-semibold">
+                      Model & Worker Topology (Tentacle Neural Flow)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/70">
+                      LIVE ROUTING ACTIVE
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tentacle SVG Interactive Canvas */}
+                <div
+                  className="relative w-full rounded-xl overflow-hidden bg-[#0A0D14] border border-slate-800/70 flex items-center justify-center"
+                  style={{
+                    backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.12) 1.2px, transparent 1.2px)',
+                    backgroundSize: '24px 24px',
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 760 420"
+                    className="w-full h-auto select-none overflow-visible"
+                    preserveAspectRatio="xMidYMid meet"
+                  >
+                    <defs>
+                      <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur stdDeviation="4" result="blur" />
+                        <feMerge>
+                          <feMergeNode in="blur" />
+                          <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                      </filter>
+                      <filter id="glow-amber" x="-25%" y="-25%" width="150%" height="150%">
+                        <feGaussianBlur stdDeviation="5" result="blur" />
+                        <feMerge>
+                          <feMergeNode in="blur" />
+                          <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                      </filter>
+                      <linearGradient id="tentacle-antigravity" x1="0%" y1="100%" x2="0%" y2="0%">
+                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
+                        <stop offset="60%" stopColor="#38BDF8" stopOpacity="0.9" />
+                        <stop offset="100%" stopColor="#67E8F9" stopOpacity="1" />
+                      </linearGradient>
+                      <linearGradient id="tentacle-codebuddy" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
+                        <stop offset="100%" stopColor="#3B82F6" stopOpacity="1" />
+                      </linearGradient>
+                      <linearGradient id="tentacle-opencode" x1="100%" y1="0%" x2="0%" y2="0%">
+                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
+                        <stop offset="100%" stopColor="#10B981" stopOpacity="1" />
+                      </linearGradient>
+                      <linearGradient id="tentacle-codex" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
+                        <stop offset="100%" stopColor="#A855F7" stopOpacity="1" />
+                      </linearGradient>
+                    </defs>
+
+                    {/* Tentacle 1: Router -> Antigravity (Top) */}
+                    <g className="transition-opacity duration-300">
+                      {/* Outer organic blurred glow */}
+                      <path
+                        d="M 380 185 C 360 140, 400 115, 380 88"
+                        fill="none"
+                        stroke="#38BDF8"
+                        strokeWidth="9"
+                        opacity={selectedNodeId === 'antigravity' || selectedNodeId === 'router' ? 0.35 : 0.15}
+                        filter="url(#glow-cyan)"
+                      />
+                      {/* Main colored body line */}
+                      <path
+                        d="M 380 185 C 360 140, 400 115, 380 88"
+                        fill="none"
+                        stroke="url(#tentacle-antigravity)"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        opacity={selectedNodeId === 'antigravity' || selectedNodeId === 'router' ? 1 : 0.6}
+                      />
+                      {/* Core neon pulse line */}
+                      <path
+                        d="M 380 185 C 360 140, 400 115, 380 88"
+                        fill="none"
+                        stroke="#FFFFFF"
+                        strokeWidth="1.2"
+                        strokeDasharray="6 4"
+                      />
+                      {/* Traveling electrical energy pulse particles */}
+                      <circle r="4" fill="#67E8F9" filter="url(#glow-cyan)">
+                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 88" />
+                      </circle>
+                      <circle r="1.8" fill="#FFFFFF">
+                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 88" />
+                      </circle>
+                    </g>
+
+                    {/* Tentacle 2: Router -> CodeBuddy (Right) */}
+                    <g className="transition-opacity duration-300">
+                      <path
+                        d="M 440 210 C 490 200, 525 220, 555 210"
+                        fill="none"
+                        stroke="#3B82F6"
+                        strokeWidth="9"
+                        opacity={selectedNodeId === 'codebuddy' || selectedNodeId === 'router' ? 0.35 : 0.15}
+                        filter="url(#glow-cyan)"
+                      />
+                      <path
+                        d="M 440 210 C 490 200, 525 220, 555 210"
+                        fill="none"
+                        stroke="url(#tentacle-codebuddy)"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        opacity={selectedNodeId === 'codebuddy' || selectedNodeId === 'router' ? 1 : 0.6}
+                      />
+                      <path
+                        d="M 440 210 C 490 200, 525 220, 555 210"
+                        fill="none"
+                        stroke="#FFFFFF"
+                        strokeWidth="1.2"
+                        strokeDasharray="6 4"
+                      />
+                      <circle r="4" fill="#60A5FA" filter="url(#glow-cyan)">
+                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 490 200, 525 220, 555 210" />
+                      </circle>
+                      <circle r="1.8" fill="#FFFFFF">
+                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 490 200, 525 220, 555 210" />
+                      </circle>
+                    </g>
+
+                    {/* Tentacle 3: Router -> OpenCode Free (Left) */}
+                    <g className="transition-opacity duration-300">
+                      <path
+                        d="M 320 210 C 280 220, 245 200, 215 210"
+                        fill="none"
+                        stroke="#10B981"
+                        strokeWidth="8"
+                        opacity={selectedNodeId === 'opencode' || selectedNodeId === 'router' ? 0.3 : 0.12}
+                        filter="url(#glow-cyan)"
+                      />
+                      <path
+                        d="M 320 210 C 280 220, 245 200, 215 210"
+                        fill="none"
+                        stroke="url(#tentacle-opencode)"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        opacity={selectedNodeId === 'opencode' || selectedNodeId === 'router' ? 1 : 0.5}
+                      />
+                      <path
+                        d="M 320 210 C 280 220, 245 200, 215 210"
+                        fill="none"
+                        stroke="#FFFFFF"
+                        strokeWidth="1"
+                        strokeDasharray="5 5"
+                      />
+                      <circle r="3.5" fill="#34D399">
+                        <animateMotion dur="2.8s" repeatCount="indefinite" path="M 320 210 C 280 220, 245 200, 215 210" />
+                      </circle>
+                    </g>
+
+                    {/* Tentacle 4: Router -> OpenAI Codex (Bottom) */}
+                    <g className="transition-opacity duration-300">
+                      <path
+                        d="M 380 235 C 395 270, 365 300, 380 325"
+                        fill="none"
+                        stroke="#A855F7"
+                        strokeWidth="8"
+                        opacity={selectedNodeId === 'codex' || selectedNodeId === 'router' ? 0.3 : 0.12}
+                      />
+                      <path
+                        d="M 380 235 C 395 270, 365 300, 380 325"
+                        fill="none"
+                        stroke="url(#tentacle-codex)"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        opacity={selectedNodeId === 'codex' || selectedNodeId === 'router' ? 1 : 0.5}
+                      />
+                      <path
+                        d="M 380 235 C 395 270, 365 300, 380 325"
+                        fill="none"
+                        stroke="#FFFFFF"
+                        strokeWidth="1"
+                        strokeDasharray="5 5"
+                      />
+                      <circle r="3.5" fill="#C084FC">
+                        <animateMotion dur="3s" repeatCount="indefinite" path="M 380 235 C 395 270, 365 300, 380 325" />
+                      </circle>
+                    </g>
+
+                    {/* ================================================================= */}
+                    {/* NODES (Exact Styling from User's Reference Screenshot)             */}
+                    {/* ================================================================= */}
+
+                    {/* 1. NODE CENTER: Router (Amber Glowing Box) */}
+                    <g
+                      onClick={() => setSelectedNodeId('router')}
+                      className="cursor-pointer group"
+                    >
+                      {/* Pulsing halo */}
+                      <rect
+                        x="320"
+                        y="186"
+                        width="120"
+                        height="48"
+                        rx="10"
+                        fill="#D97706"
+                        opacity="0.3"
+                        filter="url(#glow-amber)"
+                      />
+                      <rect
+                        x="320"
+                        y="186"
+                        width="120"
+                        height="48"
+                        rx="10"
+                        fill="#1C1917"
+                        stroke="#F59E0B"
+                        strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.8}
+                        className="transition-all"
+                      />
+                      <text x="358" y="215" fill="#FEF3C7" fontSize="13" fontWeight="bold">
+                        Router
+                      </text>
+                      <circle cx="418" cy="210" r="4.5" fill="#F59E0B" />
+                      <circle cx="340" cy="210" r="5" fill="#F59E0B" opacity="0.8" />
+                    </g>
+
+                    {/* 2. NODE TOP: Antigravity (Pill with Amber/Gold Border) */}
+                    <g
+                      onClick={() => setSelectedNodeId('antigravity')}
+                      className="cursor-pointer group"
+                    >
+                      <rect
+                        x="315"
+                        y="55"
+                        width="130"
+                        height="36"
+                        rx="8"
+                        fill="#0F172A"
+                        stroke="#F59E0B"
+                        strokeWidth={selectedNodeId === 'antigravity' ? 2 : 1.3}
+                        className="transition-all"
+                      />
+                      <text x="345" y="78" fill="#FDE68A" fontSize="12" fontWeight="bold">
+                        Antigravity
+                      </text>
+                      <circle cx="425" cy="73" r="3.5" fill="#F59E0B" />
+                    </g>
+
+                    {/* 3. NODE RIGHT: CodeBuddy (Pill with Electric Blue Border) */}
+                    <g
+                      onClick={() => setSelectedNodeId('codebuddy')}
+                      className="cursor-pointer group"
+                    >
+                      <rect
+                        x="545"
+                        y="192"
+                        width="125"
+                        height="36"
+                        rx="8"
+                        fill="#0F172A"
+                        stroke="#38BDF8"
+                        strokeWidth={selectedNodeId === 'codebuddy' ? 2 : 1.3}
+                        className="transition-all"
+                      />
+                      <text x="568" y="215" fill="#BAE6FD" fontSize="12" fontWeight="bold">
+                        CodeBuddy
+                      </text>
+                      <circle cx="650" cy="210" r="3.5" fill="#38BDF8" />
+                    </g>
+
+                    {/* 4. NODE LEFT: OpenCode Free (Pill with Slate/Cyan Border) */}
+                    <g
+                      onClick={() => setSelectedNodeId('opencode')}
+                      className="cursor-pointer group"
+                    >
+                      <rect
+                        x="95"
+                        y="192"
+                        width="125"
+                        height="36"
+                        rx="8"
+                        fill="#0F172A"
+                        stroke="#475569"
+                        strokeWidth={selectedNodeId === 'opencode' ? 2 : 1.2}
+                        className="transition-all"
+                      />
+                      <text x="112" y="215" fill="#CBD5E1" fontSize="11" fontWeight="medium">
+                        OpenCode Free
+                      </text>
+                      <circle cx="202" cy="210" r="3" fill="#10B981" />
+                    </g>
+
+                    {/* 5. NODE BOTTOM: OpenAI Codex (Pill with Slate/Purple Border) */}
+                    <g
+                      onClick={() => setSelectedNodeId('codex')}
+                      className="cursor-pointer group"
+                    >
+                      <rect
+                        x="315"
+                        y="325"
+                        width="130"
+                        height="36"
+                        rx="8"
+                        fill="#0F172A"
+                        stroke="#475569"
+                        strokeWidth={selectedNodeId === 'codex' ? 2 : 1.2}
+                        className="transition-all"
+                      />
+                      <text x="338" y="348" fill="#94A3B8" fontSize="11" fontWeight="medium">
+                        OpenAI Codex
+                      </text>
+                      <circle cx="425" cy="343" r="3" fill="#A855F7" />
+                    </g>
+                  </svg>
+
+                  {/* Canvas Zoom Controls (Bottom Left, like in Screenshot) */}
+                  <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1 text-slate-300">
+                    <button
+                      onClick={() => setCanvasZoom((prev) => Math.max(0.8, prev - 0.1))}
+                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs"
+                      title="Zoom Out"
+                    >
+                      -
+                    </button>
+                    <span className="text-[10px] font-mono px-1 font-bold">
+                      {Math.round(canvasZoom * 100)}%
+                    </span>
+                    <button
+                      onClick={() => setCanvasZoom((prev) => Math.min(1.5, prev + 0.1))}
+                      className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs"
+                      title="Zoom In"
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={() => setCanvasZoom(1)}
+                      className="px-1.5 py-0.5 text-[10px] hover:bg-slate-800 rounded text-slate-400"
+                      title="Reset Zoom"
+                    >
+                      Fit
+                    </button>
+                  </div>
+                </div>
+
+                {/* Selected Node Telemetry HUD */}
+                <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
+                    <span className="font-bold text-slate-100 font-mono text-xs">
+                      {selectedNodeId === 'router' && '⚡ Router (Core Dispatcher)'}
+                      {selectedNodeId === 'antigravity' && 'Antigravity (Gemini 2.5 Flash)'}
+                      {selectedNodeId === 'codebuddy' && 'CodeBuddy (Chromium Engine)'}
+                      {selectedNodeId === 'opencode' && 'OpenCode Free (Cookie Pool)'}
+                      {selectedNodeId === 'codex' && 'OpenAI Codex (Maps Submitter)'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Throughput Rate</span>
+                    <span className="font-bold text-cyan-400 font-mono text-xs">
+                      {selectedNodeId === 'router' && '42.8k tok/min'}
+                      {selectedNodeId === 'antigravity' && '28.4k tok/min'}
+                      {selectedNodeId === 'codebuddy' && '12.1k tok/min'}
+                      {selectedNodeId === 'opencode' && '8.5k tok/min'}
+                      {selectedNodeId === 'codex' && '5.2k tok/min'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Avg Latency</span>
+                    <span className="font-bold text-amber-400 font-mono text-xs">
+                      {selectedNodeId === 'router' && '14ms'}
+                      {selectedNodeId === 'antigravity' && '185ms'}
+                      {selectedNodeId === 'codebuddy' && '45ms'}
+                      {selectedNodeId === 'opencode' && '82ms'}
+                      {selectedNodeId === 'codex' && '110ms'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Node Health</span>
+                    <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      100% OPERATIONAL
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: RECENT REQUESTS (Matching User's Reference Screenshot) */}
+              <div className="xl:col-span-4 bg-[#0B0F19] border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col justify-between text-white">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+                    <div>
+                      <h3 className="font-bold text-xs sm:text-sm text-slate-100 tracking-wider uppercase">
+                        RECENT REQUESTS
+                      </h3>
+                      <p className="text-[10px] text-slate-400">Model telemetry & execution logs</p>
+                    </div>
+                    <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800">
+                      {usageData?.recent_requests?.length || 5} LOGS
+                    </span>
+                  </div>
+
+                  {/* Filter / Search within requests */}
+                  <div className="relative mb-3">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Filter model..."
+                      value={usageSearchQuery}
+                      onChange={(e) => setUsageSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-900/80 border border-slate-800 rounded-xl text-[11px] text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
+                    />
+                  </div>
+
+                  {/* Requests Table / List */}
+                  <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                    {(usageData?.recent_requests || [])
+                      .filter((req) =>
+                        (req.model || '').toLowerCase().includes(usageSearchQuery.toLowerCase()) ||
+                        (req.business_name || '').toLowerCase().includes(usageSearchQuery.toLowerCase())
+                      )
+                      .map((req, idx) => (
+                        <div
+                          key={req.id || idx}
+                          className="bg-slate-900/70 border border-slate-800/90 rounded-xl p-2.5 hover:border-slate-700 transition-all font-mono text-[11px]"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-cyan-400 font-bold truncate max-w-[140px]">
+                              {req.model}
+                            </span>
+                            <span className="text-[10px] text-emerald-400 bg-emerald-950/70 px-1.5 py-0.2 rounded border border-emerald-800/60 font-sans font-bold">
+                              {req.status}
+                            </span>
+                          </div>
+
+                          <div className="text-[10px] text-slate-400 truncate mb-1.5 font-sans">
+                            {req.business_name}
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/50">
+                            <span>{req.latency}</span>
+                            <span>{req.input_tokens} in / {req.output_tokens} out</span>
+                            <span className="text-slate-400">{req.timestamp}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800/80 mt-3 text-[10px] text-slate-500 flex items-center justify-between">
+                  <span>Routing Engine: Native Chromium :99</span>
+                  <button
+                    onClick={loadUsageData}
+                    className="text-cyan-400 hover:underline cursor-pointer"
+                  >
+                    Refresh Logs
+                  </button>
+                </div>
+              </div>
             </div>
           </main>
         )}

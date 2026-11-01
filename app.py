@@ -117,6 +117,83 @@ def download_bot_sh():
 
 
 
+@app.route("/proof/<path:filename>")
+def serve_proof_image(filename):
+    """Serve or view live test proof screenshot PNGs."""
+    proof_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "proof")
+    target_file = os.path.join(proof_dir, filename)
+    as_download = request.args.get("download", "0") in ("1", "true")
+    if not os.path.isfile(target_file):
+        brain_dir = "/root/.gemini/antigravity-cli/brain/a8747ff4-b544-4f58-a5a2-1ed1aac6b6d6"
+        brain_target = os.path.join(brain_dir, filename)
+        if os.path.isfile(brain_target):
+            return send_from_directory(brain_dir, filename, mimetype="image/png", as_attachment=as_download)
+        abort(404)
+    return send_from_directory(proof_dir, filename, mimetype="image/png", as_attachment=as_download)
+
+
+@app.route("/proof")
+def list_proof_gallery():
+    """Gallery page to view and download all live test proof PNG screenshots."""
+    proof_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "proof")
+    files = []
+    if os.path.isdir(proof_dir):
+        files = [f for f in os.listdir(proof_dir) if f.endswith(".png")]
+        files.sort(reverse=True)
+    
+    cards_html = ""
+    for f in files:
+        cards_html += f"""
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col justify-between hover:border-cyan-500/50 transition">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/80 px-2.5 py-1 rounded-lg border border-cyan-800/50">PNG PROOF</span>
+              <span class="text-xs text-slate-400 font-mono truncate max-w-[180px]">{f}</span>
+            </div>
+            <a href="/proof/{f}" target="_blank" class="block overflow-hidden rounded-xl border border-slate-700/60 bg-black/60 group">
+              <img src="/proof/{f}" alt="{f}" class="w-full h-48 object-cover group-hover:scale-105 transition duration-300" />
+            </a>
+          </div>
+          <div class="mt-4 flex gap-2">
+            <a href="/proof/{f}" target="_blank" class="flex-1 text-center text-xs font-semibold py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition">Lihat Penuh</a>
+            <a href="/proof/{f}?download=1" download="{f}" class="text-xs font-semibold py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">Download</a>
+          </div>
+        </div>
+        """
+
+    html = f"""<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bukti Screenshot PNG — TikTok Live</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6 md:p-10 font-sans">
+  <div class="max-w-6xl mx-auto">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 border-b border-slate-800/80 pb-6">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400">
+          📸 Galeri Bukti Screenshot PNG • TikTok Live
+        </h1>
+        <p class="text-slate-400 text-sm mt-1">
+          Akses langsung file PNG bukti eksekusi like tap-tap dan komentar "indonesia" setiap akun cookie.
+        </p>
+      </div>
+      <a href="/dashboard" class="self-start md:self-auto text-xs font-bold py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+        ← Kembali ke Dashboard
+      </a>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {cards_html}
+    </div>
+  </div>
+</body>
+</html>"""
+    return html
+
+
 @app.route("/promo/<path:filename>")
 def serve_promo_video(filename):
     """Serve or download promotional video files."""

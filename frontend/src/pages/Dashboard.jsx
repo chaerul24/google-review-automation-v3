@@ -202,6 +202,16 @@ export default function Dashboard({ onLogout }) {
   useEffect(() => {
     if (activeTab !== 'sharescreen') return;
 
+    // Cek status segera saat tab sharescreen diklik
+    fetch('/api/tiktok-live/status')
+      .then(r => r.json())
+      .then(data => {
+        if (data?.state?.is_running && !liveTask?.is_running) {
+          setSharescreenMode('tiktok_live');
+        }
+      })
+      .catch(() => {});
+
     let mounted = true;
     const fetchScreenData = async () => {
       try {
@@ -213,8 +223,9 @@ export default function Dashboard({ onLogout }) {
           if (logsRes && logsRes.logs) setScreenLogs(logsRes.logs);
           if (ttRes && ttRes.state) {
             setTiktokLiveScreenStatus(ttRes.state);
-            // Otomatis arahkan ke tab Tiktok Live jika bot TikTok sedang on-air & user belum manual switch
-            if (ttRes.state.is_running && !userManuallyToggledScreen) {
+            // Otomatis arahkan ke tab Tiktok Live jika bot TikTok sedang aktif & Google Maps tidak aktif
+            const isGMapRunning = Boolean(liveTask?.is_running && !liveTask?.current_task?.includes('tiktok'));
+            if (ttRes.state.is_running && !isGMapRunning) {
               setSharescreenMode('tiktok_live');
             }
           }
@@ -229,7 +240,7 @@ export default function Dashboard({ onLogout }) {
       mounted = false;
       clearInterval(interval);
     };
-  }, [activeTab, userManuallyToggledScreen]);
+  }, [activeTab, liveTask?.is_running]);
 
   // Chart Interactive States
   const [chartHoverIdx, setChartHoverIdx] = useState(null);
@@ -434,13 +445,22 @@ export default function Dashboard({ onLogout }) {
     setTiktokForm(f => ({ ...f, display: nextEnabled }));
     try {
       setBotConfigSaving(true);
-      await fetch('/api/bot-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ configs: nextConfig }),
-      });
+      await Promise.all([
+        fetch('/api/bot-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ configs: nextConfig }),
+        }),
+        fetch('/api/tiktok-live/toggle-display', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ enabled: nextEnabled }),
+        }).catch(() => {})
+      ]);
       setBotConfigSavedSuccess(true);
+      setScreenTs(Date.now());
       setTimeout(() => setBotConfigSavedSuccess(false), 2500);
     } catch (err) {
       console.error('Failed to toggle display:', err);
@@ -2450,14 +2470,16 @@ export default function Dashboard({ onLogout }) {
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                         sharescreenMode === 'tiktok_live'
                           ? (isTTRunning ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-600')
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : (liveTask?.is_running ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600')
                       }`}>
                         <span className={`w-2 h-2 rounded-full ${
                           sharescreenMode === 'tiktok_live'
                             ? (isTTRunning ? 'bg-rose-500 animate-pulse' : 'bg-slate-400')
-                            : 'bg-emerald-500 animate-pulse'
+                            : (liveTask?.is_running ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400')
                         }`} />
-                        {sharescreenMode === 'tiktok_live' ? (isTTRunning ? 'LIVE ON-AIR' : 'STANDBY') : 'LIVE STREAM'}
+                        {sharescreenMode === 'tiktok_live'
+                          ? (isTTRunning ? 'LIVE ON-AIR' : 'STANDBY')
+                          : (liveTask?.is_running ? 'LIVE STREAM' : 'STANDBY (:99)')}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
@@ -2542,6 +2564,36 @@ export default function Dashboard({ onLogout }) {
                   )}
                 </div>
               </div>
+
+              {/* Alert Banner jika Opsi Display Sedang Nonaktif (Mati) */}
+              {!botModulesConfig.display?.enabled && (
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950/90 to-slate-900 border border-indigo-700/60 rounded-2xl p-4 sm:p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
+                  <div className="flex items-start gap-3.5 text-indigo-200">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-900/60 border border-indigo-600/60 flex items-center justify-center shrink-0">
+                      <Tv className="w-5 h-5 text-indigo-300" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-white text-sm">Opsi Layar (Display) Saat Ini Nonaktif (Mati)</p>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          HEMAT RESOURCE
+                        </span>
+                      </div>
+                      <p className="text-slate-300 text-xs mt-0.5">
+                        Sesuai konfigurasi di Config Bot (default mati), layar tidak mengambil snapshot berkala agar bot bekerja maksimal dan cepat. Klik tombol di samping untuk menyalakan layar pemantauan langsung.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleToggleDisplay}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition shrink-0 flex items-center justify-center gap-2 cursor-pointer shadow-md text-xs"
+                  >
+                    <Tv className="w-4 h-4" />
+                    <span>Aktifkan Layar Pemantauan Sekarang</span>
+                  </button>
+                </div>
+              )}
 
               {/* ───────────────────────────────────────────────────────────── */}
               {/* MODE 1: GOOGLE MAP (DISPLAY :99)                              */}
@@ -2630,21 +2682,41 @@ export default function Dashboard({ onLogout }) {
                                 setUserManuallyToggledScreen(true);
                                 setSharescreenMode('tiktok_live');
                               }}
-                              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl cursor-pointer transition inline-flex items-center gap-2"
+                              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl cursor-pointer transition inline-flex items-center gap-2 shadow-sm"
                             >
                               <TikTokLogo className="w-4 h-4" />
-                              <span>Lihat Layar TikTok Live ({ttCardList.length} Akun)</span>
+                              <span>Lihat Layar TikTok Live ({ttCardList.length} Akun) →</span>
                             </button>
                           ) : (
-                            <button
-                              onClick={() => {
-                                setStreamError(false);
-                                setScreenTs(Date.now());
-                              }}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer"
-                            >
-                              Coba Muat Ulang Layar
-                            </button>
+                            <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowFastRunModal(true)}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm"
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                                <span>Mulai Ulasan Google Maps</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowTiktokConfigModal(true)}
+                                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm"
+                              >
+                                <TikTokLogo className="w-3.5 h-3.5" />
+                                <span>Mulai Bot TikTok Live</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setStreamError(false);
+                                  setScreenTs(Date.now());
+                                }}
+                                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl cursor-pointer transition inline-flex items-center gap-1.5"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                <span>Segarkan</span>
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}

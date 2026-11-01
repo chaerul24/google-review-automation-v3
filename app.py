@@ -1778,7 +1778,17 @@ def api_update_bot_config():
             current[mod_key].update(mod_val)
         else:
             current[mod_key] = mod_val
-            
+
+    # Live synchronization for TikTok runner
+    if "display" in new_configs and isinstance(new_configs["display"], dict):
+        disp_state = new_configs["display"].get("enabled")
+        if disp_state is not None:
+            tiktok_live_runner.enable_display = bool(disp_state)
+            if "tiktok_live" in current:
+                current["tiktok_live"]["display"] = bool(disp_state)
+            if "google_maps" in current:
+                current["google_maps"]["display"] = bool(disp_state)
+
     # YouTube Live always remains coming_soon and disabled until ready
     if "youtube_live" in current:
         current["youtube_live"]["coming_soon"] = True
@@ -1790,6 +1800,21 @@ def api_update_bot_config():
         "message": "Konfigurasi tugas bot berhasil disimpan.",
         "configs": current
     })
+
+@app.route("/api/tiktok-live/toggle-display", methods=["POST"])
+def api_tiktok_live_toggle_display():
+    data = request.get_json(silent=True) or {}
+    enabled = data.get("enabled")
+    if enabled is None:
+        enabled = not getattr(tiktok_live_runner, "enable_display", False)
+    tiktok_live_runner.enable_display = bool(enabled)
+    cfg = get_bot_modules_config()
+    if "display" in cfg:
+        cfg["display"]["enabled"] = bool(enabled)
+    if "tiktok_live" in cfg:
+        cfg["tiktok_live"]["display"] = bool(enabled)
+    save_bot_modules_config(cfg)
+    return jsonify({"status": "ok", "enabled": tiktok_live_runner.enable_display})
 
 
 # ── TikTok Live Execution Worker & Status (Real Web Access - Headless Engine) ──
@@ -2510,7 +2535,7 @@ class TikTokLiveRunner:
                     pass
 
                 # Save screenshot of isolated worker browser only when on active live page AND display is enabled
-                if getattr(self, "enable_display", False) and (now - last_screen_time >= 2.5):
+                if getattr(self, "enable_display", False) and ((now - last_screen_time >= 2.5) or not os.path.exists(screen_path)):
                     last_screen_time = now
                     try:
                         curr_url = (driver.current_url or "").lower()
@@ -2803,7 +2828,7 @@ class TikTokLiveRunner:
                         pass
 
                     # Save screenshot of isolated worker browser only when on active live page AND display is enabled
-                    if getattr(self, "enable_display", False) and (now - last_screen_time >= 2.5):
+                    if getattr(self, "enable_display", False) and ((now - last_screen_time >= 2.5) or not os.path.exists(screen_path)):
                         last_screen_time = now
                         try:
                             curr_url = (driver.current_url or "").lower()

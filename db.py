@@ -1483,38 +1483,40 @@ def delete_tiktok_cookie(cookie_id):
         conn.execute("DELETE FROM tiktok_cookies WHERE id = ?", (cookie_id,))
 
 
-def update_tiktok_cookie_status(identifier, status, error_reason=None, nickname=None):
-    """Update status for a TikTok cookie by ID or username."""
+def update_tiktok_cookie_status(identifier, status, error_reason=None, nickname=None, username=None, avatar_url=None):
+    """Update status, error_reason, nickname, username, and avatar_url for a TikTok cookie by ID or username."""
     with get_db() as conn:
-        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            if nickname:
-                conn.execute(
-                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, nickname = ?, "
-                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (status, error_reason, nickname, int(identifier)),
-                )
-            else:
-                conn.execute(
-                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, "
-                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (status, error_reason, int(identifier)),
-                )
+        fields = [
+            "status = ?",
+            "error_reason = ?",
+            "last_checked_at = CURRENT_TIMESTAMP",
+            "updated_at = CURRENT_TIMESTAMP",
+        ]
+        params = [status, error_reason]
+        if nickname:
+            fields.append("nickname = ?")
+            params.append(nickname)
+        if username:
+            u_clean = username.strip()
+            if not u_clean.startswith("@"):
+                u_clean = f"@{u_clean}"
+            fields.append("username = ?")
+            params.append(u_clean)
+        if avatar_url:
+            fields.append("avatar_url = ?")
+            params.append(avatar_url)
+
+        if isinstance(identifier, int) or (isinstance(identifier, str) and str(identifier).isdigit()):
+            params.append(int(identifier))
+            sql = f"UPDATE tiktok_cookies SET {', '.join(fields)} WHERE id = ?"
         else:
             uname = str(identifier).strip()
             if not uname.startswith("@"):
                 uname = f"@{uname}"
-            if nickname:
-                conn.execute(
-                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, nickname = ?, "
-                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE LOWER(username) = LOWER(?)",
-                    (status, error_reason, nickname, uname),
-                )
-            else:
-                conn.execute(
-                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, "
-                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE LOWER(username) = LOWER(?)",
-                    (status, error_reason, uname),
-                )
+            params.append(uname)
+            sql = f"UPDATE tiktok_cookies SET {', '.join(fields)} WHERE LOWER(username) = LOWER(?)"
+
+        conn.execute(sql, tuple(params))
 
 
 def migrate_add_cookie_session_columns():

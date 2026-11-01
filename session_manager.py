@@ -312,18 +312,19 @@ def parse_cookie_payload(
         if text.lower().startswith("cookie:"):
             text = text[7:].strip()
 
-        # 3. URL decode if needed (%5B is '[', %7B is '{')
-        if text.startswith("%5B") or text.startswith("%7B") or "%22" in text:
-            try:
-                text = urllib.parse.unquote(text)
-            except Exception:
-                pass
-
-        # 4. Direct JSON parsing
+        # 3. Direct JSON parsing FIRST (crucial: preserves valid JSON objects where cookie values contain '%22' or encoded chars)
         try:
             items_raw = json.loads(text)
         except Exception:
             pass
+
+        # 4. If direct parse failed, check if whole payload was URL encoded (e.g. starts with %5B '[' or %7B '{')
+        if items_raw is None and (text.startswith("%5B") or text.startswith("%7B") or "%22" in text):
+            try:
+                unquoted = urllib.parse.unquote(text)
+                items_raw = json.loads(unquoted)
+            except Exception:
+                pass
 
         # 5. Try fixing trailing commas before ] or }
         if items_raw is None:
@@ -1257,14 +1258,17 @@ def check_tiktok_account_live(cookie_json_or_list: Any, fallback_account: str = 
         val_str = str(ck.get("value") or "").strip()
         if name and val_str:
             cookie_parts.append(f"{ck.get('name')}={val_str}")
-        if name == "sessionid" and len(val_str) > 8:
+        if name in ("sessionid", "sessionid_ss", "sid_tt") and len(val_str) > 8:
             has_sessionid = True
-        elif name == "sid_guard" and len(val_str) > 8:
+        elif name in ("sid_guard", "sid_tt") and len(val_str) > 8:
             has_sid_guard = True
-        elif name in ("living_user_id", "user_id") and val_str:
+        elif name == "multi_sids" and val_str:
+            # Format: 6961763323265565702%3A9ffbf0a5d8f8886bbc5b054c51337563
+            m_uid = re.search(r"^(\d{5,30})", val_str)
+            if m_uid:
+                living_id = m_uid.group(1)
+        elif name in ("living_user_id", "user_id") and val_str and val_str.isdigit():
             living_id = val_str
-        elif name in ("uid_tt", "uid") and val_str:
-            uid = val_str[:12]
         elif name in ("unique_id", "username", "user_name", "screen_name") and val_str:
             hint_username = val_str
 

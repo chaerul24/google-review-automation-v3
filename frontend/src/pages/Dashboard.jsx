@@ -710,8 +710,8 @@ export default function Dashboard({ onLogout }) {
       if (res.username) {
         setTikTokCookieForm(prev => ({
           ...prev,
-          username: prev.username || res.username,
-          nickname: prev.nickname || res.nickname || ''
+          username: (!prev.username || prev.username.startsWith('@tiktok_')) ? res.username : prev.username,
+          nickname: (!prev.nickname || prev.nickname.startsWith('tiktok_')) ? (res.nickname || prev.nickname) : prev.nickname
         }));
       }
     } catch {
@@ -773,7 +773,8 @@ export default function Dashboard({ onLogout }) {
     try {
       const res = await api.testTikTokCookie(id);
       if (res.is_valid || res.session_status === 'active') {
-        setSuccessMsg(`✓ Sesi TikTok "${username}" AKTIF & terverifikasi valid!`);
+        const uName = res.username || username;
+        setSuccessMsg(`✓ Sesi TikTok "${uName}" AKTIF & terverifikasi valid!`);
       } else {
         setErrorMsg(`▲ Sesi TikTok "${username}": ${res.reason || res.session_status || 'Perlu login ulang'}`);
       }
@@ -2893,8 +2894,12 @@ export default function Dashboard({ onLogout }) {
                         <tr key={ck.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-slate-900 text-pink-500 border border-slate-800 flex items-center justify-center shrink-0 shadow-inner">
-                                <TikTokLogo className="w-4 h-4" />
+                              <div className="w-8 h-8 rounded-full bg-slate-900 text-pink-500 border border-slate-800 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
+                                {ck.avatar_url ? (
+                                  <img src={ck.avatar_url} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <TikTokLogo className="w-4 h-4" />
+                                )}
                               </div>
                               <div className="min-w-0">
                                 <a

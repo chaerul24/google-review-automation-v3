@@ -1993,36 +1993,10 @@ def api_detect_tiktok_cookie():
     if not raw_payload:
         return jsonify({"status": "error", "message": "Payload cookie TikTok tidak boleh kosong."}), 400
 
-    parsed_cookies = []
-    if raw_payload.startswith("[") and raw_payload.endswith("]"):
-        try:
-            parsed_cookies = json.loads(raw_payload)
-        except Exception as e:
-            return jsonify({"status": "error", "message": f"Format JSON tidak valid: {e}"}), 400
-    elif "=" in raw_payload:
-        pairs = [p.strip() for p in raw_payload.split(";") if p.strip()]
-        for p in pairs:
-            if "=" in p:
-                k, v = p.split("=", 1)
-                parsed_cookies.append({
-                    "name": k.strip(),
-                    "value": v.strip(),
-                    "domain": ".tiktok.com",
-                    "path": "/"
-                })
-    else:
-        token = raw_payload.strip()
-        parsed_cookies.append({
-            "name": "sessionid",
-            "value": token,
-            "domain": ".tiktok.com",
-            "path": "/"
-        })
+    val = session_manager.validate_cookie_payload(raw_payload, target_domain="tiktok.com")
+    parsed_cookies = val.sanitized_cookies if val.sanitized_cookies else []
 
-    if not parsed_cookies:
-        return jsonify({"status": "error", "message": "Gagal mengurai cookie TikTok."}), 400
-
-    chk = session_manager.check_tiktok_account_live(parsed_cookies)
+    chk = session_manager.check_tiktok_account_live(parsed_cookies or raw_payload)
     username = chk.get("username") or ""
     nickname = chk.get("nickname") or ""
     avatar_url = chk.get("avatar_url") or ""
@@ -2037,8 +2011,8 @@ def api_detect_tiktok_cookie():
         "session_status": status,
         "is_valid": chk.get("is_valid", False),
         "reason": chk.get("reason", ""),
-        "cookie_count": len(parsed_cookies),
-        "has_sessionid": any(c.get("name") in ("sessionid", "sid_guard") for c in parsed_cookies)
+        "cookie_count": len(parsed_cookies) or val.cookie_count,
+        "has_sessionid": any(c.get("name") in ("sessionid", "sessionid_ss", "sid_guard", "sid_tt") for c in parsed_cookies)
     })
 
 
@@ -2053,43 +2027,32 @@ def api_add_tiktok_cookie():
     username_input = (data.get("username") or data.get("account_name") or "").strip()
     nickname_input = (data.get("nickname") or "").strip()
 
-    # Parse payload (supports JSON array, raw header 'sessionid=xxx; ...', or single sessionid token)
-    parsed_cookies = []
-    if raw_payload.startswith("[") and raw_payload.endswith("]"):
-        try:
-            parsed_cookies = json.loads(raw_payload)
-        except Exception as e:
-            return jsonify({"status": "error", "message": f"Format JSON tidak valid: {e}"}), 400
-    elif "=" in raw_payload:
-        # Key-value header format
-        pairs = [p.strip() for p in raw_payload.split(";") if p.strip()]
-        for p in pairs:
-            if "=" in p:
-                k, v = p.split("=", 1)
-                parsed_cookies.append({
-                    "name": k.strip(),
-                    "value": v.strip(),
-                    "domain": ".tiktok.com",
-                    "path": "/"
-                })
-    else:
-        # Assume direct sessionid token string
-        token = raw_payload.strip()
-        parsed_cookies.append({
-            "name": "sessionid",
-            "value": token,
-            "domain": ".tiktok.com",
-            "path": "/"
-        })
+    val = session_manager.validate_cookie_payload(raw_payload, target_domain="tiktok.com")
+    parsed_cookies = val.sanitized_cookies if val.sanitized_cookies else []
 
     if not parsed_cookies:
-        return jsonify({"status": "error", "message": "Gagal mengurai cookie TikTok."}), 400
+        # Fallback if raw single token
+        token = raw_payload.strip()
+        if len(token) > 10 and not any(c in token for c in ('{', '[', '=', ';', ' ')):
+            parsed_cookies = [{
+                "name": "sessionid",
+                "value": token,
+                "domain": ".tiktok.com",
+                "path": "/"
+            }]
+        else:
+            return jsonify({"status": "error", "message": "Gagal mengurai cookie TikTok. Pastikan format JSON array atau header cookie valid."}), 400
 
     # Live verification using session_manager
     chk = session_manager.check_tiktok_account_live(parsed_cookies, fallback_account=username_input)
     status = chk.get("status", "unknown")
     reason = chk.get("reason", "")
-    detected_user = username_input or chk.get("username") or chk.get("account_name") or f"@tiktok_user_{int(time.time()) % 10000:04d}"
+    
+    # Prefer detected real username if input was empty or generated
+    detected_user = (
+        username_input if (username_input and not username_input.startswith("@tiktok_"))
+        else (chk.get("username") or username_input or f"@tiktok_user_{int(time.time()) % 10000:04d}")
+    )
     if not detected_user.startswith("@"):
         detected_user = f"@{detected_user}"
 
@@ -2137,12 +2100,27 @@ def api_test_tiktok_cookie(cookie_id):
     chk = session_manager.check_tiktok_account_live(ck.get("cookie_json"), fallback_account=ck.get("username"))
     new_status = chk.get("status", "unknown")
     reason = chk.get("reason", "")
-    db.update_tiktok_cookie_status(cookie_id, new_status, error_reason=reason)
+    detected_user = chk.get("username")
+    detected_nick = chk.get("nickname")
+    detected_avatar = chk.get("avatar_url")
 
+    # Update status, nickname, username, and avatar in database
+    db.update_tiktok_cookie_status(
+        cookie_id,
+        new_status,
+        error_reason=reason,
+        nickname=detected_nick,
+        username=detected_user if detected_user and not detected_user.startswith("@tiktok_user_") else None,
+        avatar_url=detected_avatar
+    )
+
+    final_username = detected_user or ck.get("username")
     return jsonify({
         "status": "ok",
         "cookie_id": cookie_id,
-        "username": ck.get("username"),
+        "username": final_username,
+        "nickname": detected_nick or ck.get("nickname"),
+        "avatar_url": detected_avatar or ck.get("avatar_url"),
         "session_status": new_status,
         "is_valid": chk.get("is_valid", False),
         "reason": reason
@@ -2159,7 +2137,17 @@ def api_test_all_tiktok_cookies():
         chk = session_manager.check_tiktok_account_live(ck.get("cookie_json"), fallback_account=ck.get("username"))
         new_status = chk.get("status", "unknown")
         reason = chk.get("reason", "")
-        db.update_tiktok_cookie_status(ck["id"], new_status, error_reason=reason)
+        detected_user = chk.get("username")
+        detected_nick = chk.get("nickname")
+        detected_avatar = chk.get("avatar_url")
+        db.update_tiktok_cookie_status(
+            ck["id"],
+            new_status,
+            error_reason=reason,
+            nickname=detected_nick,
+            username=detected_user if detected_user and not detected_user.startswith("@tiktok_user_") else None,
+            avatar_url=detected_avatar
+        )
         if new_status == "active":
             active_cnt += 1
         else:

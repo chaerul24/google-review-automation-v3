@@ -1926,6 +1926,123 @@ def check_like_button_exists(driver):
         return False, {}
 
 
+def dispatch_real_cursor_like(driver):
+    """
+    Arahkan kursor tepat ke tombol like (data-e2e="room-chat-like-btn") secara presisi
+    dan kirim event like fisik nyata (isTrusted: true via CDP MouseEvent + Pointer/Mouse DOM Event)
+    serta render visual cursor di browser agar terlihat jelas pada Sharescreen Bot.
+    """
+    if not driver:
+        return {"ok": False, "count": 0, "method": "none"}
+    try:
+        prep_res = driver.execute_script("""
+            const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+            let target = btn;
+            let method = 'room-chat-like-btn';
+            if (!target) {
+                target = document.querySelector('div.cursor-pointer') || document.querySelector('video');
+                method = 'canvas_layer';
+            }
+            if (!target) {
+                return { ok: false, method: 'none' };
+            }
+
+            const rect = target.getBoundingClientRect();
+            // Jitter koordinat mikro agar pergerakan kursor natural di dalam tombol
+            const jitterX = (Math.random() - 0.5) * 4;
+            const jitterY = (Math.random() - 0.5) * 4;
+            const cx = Math.round(rect.left + rect.width / 2 + jitterX);
+            const cy = Math.round(rect.top + rect.height / 2 + jitterY);
+
+            // Tampilkan / perbarui posisi kursor visual bot di Sharescreen
+            let cursor = document.getElementById('bot-virtual-cursor');
+            if (!cursor) {
+                cursor = document.createElement('div');
+                cursor.id = 'bot-virtual-cursor';
+                cursor.innerHTML = `
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="filter: drop-shadow(0 2px 5px rgba(0,0,0,0.7));">
+                        <path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L5.85 2.85a.5.5 0 0 0-.35.36z" fill="#FE2C55" stroke="#FFFFFF" stroke-width="1.6"/>
+                    </svg>
+                    <div id="bot-cursor-ripple" style="position:absolute;top:0;left:0;width:24px;height:24px;border-radius:50%;border:2px solid #FE2C55;opacity:0;pointer-events:none;transform:scale(0.5);transition:all 0.15s ease-out;"></div>
+                `;
+                cursor.style.position = 'fixed';
+                cursor.style.zIndex = '999999999';
+                cursor.style.pointerEvents = 'none';
+                cursor.style.transition = 'left 0.08s ease-out, top 0.08s ease-out, transform 0.06s ease-out';
+                cursor.style.willChange = 'left, top, transform';
+                document.body.appendChild(cursor);
+            }
+
+            // Arahkan kursor tepat ke tombol like
+            cursor.style.left = (cx - 2) + 'px';
+            cursor.style.top = (cy - 2) + 'px';
+            cursor.style.transform = 'scale(0.85)';
+            const ripple = document.getElementById('bot-cursor-ripple');
+            if (ripple) {
+                ripple.style.opacity = '0.9';
+                ripple.style.transform = 'scale(1.6)';
+            }
+
+            setTimeout(() => {
+                if (cursor) cursor.style.transform = 'scale(1)';
+                if (ripple) {
+                    ripple.style.opacity = '0';
+                    ripple.style.transform = 'scale(0.5)';
+                }
+            }, 75);
+
+            // Dual-layer DOM event dispatch ke tombol dengan koordinat presisi
+            const ev = {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: cx,
+                clientY: cy,
+                screenX: cx,
+                screenY: cy,
+                button: 0,
+                buttons: 1
+            };
+            if (window.PointerEvent) {
+                target.dispatchEvent(new PointerEvent('pointerover', ev));
+                target.dispatchEvent(new PointerEvent('pointerenter', ev));
+                target.dispatchEvent(new PointerEvent('pointermove', ev));
+                target.dispatchEvent(new PointerEvent('pointerdown', ev));
+            }
+            target.dispatchEvent(new MouseEvent('mouseover', ev));
+            target.dispatchEvent(new MouseEvent('mouseenter', ev));
+            target.dispatchEvent(new MouseEvent('mousemove', ev));
+            target.dispatchEvent(new MouseEvent('mousedown', ev));
+
+            const evUp = Object.assign({}, ev, { buttons: 0 });
+            if (window.PointerEvent) {
+                target.dispatchEvent(new PointerEvent('pointerup', evUp));
+            }
+            target.dispatchEvent(new MouseEvent('mouseup', evUp));
+            target.dispatchEvent(new MouseEvent('click', evUp));
+            if (typeof target.click === 'function') {
+                target.click();
+            }
+
+            return { ok: true, method: method, cx: cx, cy: cy };
+        """)
+
+        if prep_res and prep_res.get("ok"):
+            cx = prep_res.get("cx")
+            cy = prep_res.get("cy")
+            # Eksekusi CDP hardware-level mouse event (isTrusted: true) tepat di koordinat tombol
+            try:
+                driver.execute_cdp_cmd('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': cx, 'y': cy})
+                driver.execute_cdp_cmd('Input.dispatchMouseEvent', {'type': 'mousePressed', 'button': 'left', 'clickCount': 1, 'x': cx, 'y': cy})
+                driver.execute_cdp_cmd('Input.dispatchMouseEvent', {'type': 'mouseReleased', 'button': 'left', 'clickCount': 1, 'x': cx, 'y': cy})
+            except Exception:
+                pass
+            return {"ok": True, "count": 1, "method": prep_res.get("method", "room-chat-like-btn")}
+        return {"ok": False, "count": 0, "method": "none"}
+    except Exception as ex:
+        return {"ok": False, "count": 0, "method": f"error: {ex}"}
+
+
 def send_comment_to_live(driver, message):
     """Kirim komentar nyata ke live chat TikTok dan verifikasi apakah pesan benar-benar terkirim (Headless-safe).
     Dioptimalkan agar eksekusi cepat non-blocking (~0.4 - 0.6s) dan stabil tanpa membekukan loop utama."""
@@ -2627,32 +2744,18 @@ class TikTokLiveRunner:
                 like_interval = like_cfg["interval"]
 
                 # Dispatch love click based on selected mode: Santai (1s), Turbo (0.35s), Super Cepat (0.15s)
-                # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE, TANPA DATA DUMMY/MULTIPLIER)
+                # Kursor diarahkan presisi ke tombol like dan diklik secara fisik nyata (1:1 REAL LIKES)
                 if now - last_like_time >= like_interval:
                     last_like_time = now
                     try:
                         with driver_lock:
-                            click_res = driver.execute_script("""
-                                const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
-                                if (btn) {
-                                    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                                    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                                    btn.click();
-                                    return { ok: true, count: 1, method: 'room-chat-like-btn' };
-                                }
-                                const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                                if (layer) {
-                                    layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                                    return { ok: true, count: 1, method: 'canvas_layer' };
-                                }
-                                return { ok: false, count: 0, method: 'none' };
-                            """)
+                            click_res = dispatch_real_cursor_like(driver)
                         if click_res and click_res.get("ok"):
                             c_inc = int(click_res.get("count", 1))
                             method = click_res.get("method")
                             if method == "room-chat-like-btn" and not has_logged_like_btn:
                                 has_logged_like_btn = True
-                                self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mode: {like_cfg['name']}.")
+                                self.add_log("success", f"[+] [{b_label}] [✓] Kursor terarah ke tombol Like (data-e2e=\"room-chat-like-btn\")! Mode: {like_cfg['name']}.")
                             worker_likes += c_inc
                             with self.lock:
                                 self.likes_sent += c_inc
@@ -2968,32 +3071,18 @@ class TikTokLiveRunner:
                     like_interval = like_cfg["interval"]
 
                     # Dispatch love click based on selected mode: Santai (1s), Turbo (0.35s), Super Cepat (0.15s)
-                    # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE)
+                    # Kursor diarahkan presisi ke tombol like dan diklik secara fisik nyata (1:1 REAL LIKES)
                     if now - last_like_time >= like_interval:
                         last_like_time = now
                         try:
                             with driver_lock:
-                                click_res = driver.execute_script("""
-                                    const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
-                                    if (btn) {
-                                        btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                                        btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                                        btn.click();
-                                        return { ok: true, count: 1, method: 'room-chat-like-btn' };
-                                    }
-                                    const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                                    if (layer) {
-                                        layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                                        return { ok: true, count: 1, method: 'canvas_layer' };
-                                    }
-                                    return { ok: false, count: 0, method: 'none' };
-                                """)
+                                click_res = dispatch_real_cursor_like(driver)
                             if click_res and click_res.get("ok"):
                                 c_inc = int(click_res.get("count", 1))
                                 method = click_res.get("method")
                                 if method == "room-chat-like-btn" and not has_logged_like_btn:
                                     has_logged_like_btn = True
-                                    self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mode: {like_cfg['name']}.")
+                                    self.add_log("success", f"[+] [{b_label}] [✓] Kursor terarah ke tombol Like (data-e2e=\"room-chat-like-btn\")! Mode: {like_cfg['name']}.")
                                 batch_likes += c_inc
                                 with self.lock:
                                     self.likes_sent += c_inc

@@ -399,9 +399,10 @@ export default function Dashboard({ onLogout }) {
   const [botConfigSaving, setBotConfigSaving] = useState(false);
   const [botConfigSavedSuccess, setBotConfigSavedSuccess] = useState(false);
   const [tiktokForm, setTiktokForm] = useState({
-    target_user: '@autobotix.live',
-    tap_speed: 20,
-    chat_message: 'Semangat live kak! Support selalu 🔥',
+    target_user: '@tryfredy',
+    tap_speed: 50,
+    like_mode: 'super_cepat',
+    chat_message: 'Halo Cantik',
     display: false,
   });
 
@@ -415,9 +416,10 @@ export default function Dashboard({ onLogout }) {
           setBotModulesConfig(data.configs);
           if (data.configs.tiktok_live) {
             setTiktokForm({
-              target_user: data.configs.tiktok_live.target_user || '@autobotix.live',
-              tap_speed: data.configs.tiktok_live.tap_speed || 20,
-              chat_message: data.configs.tiktok_live.chat_message || 'Semangat live kak! Support selalu 🔥',
+              target_user: data.configs.tiktok_live.target_user || '@tryfredy',
+              tap_speed: data.configs.tiktok_live.tap_speed || 50,
+              like_mode: data.configs.tiktok_live.like_mode || 'super_cepat',
+              chat_message: data.configs.tiktok_live.chat_message || 'Halo Cantik',
               display: Boolean(data.configs.tiktok_live.display ?? data.configs.display?.enabled ?? false),
             });
           }
@@ -527,6 +529,7 @@ export default function Dashboard({ onLogout }) {
         ...botModulesConfig.tiktok_live,
         target_user: tiktokForm.target_user,
         tap_speed: Number(tiktokForm.tap_speed),
+        like_mode: tiktokForm.like_mode || 'super_cepat',
         chat_message: tiktokForm.chat_message,
         display: Boolean(tiktokForm.display),
       },
@@ -570,6 +573,7 @@ export default function Dashboard({ onLogout }) {
       setSubmitting(true);
       const target = customParams.target_user || tiktokForm.target_user || botModulesConfig.tiktok_live?.target_user || '@tryfredy';
       const tapSpeed = Number(customParams.tap_speed || tiktokForm.tap_speed || botModulesConfig.tiktok_live?.tap_speed) || 50;
+      const likeModeVal = customParams.like_mode || tiktokForm.like_mode || botModulesConfig.tiktok_live?.like_mode || 'super_cepat';
       const chatMsg = customParams.chat_message || tiktokForm.chat_message || botModulesConfig.tiktok_live?.chat_message || 'Halo Cantik';
       const isDisplay = customParams.display !== undefined
         ? Boolean(customParams.display)
@@ -578,6 +582,7 @@ export default function Dashboard({ onLogout }) {
       const res = await api.startTikTokLive({
         target_user: target,
         tap_speed: tapSpeed,
+        like_mode: likeModeVal,
         auto_chat: true,
         chat_message: chatMsg,
         mode: 'parallel',
@@ -605,6 +610,27 @@ export default function Dashboard({ onLogout }) {
       setErrorMsg(`Gagal memulai TikTok Live: ${err.message || err}`);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSwitchLikeMode = async (newMode) => {
+    setTiktokForm(f => ({ ...f, like_mode: newMode }));
+    setBotModulesConfig(prev => ({
+      ...prev,
+      tiktok_live: {
+        ...(prev.tiktok_live || {}),
+        like_mode: newMode,
+      },
+    }));
+    try {
+      const res = await api.setTikTokLikeMode(newMode);
+      if (res && res.state) {
+        setTiktokLiveScreenStatus(res.state);
+      }
+      const label = newMode === 'santai' ? '🐢 Santai Like' : (newMode === 'turbo' ? '⚡ Turbo Like' : '🚀 Super Cepat Like');
+      setSuccessMsg(`⚡ Mode Like TikTok Live diubah ke: ${label}!`);
+    } catch (e) {
+      console.error('Failed to change like mode:', e);
     }
   };
 
@@ -3120,6 +3146,68 @@ export default function Dashboard({ onLogout }) {
                           </button>
                         </div>
                       )}
+                    </div>
+
+                    {/* Mode Like Selector Bar: Santai Like, Turbo Like, Super Cepat Like */}
+                    <div className="w-full pt-3 mt-1 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="text-[11px] font-sans text-slate-300 font-bold flex items-center gap-1">
+                          <Heart className="w-3.5 h-3.5 text-rose-400 fill-current" />
+                          Mode Like:
+                        </span>
+                        <div className="inline-flex items-center p-1 bg-slate-950 border border-slate-800 rounded-xl">
+                          <button
+                            type="button"
+                            onClick={() => handleSwitchLikeMode('santai')}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                              (ttState?.like_mode || tiktokForm.like_mode || botModulesConfig.tiktok_live?.like_mode) === 'santai'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                            title="Santai Like: 1 love per detik per akun (Stabil & aman)"
+                          >
+                            <span>🐢 Santai Like</span>
+                            <span className="text-[10px] opacity-80 font-mono">1.0s</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSwitchLikeMode('turbo')}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                              (ttState?.like_mode || tiktokForm.like_mode || botModulesConfig.tiktok_live?.like_mode) === 'turbo'
+                                ? 'bg-amber-500 text-slate-950 shadow-xs font-black'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                            title="Turbo Like: ~3 love per detik per akun (Cepat & bertenaga)"
+                          >
+                            <span>⚡ Turbo Like</span>
+                            <span className="text-[10px] opacity-80 font-mono">0.35s</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSwitchLikeMode('super_cepat')}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                              (ttState?.like_mode || tiktokForm.like_mode || botModulesConfig.tiktok_live?.like_mode || 'super_cepat') === 'super_cepat'
+                                ? 'bg-gradient-to-r from-cyan-500 to-pink-500 text-white shadow-xs font-black'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                            title="Super Cepat Like: ~6-7 love per detik per akun (Tap-tap instan super cepat!)"
+                          >
+                            <span>🚀 Super Cepat Like</span>
+                            <span className="text-[10px] opacity-90 font-mono">0.15s</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-[11px] font-mono">
+                        {((ttState?.like_mode || tiktokForm.like_mode || 'super_cepat') === 'super_cepat') && (
+                          <span className="text-pink-400 font-semibold">⚡ Super Cepat Aktif: Tap-tap instan ~6-7 like/detik per akun!</span>
+                        )}
+                        {((ttState?.like_mode || tiktokForm.like_mode) === 'turbo') && (
+                          <span className="text-amber-400 font-semibold">⚡ Turbo Aktif: ~3 like per detik per akun</span>
+                        )}
+                        {((ttState?.like_mode || tiktokForm.like_mode) === 'santai') && (
+                          <span className="text-emerald-400 font-semibold">🐢 Santai Aktif: 1 love per detik per akun</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -6646,18 +6734,62 @@ export default function Dashboard({ onLogout }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Kecepatan Auto Tap-tap Likes
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>Mode Kecepatan Like Tap-Tap *</span>
+                  <span className="text-[10px] text-pink-600 font-mono font-bold">100% Real Like (1:1)</span>
                 </label>
-                <select
-                  value={tiktokForm.tap_speed}
-                  onChange={(e) => setTiktokForm({ ...tiktokForm, tap_speed: Number(e.target.value) })}
-                  className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
-                >
-                  <option value={5}>Santai (5x / detik)</option>
-                  <option value={20}>Cepat (20x / detik)</option>
-                  <option value={50}>Turbo (50x / detik)</option>
-                </select>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTiktokForm({ ...tiktokForm, like_mode: 'santai' })}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      (tiktokForm.like_mode === 'santai')
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-xs">🐢 Santai Like</span>
+                      {tiktokForm.like_mode === 'santai' && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-500 font-semibold">1.0 detik / like</span>
+                    <span className="text-[9px] text-slate-400 mt-1">Aman &amp; stabil</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTiktokForm({ ...tiktokForm, like_mode: 'turbo' })}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      (tiktokForm.like_mode === 'turbo')
+                        ? 'bg-amber-50 border-amber-500 text-amber-950 ring-2 ring-amber-500/20 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-xs">⚡ Turbo Like</span>
+                      {tiktokForm.like_mode === 'turbo' && <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-500 font-semibold">0.35 detik / like</span>
+                    <span className="text-[9px] text-slate-400 mt-1">~3 like/detik</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTiktokForm({ ...tiktokForm, like_mode: 'super_cepat' })}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      (tiktokForm.like_mode === 'super_cepat' || !tiktokForm.like_mode)
+                        ? 'bg-pink-50 border-pink-500 text-pink-950 ring-2 ring-pink-500/20 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-xs">🚀 Super Cepat</span>
+                      {(tiktokForm.like_mode === 'super_cepat' || !tiktokForm.like_mode) && <Check className="w-3.5 h-3.5 text-pink-600 shrink-0" />}
+                    </div>
+                    <span className="text-[10px] font-mono text-pink-600 font-bold">0.15 detik / like</span>
+                    <span className="text-[9px] text-slate-400 mt-1">~6-7 like/detik</span>
+                  </button>
+                </div>
               </div>
 
               <div>

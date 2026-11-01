@@ -311,6 +311,13 @@ export const api = {
     return request('/api/tiktok-live/stop', { method: 'POST' });
   },
 
+  async setTikTokLikeMode(like_mode) {
+    return request('/api/tiktok-live/set-like-mode', {
+      method: 'POST',
+      body: JSON.stringify({ like_mode }),
+    });
+  },
+
   async getTikTokLiveStatus() {
     return request('/api/tiktok-live/status');
   },

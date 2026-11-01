@@ -15,6 +15,7 @@
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie).",
     "target_user": "@tryfredy",
     "tap_speed": 50,
+    "like_mode": "super_cepat",
     "auto_chat": true,
     "chat_message": "Halo Cantik",
     "multi_account": true,

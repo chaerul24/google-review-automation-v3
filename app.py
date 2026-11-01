@@ -2074,9 +2074,37 @@ def inject_account_cookies(driver, acc_dict):
     return True
 
 
+LIKE_MODES = {
+    "santai": {
+        "id": "santai",
+        "name": "Santai Like",
+        "interval": 1.0,
+        "burst": 1,
+        "badge": "🐢 Santai",
+        "desc": "Santai & stabil (1 detik / like)"
+    },
+    "turbo": {
+        "id": "turbo",
+        "name": "Turbo Like",
+        "interval": 0.35,
+        "burst": 1,
+        "badge": "⚡ Turbo",
+        "desc": "Cepat bertenaga (~3 like per detik per akun)"
+    },
+    "super_cepat": {
+        "id": "super_cepat",
+        "name": "Super Cepat Like",
+        "interval": 0.15,
+        "burst": 1,
+        "badge": "🚀 Super Cepat",
+        "desc": "Super cepat tap-tap instan (~6-7 like per detik per akun)"
+    }
+}
+
+
 class TikTokLiveRunner:
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.is_running = False
         self.is_logged_in = False
         self.stop_event = threading.Event()
@@ -2084,6 +2112,7 @@ class TikTokLiveRunner:
         self.drivers = []
         self.target_user = "@evelyn.vln"
         self.tap_speed = 50
+        self.like_mode = "super_cepat"
         self.auto_chat = True
         self.chat_message = "Semangat live kak! Support selalu 🔥"
         self.execution_mode = "parallel"  # "parallel" (serentak) or "sequential" (bergantian)
@@ -2146,7 +2175,18 @@ class TikTokLiveRunner:
             if len(self.logs) > 200:
                 self.logs.pop(0)
 
-    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", account_ids=None, mode="parallel", enable_display=None):
+    def set_like_mode(self, mode):
+        cfg_info = None
+        with self.lock:
+            if mode in ("santai", "turbo", "super_cepat"):
+                self.like_mode = mode
+                cfg_info = LIKE_MODES.get(mode, LIKE_MODES["super_cepat"])
+        if cfg_info:
+            self.add_log("info", f"[-] Mode Like berhasil diubah ke: {cfg_info['name']} (Interval {cfg_info['interval']}s)")
+            return True
+        return False
+
+    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", account_ids=None, mode="parallel", enable_display=None, like_mode=None):
         with self.lock:
             if self.is_running:
                 return False, "Bot TikTok Live sudah berjalan."
@@ -2156,6 +2196,9 @@ class TikTokLiveRunner:
             self.drivers = []
             self.target_user = target_user if target_user.startswith("@") else f"@{target_user}"
             self.tap_speed = max(1, min(100, int(tap_speed)))
+            cfg = get_bot_modules_config()
+            chosen_like_mode = like_mode or cfg.get("tiktok_live", {}).get("like_mode", "super_cepat")
+            self.like_mode = chosen_like_mode if chosen_like_mode in ("santai", "turbo", "super_cepat") else "super_cepat"
             self.auto_chat = bool(auto_chat)
             self.chat_message = chat_message or "Semangat live kak! Support selalu 🔥"
             self.started_at = datetime.now()
@@ -2170,9 +2213,11 @@ class TikTokLiveRunner:
 
             # Display configuration: default false (mati)
             if enable_display is None:
-                cfg = get_bot_modules_config()
                 enable_display = cfg.get("display", {}).get("enabled", False)
             self.enable_display = bool(enable_display)
+
+            like_info = LIKE_MODES.get(self.like_mode, LIKE_MODES["super_cepat"])
+            self.add_log("info", f"[-] Mode Kecepatan Like: {like_info['name']} (Interval {like_info['interval']}s)")
 
             # Parse execution mode
             mode_clean = str(mode or "").strip().lower()
@@ -2301,6 +2346,8 @@ class TikTokLiveRunner:
                 "execution_mode": self.execution_mode,
                 "target_user": self.target_user,
                 "tap_speed": self.tap_speed,
+                "like_mode": getattr(self, "like_mode", "super_cepat"),
+                "like_mode_info": LIKE_MODES.get(getattr(self, "like_mode", "super_cepat"), LIKE_MODES["super_cepat"]),
                 "auto_chat": self.auto_chat,
                 "chat_message": self.chat_message,
                 "enable_display": getattr(self, "enable_display", False),
@@ -2560,7 +2607,7 @@ class TikTokLiveRunner:
             cap_thread.start()
 
             while not self.stop_event.is_set():
-                time.sleep(0.06)
+                time.sleep(0.04)
                 if self.stop_event.is_set():
                     break
 
@@ -2575,9 +2622,13 @@ class TikTokLiveRunner:
                         self.stop_event.set()
                         break
 
-                # Dispatch love click every 1.0 second to room-chat-like-btn
+                cur_mode = getattr(self, "like_mode", "super_cepat")
+                like_cfg = LIKE_MODES.get(cur_mode, LIKE_MODES["super_cepat"])
+                like_interval = like_cfg["interval"]
+
+                # Dispatch love click based on selected mode: Santai (1s), Turbo (0.35s), Super Cepat (0.15s)
                 # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE, TANPA DATA DUMMY/MULTIPLIER)
-                if now - last_like_time >= 1.0:
+                if now - last_like_time >= like_interval:
                     last_like_time = now
                     try:
                         with driver_lock:
@@ -2587,24 +2638,25 @@ class TikTokLiveRunner:
                                     btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
                                     btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
                                     btn.click();
-                                    return { ok: true, method: 'room-chat-like-btn' };
+                                    return { ok: true, count: 1, method: 'room-chat-like-btn' };
                                 }
                                 const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
                                 if (layer) {
                                     layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                                    return { ok: true, method: 'canvas_layer' };
+                                    return { ok: true, count: 1, method: 'canvas_layer' };
                                 }
-                                return { ok: false, method: 'none' };
+                                return { ok: false, count: 0, method: 'none' };
                             """)
                         if click_res and click_res.get("ok"):
+                            c_inc = int(click_res.get("count", 1))
                             method = click_res.get("method")
                             if method == "room-chat-like-btn" and not has_logged_like_btn:
                                 has_logged_like_btn = True
-                                self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
-                            worker_likes += 1
+                                self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mode: {like_cfg['name']}.")
+                            worker_likes += c_inc
                             with self.lock:
-                                self.likes_sent += 1
-                                self.success_count += 1
+                                self.likes_sent += c_inc
+                                self.success_count += c_inc
                                 if user in self.account_stats:
                                     self.account_stats[user]["likes_sent"] = worker_likes
                                     self.account_stats[user]["has_like_btn"] = True
@@ -2616,7 +2668,7 @@ class TikTokLiveRunner:
                             self.fail_count += 1
 
                     if worker_likes > 0 and worker_likes % 60 == 0:
-                        self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
+                        self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} love terkirim [{like_cfg['name']}] via room-chat-like-btn ke {self.target_user}")
 
                 # Auto-recovery if browser gets dropped onto error page
                 try:
@@ -2892,7 +2944,7 @@ class TikTokLiveRunner:
                 cap_thread.start()
 
                 while not self.stop_event.is_set():
-                    time.sleep(0.06)
+                    time.sleep(0.04)
                     if self.stop_event.is_set():
                         break
 
@@ -2911,9 +2963,13 @@ class TikTokLiveRunner:
                             self.stop_event.set()
                             break
 
-                    # Dispatch love click every 1.0 second to room-chat-like-btn
+                    cur_mode = getattr(self, "like_mode", "super_cepat")
+                    like_cfg = LIKE_MODES.get(cur_mode, LIKE_MODES["super_cepat"])
+                    like_interval = like_cfg["interval"]
+
+                    # Dispatch love click based on selected mode: Santai (1s), Turbo (0.35s), Super Cepat (0.15s)
                     # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE)
-                    if now - last_like_time >= 1.0:
+                    if now - last_like_time >= like_interval:
                         last_like_time = now
                         try:
                             with driver_lock:
@@ -2923,24 +2979,25 @@ class TikTokLiveRunner:
                                         btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
                                         btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
                                         btn.click();
-                                        return { ok: true, method: 'room-chat-like-btn' };
+                                        return { ok: true, count: 1, method: 'room-chat-like-btn' };
                                     }
                                     const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
                                     if (layer) {
                                         layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                                        return { ok: true, method: 'canvas_layer' };
+                                        return { ok: true, count: 1, method: 'canvas_layer' };
                                     }
-                                    return { ok: false, method: 'none' };
+                                    return { ok: false, count: 0, method: 'none' };
                                 """)
                             if click_res and click_res.get("ok"):
+                                c_inc = int(click_res.get("count", 1))
                                 method = click_res.get("method")
                                 if method == "room-chat-like-btn" and not has_logged_like_btn:
                                     has_logged_like_btn = True
-                                    self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
-                                batch_likes += 1
+                                    self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mode: {like_cfg['name']}.")
+                                batch_likes += c_inc
                                 with self.lock:
-                                    self.likes_sent += 1
-                                    self.success_count += 1
+                                    self.likes_sent += c_inc
+                                    self.success_count += c_inc
                                     if user in self.account_stats:
                                         self.account_stats[user]["likes_sent"] = batch_likes
                                         self.account_stats[user]["has_like_btn"] = True
@@ -2952,7 +3009,7 @@ class TikTokLiveRunner:
                                 self.fail_count += 1
 
                         if batch_likes > 0 and batch_likes % 60 == 0:
-                            self.add_log("info", f"[-] [{b_label}] {user}: {batch_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
+                            self.add_log("info", f"[-] [{b_label}] {user}: {batch_likes:,} love terkirim [{like_cfg['name']}] via room-chat-like-btn ke {self.target_user}")
 
                     # Auto-recovery if browser gets dropped onto error page
                     try:
@@ -3188,6 +3245,7 @@ def api_tiktok_live_start():
     cfg = get_bot_modules_config()
     default_display = cfg.get("display", {}).get("enabled", False)
     display_opt = data.get("display") if "display" in data else data.get("enable_display", default_display)
+    like_mode = data.get("like_mode") or cfg.get("tiktok_live", {}).get("like_mode") or "super_cepat"
 
     ok, msg = tiktok_live_runner.start(
         target_user=target_user,
@@ -3196,11 +3254,32 @@ def api_tiktok_live_start():
         chat_message=chat_message,
         account_ids=account_ids,
         mode=mode,
-        enable_display=display_opt
+        enable_display=display_opt,
+        like_mode=like_mode
     )
     if not ok:
         return jsonify({"status": "error", "message": msg}), 400
     return jsonify({"status": "ok", "message": msg, "state": tiktok_live_runner.get_status()})
+
+
+@app.route("/api/tiktok-live/set-like-mode", methods=["POST"])
+def api_tiktok_live_set_like_mode():
+    if not session.get("logged_in") and request.remote_addr not in ("127.0.0.1", "localhost", "::1"):
+        api_key = request.headers.get("X-API-Key")
+        expected_key = os.environ.get("APP_PASSWORD", "")
+        if not (api_key and expected_key and hmac.compare_digest(api_key, expected_key)):
+            return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    mode = data.get("like_mode") or data.get("mode") or "super_cepat"
+    if mode not in ("santai", "turbo", "super_cepat"):
+        return jsonify({"status": "error", "message": "Mode like tidak valid"}), 400
+
+    tiktok_live_runner.set_like_mode(mode)
+    cfg = get_bot_modules_config()
+    if "tiktok_live" in cfg:
+        cfg["tiktok_live"]["like_mode"] = mode
+        save_bot_modules_config(cfg)
+    return jsonify({"status": "ok", "like_mode": mode, "state": tiktok_live_runner.get_status()})
 
 
 @app.route("/api/tiktok-live/stop", methods=["POST"])

@@ -598,47 +598,59 @@ export default function Dashboard({ onLogout }) {
 
   const activeAccountsCount = emails.filter((e) => e.cookie_status === 'active').length;
 
-  // Dynamic Google Cookie Nodes for the Tentacle Flow Canvas
-  const cookieNodes = useMemo(() => {
+  // Dynamic Google Cookie Nodes for the Tentacle Flow Canvas (Matches ALL registered cookies)
+  const tentacleNodes = useMemo(() => {
     const activeList = cookies.filter((c) => c.status === 'active' || !c.status);
     const pool = activeList.length > 0 ? activeList : cookies;
-    const defaults = [
-      { name: 'Muhammad Jannah', email: 'muhmadaljannah@gmail.com', id: '181' },
-      { name: 'Galo Ijul', email: 'galoijul@gmail.com', id: '179' },
-      { name: 'Cantika Ayu', email: 'cantikaayu0302@gmail.com', id: '173' },
-      { name: 'Jono Tayo', email: 'jonotayo7@gmail.com', id: '187' },
+    const list = pool.length > 0 ? pool : [
+      { id: '181', email: 'muhmadaljannah@gmail.com', account_name: 'Muhammad Jannah', status: 'active' },
+      { id: '179', email: 'galoijul@gmail.com', account_name: 'Galo Ijul', status: 'active' },
+      { id: '175', email: 'cantikaayu0302@gmail.com', account_name: 'Cantika Ayu', status: 'active' },
+      { id: '187', email: 'jonotayo7@gmail.com', account_name: 'Jono Tayo', status: 'active' },
     ];
 
-    const getNode = (idx) => {
-      if (pool[idx]) {
-        const item = pool[idx];
-        const rawName = (item.account_name || item.email?.split('@')[0] || `Akun #${item.id}`).trim();
-        const displayName = rawName.length > 15 ? rawName.substring(0, 14) + '…' : rawName;
-        return {
-          id: `node_cookie_${item.id}`,
-          name: displayName,
-          fullName: rawName,
-          email: item.email || `${rawName.toLowerCase()}@gmail.com`,
-          status: item.status || 'active',
-          realId: item.id,
-        };
-      }
-      return {
-        id: `node_cookie_def_${idx}`,
-        name: defaults[idx].name,
-        fullName: defaults[idx].name,
-        email: defaults[idx].email,
-        status: 'active',
-        realId: defaults[idx].id,
-      };
-    };
+    const N = list.length;
+    const cx = 480;
+    const cy = 300;
+    const Rx = 340;
+    const Ry = 220;
+    const colors = ['#F59E0B', '#38BDF8', '#10B981', '#A855F7', '#EC4899', '#06B6D4', '#6366F1', '#F97316'];
 
-    return {
-      top: getNode(0),
-      right: getNode(1),
-      left: getNode(2),
-      bottom: getNode(3),
-    };
+    return list.map((c, i) => {
+      const alpha = (2 * Math.PI * i / N) - (Math.PI / 2);
+      // Alternating radii for staggered ring if N > 6
+      const rScale = N > 6 ? ((i % 2 === 0) ? 1.0 : 0.76) : 0.90;
+      const nodeX = cx + Rx * rScale * Math.cos(alpha);
+      const nodeY = cy + Ry * rScale * Math.sin(alpha);
+
+      const curlFactor = (i % 2 === 0 ? 1 : -1) * (N > 8 ? 26 : 34);
+      const perpX = -Math.sin(alpha);
+      const perpY = Math.cos(alpha);
+
+      const cp1X = cx + (nodeX - cx) * 0.35 + curlFactor * perpX;
+      const cp1Y = cy + (nodeY - cy) * 0.35 + curlFactor * perpY;
+      const cp2X = cx + (nodeX - cx) * 0.70 - (curlFactor * 0.6) * perpX;
+      const cp2Y = cy + (nodeY - cy) * 0.70 - (curlFactor * 0.6) * perpY;
+
+      const pathD = `M ${cx} ${cy} C ${cp1X.toFixed(1)} ${cp1Y.toFixed(1)}, ${cp2X.toFixed(1)} ${cp2Y.toFixed(1)}, ${nodeX.toFixed(1)} ${nodeY.toFixed(1)}`;
+      const rawName = (c.account_name || c.email?.split('@')[0] || `Akun #${c.id}`).trim();
+      const displayName = rawName.length > 13 ? rawName.substring(0, 12) + '…' : rawName;
+
+      return {
+        index: i,
+        id: `node_cookie_${c.id}`,
+        realId: c.id,
+        name: displayName,
+        fullName: rawName,
+        email: c.email || `${rawName.toLowerCase()}@gmail.com`,
+        status: c.status || 'active',
+        x: nodeX,
+        y: nodeY,
+        pathD,
+        color: colors[i % colors.length],
+        animDur: `${(2.0 + (i % 5) * 0.3).toFixed(1)}s`,
+      };
+    });
   }, [cookies]);
 
   // Filtered Accounts
@@ -2701,7 +2713,7 @@ export default function Dashboard({ onLogout }) {
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
                     <span className="font-mono text-[11px] text-slate-200 font-semibold">
-                      Model & Worker Topology (Tentacle Neural Flow)
+                      Model & Worker Topology ({tentacleNodes.length} Akun Cookie Terhubung)
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
@@ -2713,304 +2725,193 @@ export default function Dashboard({ onLogout }) {
 
                 {/* Tentacle SVG Interactive Canvas */}
                 <div
-                  className="relative w-full rounded-xl overflow-hidden bg-[#0A0D14] border border-slate-800/70 flex items-center justify-center"
+                  className="relative w-full rounded-xl overflow-hidden bg-[#0A0D14] border border-slate-800/70 flex items-center justify-center p-2"
                   style={{
                     backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.12) 1.2px, transparent 1.2px)',
                     backgroundSize: '24px 24px',
                   }}
                 >
-                  <svg
-                    viewBox="0 0 760 420"
-                    className="w-full h-auto select-none overflow-visible"
-                    preserveAspectRatio="xMidYMid meet"
+                  <div
+                    className="w-full flex items-center justify-center transition-transform duration-200"
+                    style={{ transform: `scale(${canvasZoom})`, transformOrigin: 'center center' }}
                   >
-                    <defs>
-                      <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
-                        <feGaussianBlur stdDeviation="4" result="blur" />
-                        <feMerge>
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                      </filter>
-                      <filter id="glow-amber" x="-25%" y="-25%" width="150%" height="150%">
-                        <feGaussianBlur stdDeviation="5" result="blur" />
-                        <feMerge>
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                      </filter>
-                      <linearGradient id="tentacle-antigravity" x1="0%" y1="100%" x2="0%" y2="0%">
-                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
-                        <stop offset="60%" stopColor="#38BDF8" stopOpacity="0.9" />
-                        <stop offset="100%" stopColor="#67E8F9" stopOpacity="1" />
-                      </linearGradient>
-                      <linearGradient id="tentacle-codebuddy" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
-                        <stop offset="100%" stopColor="#3B82F6" stopOpacity="1" />
-                      </linearGradient>
-                      <linearGradient id="tentacle-opencode" x1="100%" y1="0%" x2="0%" y2="0%">
-                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
-                        <stop offset="100%" stopColor="#10B981" stopOpacity="1" />
-                      </linearGradient>
-                      <linearGradient id="tentacle-codex" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.8" />
-                        <stop offset="100%" stopColor="#A855F7" stopOpacity="1" />
-                      </linearGradient>
-                    </defs>
-
-                    {/* Tentacle 1: Router -> Cookie Account 1 (Top) */}
-                    <g className="transition-opacity duration-300">
-                      <path
-                        d="M 380 185 C 360 140, 400 115, 380 91"
-                        fill="none"
-                        stroke="#38BDF8"
-                        strokeWidth="9"
-                        opacity={selectedNodeId === cookieNodes.top.id || selectedNodeId === 'router' ? 0.35 : 0.15}
-                        filter="url(#glow-cyan)"
-                      />
-                      <path
-                        d="M 380 185 C 360 140, 400 115, 380 91"
-                        fill="none"
-                        stroke="url(#tentacle-antigravity)"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        opacity={selectedNodeId === cookieNodes.top.id || selectedNodeId === 'router' ? 1 : 0.6}
-                      />
-                      <path
-                        d="M 380 185 C 360 140, 400 115, 380 91"
-                        fill="none"
-                        stroke="#FFFFFF"
-                        strokeWidth="1.2"
-                        strokeDasharray="6 4"
-                      />
-                      <circle r="4" fill="#67E8F9" filter="url(#glow-cyan)">
-                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 91" />
-                      </circle>
-                      <circle r="1.8" fill="#FFFFFF">
-                        <animateMotion dur="2.2s" repeatCount="indefinite" path="M 380 185 C 360 140, 400 115, 380 91" />
-                      </circle>
-                    </g>
-
-                    {/* Tentacle 2: Router -> Cookie Account 2 (Right) */}
-                    <g className="transition-opacity duration-300">
-                      <path
-                        d="M 440 210 C 470 200, 495 220, 525 210"
-                        fill="none"
-                        stroke="#3B82F6"
-                        strokeWidth="9"
-                        opacity={selectedNodeId === cookieNodes.right.id || selectedNodeId === 'router' ? 0.35 : 0.15}
-                        filter="url(#glow-cyan)"
-                      />
-                      <path
-                        d="M 440 210 C 470 200, 495 220, 525 210"
-                        fill="none"
-                        stroke="url(#tentacle-codebuddy)"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        opacity={selectedNodeId === cookieNodes.right.id || selectedNodeId === 'router' ? 1 : 0.6}
-                      />
-                      <path
-                        d="M 440 210 C 470 200, 495 220, 525 210"
-                        fill="none"
-                        stroke="#FFFFFF"
-                        strokeWidth="1.2"
-                        strokeDasharray="6 4"
-                      />
-                      <circle r="4" fill="#60A5FA" filter="url(#glow-cyan)">
-                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 470 200, 495 220, 525 210" />
-                      </circle>
-                      <circle r="1.8" fill="#FFFFFF">
-                        <animateMotion dur="2.5s" repeatCount="indefinite" path="M 440 210 C 470 200, 495 220, 525 210" />
-                      </circle>
-                    </g>
-
-                    {/* Tentacle 3: Router -> Cookie Account 3 (Left) */}
-                    <g className="transition-opacity duration-300">
-                      <path
-                        d="M 320 210 C 290 220, 265 200, 235 210"
-                        fill="none"
-                        stroke="#10B981"
-                        strokeWidth="8"
-                        opacity={selectedNodeId === cookieNodes.left.id || selectedNodeId === 'router' ? 0.3 : 0.12}
-                        filter="url(#glow-cyan)"
-                      />
-                      <path
-                        d="M 320 210 C 290 220, 265 200, 235 210"
-                        fill="none"
-                        stroke="url(#tentacle-opencode)"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        opacity={selectedNodeId === cookieNodes.left.id || selectedNodeId === 'router' ? 1 : 0.5}
-                      />
-                      <path
-                        d="M 320 210 C 290 220, 265 200, 235 210"
-                        fill="none"
-                        stroke="#FFFFFF"
-                        strokeWidth="1"
-                        strokeDasharray="5 5"
-                      />
-                      <circle r="3.5" fill="#34D399">
-                        <animateMotion dur="2.8s" repeatCount="indefinite" path="M 320 210 C 290 220, 265 200, 235 210" />
-                      </circle>
-                    </g>
-
-                    {/* Tentacle 4: Router -> Cookie Account 4 (Bottom) */}
-                    <g className="transition-opacity duration-300">
-                      <path
-                        d="M 380 235 C 395 270, 365 295, 380 325"
-                        fill="none"
-                        stroke="#A855F7"
-                        strokeWidth="8"
-                        opacity={selectedNodeId === cookieNodes.bottom.id || selectedNodeId === 'router' ? 0.3 : 0.12}
-                      />
-                      <path
-                        d="M 380 235 C 395 270, 365 295, 380 325"
-                        fill="none"
-                        stroke="url(#tentacle-codex)"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        opacity={selectedNodeId === cookieNodes.bottom.id || selectedNodeId === 'router' ? 1 : 0.5}
-                      />
-                      <path
-                        d="M 380 235 C 395 270, 365 295, 380 325"
-                        fill="none"
-                        stroke="#FFFFFF"
-                        strokeWidth="1"
-                        strokeDasharray="5 5"
-                      />
-                      <circle r="3.5" fill="#C084FC">
-                        <animateMotion dur="3s" repeatCount="indefinite" path="M 380 235 C 395 270, 365 295, 380 325" />
-                      </circle>
-                    </g>
-
-                    {/* ================================================================= */}
-                    {/* NODES: Central Router & 4 Active Google Cookie Accounts           */}
-                    {/* ================================================================= */}
-
-                    {/* 1. NODE CENTER: Router (Amber Glowing Box) */}
-                    <g
-                      onClick={() => setSelectedNodeId('router')}
-                      className="cursor-pointer group"
+                    <svg
+                      viewBox="0 0 960 600"
+                      className="w-full h-auto select-none overflow-visible max-h-[560px]"
+                      preserveAspectRatio="xMidYMid meet"
                     >
-                      <rect
-                        x="320"
-                        y="186"
-                        width="120"
-                        height="48"
-                        rx="10"
-                        fill="#D97706"
-                        opacity="0.3"
-                        filter="url(#glow-amber)"
-                      />
-                      <rect
-                        x="320"
-                        y="186"
-                        width="120"
-                        height="48"
-                        rx="10"
-                        fill="#1C1917"
-                        stroke="#F59E0B"
-                        strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.8}
-                        className="transition-all"
-                      />
-                      <text x="358" y="215" fill="#FEF3C7" fontSize="13" fontWeight="bold">
-                        Router
-                      </text>
-                      <circle cx="418" cy="210" r="4.5" fill="#F59E0B" />
-                      <circle cx="340" cy="210" r="5" fill="#F59E0B" opacity="0.8" />
-                    </g>
+                      <defs>
+                        <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+                          <feGaussianBlur stdDeviation="4" result="blur" />
+                          <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                        <filter id="glow-amber" x="-25%" y="-25%" width="150%" height="150%">
+                          <feGaussianBlur stdDeviation="5" result="blur" />
+                          <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                        <filter id="glow-node" x="-20%" y="-20%" width="140%" height="140%">
+                          <feGaussianBlur stdDeviation="3" result="blur" />
+                          <feMerge>
+                            <feMergeNode in="blur" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                      </defs>
 
-                    {/* 2. NODE TOP: Akun Cookie #1 (Pill with Amber/Gold Border) */}
-                    <g
-                      onClick={() => setSelectedNodeId(cookieNodes.top.id)}
-                      className="cursor-pointer group"
-                    >
-                      <rect
-                        x="295"
-                        y="55"
-                        width="170"
-                        height="36"
-                        rx="8"
-                        fill="#0F172A"
-                        stroke="#F59E0B"
-                        strokeWidth={selectedNodeId === cookieNodes.top.id ? 2 : 1.3}
-                        className="transition-all"
-                      />
-                      <text x="375" y="78" textAnchor="middle" fill="#FDE68A" fontSize="11" fontWeight="bold">
-                        {cookieNodes.top.name}
-                      </text>
-                      <circle cx="452" cy="73" r="3.5" fill="#10B981" />
-                    </g>
+                      {/* Dynamic Tentacle Strands & Energy Particles (1 per registered cookie) */}
+                      {tentacleNodes.map((node) => {
+                        const isSelected = selectedNodeId === node.id || selectedNodeId === 'router';
+                        return (
+                          <g key={`tentacle-${node.id}`} className="transition-opacity duration-300">
+                            {/* Outer Glow Path */}
+                            <path
+                              d={node.pathD}
+                              fill="none"
+                              stroke={node.color}
+                              strokeWidth={isSelected ? '7' : '4.5'}
+                              opacity={isSelected ? 0.35 : 0.12}
+                              filter="url(#glow-cyan)"
+                            />
+                            {/* Core Glowing Tentacle Strand */}
+                            <path
+                              d={node.pathD}
+                              fill="none"
+                              stroke={node.color}
+                              strokeWidth="2.2"
+                              strokeLinecap="round"
+                              opacity={isSelected ? 0.95 : 0.55}
+                            />
+                            {/* Fine Energy Fiber (Dashed) */}
+                            <path
+                              d={node.pathD}
+                              fill="none"
+                              stroke="#FFFFFF"
+                              strokeWidth="0.8"
+                              strokeDasharray="4 4"
+                              opacity={isSelected ? 0.6 : 0.25}
+                            />
+                            {/* Traveling Electrical Pulse Particle (Glow) */}
+                            <circle r="3.5" fill={node.color} filter="url(#glow-cyan)">
+                              <animateMotion dur={node.animDur} repeatCount="indefinite" path={node.pathD} />
+                            </circle>
+                            {/* Traveling Electrical Pulse Particle (White Core) */}
+                            <circle r="1.5" fill="#FFFFFF">
+                              <animateMotion dur={node.animDur} repeatCount="indefinite" path={node.pathD} />
+                            </circle>
+                          </g>
+                        );
+                      })}
 
-                    {/* 3. NODE RIGHT: Akun Cookie #2 (Pill with Electric Blue Border) */}
-                    <g
-                      onClick={() => setSelectedNodeId(cookieNodes.right.id)}
-                      className="cursor-pointer group"
-                    >
-                      <rect
-                        x="525"
-                        y="192"
-                        width="165"
-                        height="36"
-                        rx="8"
-                        fill="#0F172A"
-                        stroke="#38BDF8"
-                        strokeWidth={selectedNodeId === cookieNodes.right.id ? 2 : 1.3}
-                        className="transition-all"
-                      />
-                      <text x="602" y="215" textAnchor="middle" fill="#BAE6FD" fontSize="11" fontWeight="bold">
-                        {cookieNodes.right.name}
-                      </text>
-                      <circle cx="678" cy="210" r="3.5" fill="#10B981" />
-                    </g>
+                      {/* Central Router Hub (Dispatch Core) */}
+                      <g
+                        onClick={() => setSelectedNodeId('router')}
+                        className="cursor-pointer group select-none"
+                      >
+                        <rect
+                          x="420"
+                          y="276"
+                          width="120"
+                          height="48"
+                          rx="10"
+                          fill="#D97706"
+                          opacity="0.25"
+                          filter="url(#glow-amber)"
+                        />
+                        <rect
+                          x="420"
+                          y="276"
+                          width="120"
+                          height="48"
+                          rx="10"
+                          fill="#18130B"
+                          stroke="#F59E0B"
+                          strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.6}
+                          className="transition-all duration-200 group-hover:stroke-amber-300"
+                        />
+                        <text
+                          x="480"
+                          y="305"
+                          textAnchor="middle"
+                          fill="#FEF3C7"
+                          fontSize="13"
+                          fontWeight="bold"
+                          letterSpacing="0.5"
+                        >
+                          Router
+                        </text>
+                        <circle cx="440" cy="300" r="4" fill="#F59E0B" />
+                        <circle cx="520" cy="300" r="4" fill="#F59E0B" opacity="0.8" />
+                      </g>
 
-                    {/* 4. NODE LEFT: Akun Cookie #3 (Pill with Emerald Border) */}
-                    <g
-                      onClick={() => setSelectedNodeId(cookieNodes.left.id)}
-                      className="cursor-pointer group"
-                    >
-                      <rect
-                        x="70"
-                        y="192"
-                        width="165"
-                        height="36"
-                        rx="8"
-                        fill="#0F172A"
-                        stroke="#10B981"
-                        strokeWidth={selectedNodeId === cookieNodes.left.id ? 2 : 1.2}
-                        className="transition-all"
-                      />
-                      <text x="147" y="215" textAnchor="middle" fill="#A7F3D0" fontSize="11" fontWeight="bold">
-                        {cookieNodes.left.name}
-                      </text>
-                      <circle cx="223" cy="210" r="3.5" fill="#10B981" />
-                    </g>
+                      {/* Dynamic Cookie Account Nodes (1 Node per registered cookie) */}
+                      {tentacleNodes.map((node) => {
+                        const isSelected = selectedNodeId === node.id;
+                        const pillW = 126;
+                        const pillH = 28;
+                        const pillX = node.x - pillW / 2;
+                        const pillY = node.y - pillH / 2;
+                        const isOnline = node.status === 'active' || !node.status;
 
-                    {/* 5. NODE BOTTOM: Akun Cookie #4 (Pill with Purple Border) */}
-                    <g
-                      onClick={() => setSelectedNodeId(cookieNodes.bottom.id)}
-                      className="cursor-pointer group"
-                    >
-                      <rect
-                        x="295"
-                        y="325"
-                        width="170"
-                        height="36"
-                        rx="8"
-                        fill="#0F172A"
-                        stroke="#A855F7"
-                        strokeWidth={selectedNodeId === cookieNodes.bottom.id ? 2 : 1.2}
-                        className="transition-all"
-                      />
-                      <text x="375" y="348" textAnchor="middle" fill="#E9D5FF" fontSize="11" fontWeight="bold">
-                        {cookieNodes.bottom.name}
-                      </text>
-                      <circle cx="452" cy="343" r="3.5" fill="#10B981" />
-                    </g>
-                  </svg>
+                        return (
+                          <g
+                            key={`node-${node.id}`}
+                            onClick={() => setSelectedNodeId(node.id)}
+                            className="cursor-pointer group select-none"
+                          >
+                            {isSelected && (
+                              <rect
+                                x={pillX - 2}
+                                y={pillY - 2}
+                                width={pillW + 4}
+                                height={pillH + 4}
+                                rx="9"
+                                fill={node.color}
+                                opacity="0.35"
+                                filter="url(#glow-node)"
+                              />
+                            )}
+                            <rect
+                              x={pillX}
+                              y={pillY}
+                              width={pillW}
+                              height={pillH}
+                              rx="7"
+                              fill="#0F172A"
+                              stroke={node.color}
+                              strokeWidth={isSelected ? 2.2 : 1.2}
+                              className="transition-all duration-200 group-hover:brightness-125"
+                            />
+                            <text
+                              x={node.x - 8}
+                              y={node.y + 3.5}
+                              textAnchor="middle"
+                              fill="#F1F5F9"
+                              fontSize="9.5"
+                              fontWeight="bold"
+                              className="transition-all duration-200 group-hover:fill-white font-mono"
+                            >
+                              {node.name}
+                            </text>
+                            <circle
+                              cx={node.x + pillW / 2 - 12}
+                              cy={node.y}
+                              r="3.2"
+                              fill={isOnline ? '#10B981' : '#EF4444'}
+                            />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
 
                   {/* Canvas Zoom Controls (Bottom Left) */}
-                  <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1 text-slate-300">
+                  <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1 text-slate-300 z-10">
                     <button
                       onClick={() => setCanvasZoom((prev) => Math.max(0.8, prev - 0.1))}
                       className="w-6 h-6 flex items-center justify-center hover:bg-slate-800 rounded font-bold text-xs cursor-pointer"
@@ -3039,45 +2940,45 @@ export default function Dashboard({ onLogout }) {
                 </div>
 
                 {/* Selected Node Telemetry HUD (Akun Cookie Telemetry) */}
-                <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
-                    <span className="font-bold text-slate-100 font-mono text-xs truncate block">
-                      {selectedNodeId === 'router' && '⚡ Router (Job Core)'}
-                      {selectedNodeId === cookieNodes.top.id && `🍪 ${cookieNodes.top.fullName}`}
-                      {selectedNodeId === cookieNodes.right.id && `🍪 ${cookieNodes.right.fullName}`}
-                      {selectedNodeId === cookieNodes.left.id && `🍪 ${cookieNodes.left.fullName}`}
-                      {selectedNodeId === cookieNodes.bottom.id && `🍪 ${cookieNodes.bottom.fullName}`}
-                    </span>
-                  </div>
+                {(() => {
+                  const selNode = tentacleNodes.find((n) => n.id === selectedNodeId);
+                  const isRouter = selectedNodeId === 'router' || !selNode;
+                  const totalCount = tentacleNodes.length;
 
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
-                    <span className="font-bold text-cyan-400 font-mono text-xs truncate block">
-                      {selectedNodeId === 'router' && 'Dispatcher / Hub'}
-                      {selectedNodeId === cookieNodes.top.id && cookieNodes.top.email}
-                      {selectedNodeId === cookieNodes.right.id && cookieNodes.right.email}
-                      {selectedNodeId === cookieNodes.left.id && cookieNodes.left.email}
-                      {selectedNodeId === cookieNodes.bottom.id && cookieNodes.bottom.email}
-                    </span>
-                  </div>
+                  return (
+                    <div className="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Active Node</span>
+                        <span className="font-bold text-slate-100 font-mono text-xs truncate block" title={isRouter ? 'Router (Job Core)' : selNode.fullName}>
+                          {isRouter ? '⚡ Router (Job Core)' : `🍪 ${selNode.fullName}`}
+                        </span>
+                      </div>
 
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
-                    <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      {selectedNodeId === 'router' ? 'ONLINE (16 Sesi)' : 'SESI AKTIF (VALID)'}
-                    </span>
-                  </div>
+                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Email Akun Google</span>
+                        <span className="font-bold text-cyan-400 font-mono text-xs truncate block" title={isRouter ? 'Dispatcher / Load Balancer' : selNode.email}>
+                          {isRouter ? `Dispatcher (${totalCount} Akun)` : selNode.email}
+                        </span>
+                      </div>
 
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
-                    <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      READY TO POST
-                    </span>
-                  </div>
-                </div>
+                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
+                        <span className="font-bold text-amber-400 font-mono text-xs flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          {isRouter ? `ONLINE (${totalCount} Sesi)` : (selNode.status === 'active' || !selNode.status ? 'SESI AKTIF (VALID)' : selNode.status.toUpperCase())}
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
+                        <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          READY TO POST
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Right Column: RECENT REQUESTS */}

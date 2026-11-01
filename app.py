@@ -1719,6 +1719,9 @@ class TikTokLiveRunner:
         self.likes_sent = 0
         self.chats_sent = 0
         self.gifts_detected = 0
+        self.success_count = 0
+        self.fail_count = 0
+        self.error_count = 0
         self.logs = []
         self.log_counter = 0
 
@@ -1731,6 +1734,12 @@ class TikTokLiveRunner:
             "message": message
         }
         with self.lock:
+            if level == "success":
+                self.success_count += 1
+            elif level in ("warning", "fail"):
+                self.fail_count += 1
+            elif level == "error":
+                self.error_count += 1
             self.logs.append(entry)
             if len(self.logs) > 200:
                 self.logs.pop(0)
@@ -1750,6 +1759,9 @@ class TikTokLiveRunner:
             self.likes_sent = 0
             self.chats_sent = 0
             self.gifts_detected = 0
+            self.success_count = 0
+            self.fail_count = 0
+            self.error_count = 0
             self.logs = []
             self.log_counter = 0
 
@@ -1800,6 +1812,9 @@ class TikTokLiveRunner:
                 "likes_sent": self.likes_sent,
                 "chats_sent": self.chats_sent,
                 "gifts_detected": self.gifts_detected,
+                "success_count": self.success_count,
+                "fail_count": self.fail_count,
+                "error_count": self.error_count,
                 "logs": list(self.logs[-50:])
             }
 
@@ -1937,6 +1952,7 @@ class TikTokLiveRunner:
                 batch_likes = self.tap_speed
                 with self.lock:
                     self.likes_sent += batch_likes
+                    self.success_count += 1
 
                 # Dispatch click on live layer
                 try:
@@ -1951,7 +1967,8 @@ class TikTokLiveRunner:
                         }}
                     """)
                 except Exception:
-                    pass
+                    with self.lock:
+                        self.fail_count += 1
 
                 # Log like milestones every 500 likes
                 if self.likes_sent % 500 < self.tap_speed:
@@ -1964,8 +1981,12 @@ class TikTokLiveRunner:
                     with self.lock:
                         self.chats_sent += 1
                     if is_logged_in:
+                        with self.lock:
+                            self.success_count += 1
                         self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Terkirim ke live chat: \"{self.chat_message}\"")
                     else:
+                        with self.lock:
+                            self.fail_count += 1
                         self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Disiapkan: \"{self.chat_message}\" (Perlu login akun untuk publish)")
 
                 # Gift detection event

@@ -581,12 +581,15 @@ def render_tiktok_live_cards(
     speed: int,
     chats: int,
     gifts: int,
-    logs: List[str]
+    success: int = 0,
+    fail: int = 0,
+    error: int = 0,
+    logs: List[str] = None
 ) -> Group:
     login_badge = "[bold green]✓ Sesi Aktif[/bold green]" if is_logged_in else "[bold yellow]Mode Tamu[/bold yellow]"
 
-    if width >= 115:
-        # PC / LAPTOP WIDE (>= 115 cols): 4 Horizon Cards Grid
+    if width >= 135:
+        # PC / DESKTOP ULTRAWIDE (>= 135 cols): 4 Horizon Cards Grid
         grid = Table.grid(expand=True, padding=(0, 1))
         grid.add_column(ratio=1)
         grid.add_column(ratio=1)
@@ -594,7 +597,7 @@ def render_tiktok_live_cards(
         grid.add_column(ratio=1)
 
         c1 = Panel(
-            f"[bold yellow]{t_user}[/bold yellow]\n[bold red]🔴 ON-AIR[/bold red]\n⏱ [bold white]{time_str}[/bold white]",
+            f"[bold yellow]{t_user}[/bold yellow]\n[bold red]🔴 ON-AIR (:99)[/bold red]\n⏱ Durasi: [bold white]{time_str}[/bold white]",
             title="[bold red]🔴 STREAMER[/bold red]",
             border_style="red",
             box=box.ROUNDED,
@@ -608,14 +611,18 @@ def render_tiktok_live_cards(
             expand=True
         )
         c3 = Panel(
-            f"[bold red]❤️ {likes:,} tap[/bold red]\n⚡ [bold yellow]{speed} tap/s[/bold yellow]\n[green]Status: Aktif[/green]",
-            title="[bold magenta]❤️ TAP LIKES[/bold magenta]",
+            f"[bold red]❤️ {likes:,} tap[/bold red] (⚡{speed}/s)\n"
+            f"[green]✓ Berhasil: {success}[/green]\n"
+            f"[yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
+            title="[bold magenta]❤️ STATISTIK[/bold magenta]",
             border_style="magenta",
             box=box.ROUNDED,
             expand=True
         )
         c4 = Panel(
-            f"💬 [bold cyan]{chats} chat[/bold cyan]\n🎁 [bold magenta]{gifts} gift[/bold magenta]\n[green]DOM Live ✓[/green]",
+            f"💬 [bold cyan]{chats} chat[/bold cyan] │ 🎁 [bold magenta]{gifts} gift[/bold magenta]\n"
+            f"DOM: [green]WebSocket ✓[/green]\n"
+            f"Stream: [green]Normal[/green]",
             title="[bold yellow]💬 CHAT & GIFT[/bold yellow]",
             border_style="yellow",
             box=box.ROUNDED,
@@ -624,7 +631,7 @@ def render_tiktok_live_cards(
         grid.add_row(c1, c2, c3, c4)
 
     elif width >= 65:
-        # LAPTOP / TABLET (65-114 cols): 2x2 Grid Cards
+        # LAPTOP / TABLET / DESKTOP (65-134 cols): 2x2 Grid Cards
         grid = Table.grid(expand=True, padding=(0, 1))
         grid.add_column(ratio=1)
         grid.add_column(ratio=1)
@@ -638,20 +645,22 @@ def render_tiktok_live_cards(
         )
         c2 = Panel(
             f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nEngine: [dim]Native Chromium :99[/dim]",
-            title="[bold cyan]👤 AKUN TIKTOK[/bold cyan]",
+            title="[bold cyan]👤 AKUN PENGIRIM[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             expand=True
         )
         c3 = Panel(
-            f"[bold red]❤️ {likes:,} tap[/bold red]  (⚡ [bold yellow]{speed}/dtk[/bold yellow])\nStatus: [green]Auto-Tapping Active 🔥[/green]",
-            title="[bold magenta]❤️ METRIK TAP-TAP LIKES[/bold magenta]",
+            f"[bold red]❤️ {likes:,} tap[/bold red] (⚡ [bold yellow]{speed}/dtk[/bold yellow])\n"
+            f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
+            title="[bold magenta]❤️ TAP LIKES & STATISTIK[/bold magenta]",
             border_style="magenta",
             box=box.ROUNDED,
             expand=True
         )
         c4 = Panel(
-            f"💬 [bold cyan]{chats} pesan[/bold cyan]  │  🎁 [bold magenta]{gifts} gift[/bold magenta]\nMonitor: [green]DOM WebSocket Active ✓[/green]",
+            f"💬 [bold cyan]{chats} pesan[/bold cyan]  │  🎁 [bold magenta]{gifts} gift[/bold magenta]\n"
+            f"Monitor: [green]DOM WebSocket Active ✓[/green]",
             title="[bold yellow]💬 LIVE CHAT & GIFT[/bold yellow]",
             border_style="yellow",
             box=box.ROUNDED,
@@ -672,7 +681,8 @@ def render_tiktok_live_cards(
         )
         c_mobile2 = Panel(
             f"❤️ Likes: [bold red]{likes:,} tap[/bold red] (⚡ {speed}/s)\n"
-            f"💬 Chat : [bold cyan]{chats} pesan[/bold cyan] │ 🎁 Gift: [bold magenta]{gifts} gift[/bold magenta]",
+            f"💬 Chat: [bold cyan]{chats}[/bold cyan] │ 🎁 Gift: [bold magenta]{gifts}[/bold magenta]\n"
+            f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
             title="[bold magenta]📊 STATISTIK LIVE[/bold magenta]",
             border_style="magenta",
             box=box.ROUNDED,
@@ -680,34 +690,34 @@ def render_tiktok_live_cards(
         )
         grid = Group(c_mobile1, c_mobile2)
 
-    # Real-Time Logs Card
-    logs_slice = logs[-5:] if width < 65 else logs[-8:]
-    logs_str = "\n".join(logs_slice) if logs_slice else "[dim]Menghubungkan browser Chromium ke siaran TikTok Live...[/dim]"
-    card_logs = Panel(
-        logs_str,
-        title="[bold white]📋 Live Engine Logs (Virtual Display :99)[/bold white]",
-        border_style="bright_blue",
-        box=box.ROUNDED,
-        expand=True
-    )
+    # Real-Time Logs (WITHOUT Card - Newest on Top)
+    max_logs = 3 if width < 65 else 5
+    logs_slice = list(reversed(logs[-max_logs:])) if logs else []
 
-    # Control Action Footer Card
+    log_elements = []
     if width >= 65:
-        footer = Panel(
-            Align.center("[bold yellow]Ctrl + C[/bold yellow]: [bold red]Auto-Stop & Tutup Browser[/bold red] • [dim]Native Linux Chromium Display :99[/dim]"),
-            border_style="dim",
-            box=box.ROUNDED,
-            expand=True
+        log_elements.append(Text(f"\n📋 Live Engine Logs (Terbaru di atas) ─────────────────────────", style="bold bright_blue"))
+    else:
+        log_elements.append(Text(f"\n📋 Live Logs (Terbaru di atas):", style="bold bright_blue"))
+
+    if not logs_slice:
+        log_elements.append(Text("   Menghubungkan browser Chromium ke siaran TikTok Live...", style="dim"))
+    else:
+        for idx, l in enumerate(logs_slice):
+            prefix = " ▶" if idx == 0 else "  "
+            log_elements.append(Text.from_markup(f"{prefix} {l}"))
+
+    # Control Action Footer (Text WITHOUT Card)
+    if width >= 65:
+        footer = Align.center(
+            Text.from_markup("\n[dim]Tekan [/dim][bold yellow]Ctrl+C[/bold yellow][dim] untuk Auto-Stop & Tutup Browser (Display :99)[/dim]")
         )
     else:
-        footer = Panel(
-            Align.center("[bold yellow]Ctrl + C[/bold yellow]: [bold red]Auto-Stop Bot[/bold red]"),
-            border_style="dim",
-            box=box.ROUNDED,
-            expand=True
+        footer = Align.center(
+            Text.from_markup("\n[dim]Tekan [/dim][bold yellow]Ctrl+C[/bold yellow][dim] untuk Auto-Stop Bot[/dim]")
         )
 
-    return Group(grid, card_logs, footer)
+    return Group(grid, *log_elements, footer)
 
 
 def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = "", interactive: bool = True):
@@ -797,8 +807,14 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
     likes_sent = 0
     chats_sent = 0
     gifts_count = 0
+    success_count = 0
+    fail_count = 0
+    error_count = 0
     time_str = "00:00"
     is_logged_in_state = False
+
+    # Clear screen so statistics cards are pinned at the top without scrolling
+    console.clear()
 
     try:
         with Live(console=console, refresh_per_second=2) as live:
@@ -821,10 +837,23 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                             likes_sent = st_data.get("likes_sent", likes_sent)
                             chats_sent = st_data.get("chats_sent", chats_sent)
                             gifts_count = st_data.get("gifts_detected", gifts_count)
+                            success_count = st_data.get("success_count", 0)
+                            fail_count = st_data.get("fail_count", 0)
+                            error_count = st_data.get("error_count", 0)
                             is_logged_in_state = st_data.get("is_logged_in", False)
                             raw_logs = st_data.get("logs", [])
-                            for l in raw_logs[-8:]:
-                                recent_logs.append(f"[{l.get('created_at', '')[-8:]}] {l.get('message', '')}")
+                            for l in raw_logs[-10:]:
+                                lvl = (l.get("level") or "info").lower()
+                                ts = (l.get("created_at") or "")[-8:]
+                                msg = l.get("message") or ""
+                                if lvl == "success":
+                                    recent_logs.append(f"[green][{ts}] ✓ {msg}[/green]")
+                                elif lvl in ("warning", "fail"):
+                                    recent_logs.append(f"[yellow][{ts}] ▲ {msg}[/yellow]")
+                                elif lvl == "error":
+                                    recent_logs.append(f"[red][{ts}] ✖ {msg}[/red]")
+                                else:
+                                    recent_logs.append(f"[white][{ts}] ℹ {msg}[/white]")
                     except Exception:
                         pass
 
@@ -838,6 +867,9 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                     speed=t_speed,
                     chats=chats_sent,
                     gifts=gifts_count,
+                    success=success_count,
+                    fail=fail_count,
+                    error=error_count,
                     logs=recent_logs
                 )
                 live.update(card_ui)

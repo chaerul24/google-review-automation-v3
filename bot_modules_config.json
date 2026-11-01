@@ -13,11 +13,11 @@
     "enabled": true,
     "name": "TikTok Live",
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie).",
-    "target_user": "@tryfredy",
+    "target_user": "@herealone05",
     "tap_speed": 50,
     "like_mode": "super_cepat",
     "auto_chat": true,
-    "chat_message": "Halo Cantik",
+    "chat_message": "Like dan koment",
     "multi_account": true,
     "display": true,
     "execution_mode": "parallel"

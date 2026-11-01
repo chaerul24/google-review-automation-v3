@@ -672,10 +672,17 @@ def render_tiktok_live_cards(
     mode: str = "parallel",
     verified_viewers: List[str] = None,
     active_accounts: List[str] = None,
-    account_stats: Optional[Dict[str, Any]] = None
+    account_stats: Optional[Dict[str, Any]] = None,
+    like_mode: str = "super_cepat",
+    like_mode_info: Optional[Dict[str, Any]] = None
 ) -> Group:
     login_badge = "[bold green]✓ Sesi Aktif[/bold green]" if is_logged_in else "[bold yellow]Mode Tamu[/bold yellow]"
     mode_badge = "[bold green]⚡ Paralel[/bold green]" if mode == "parallel" else "[bold yellow]🔄 Bergantian[/bold yellow]"
+
+    lm_info = like_mode_info or {}
+    lm_badge = lm_info.get("badge") or ("🚀 Super Cepat" if like_mode == "super_cepat" else ("⚡ Turbo" if like_mode == "turbo" else "🐢 Santai"))
+    lm_name = lm_info.get("name") or ("Super Cepat Like" if like_mode == "super_cepat" else ("Turbo Like" if like_mode == "turbo" else "Santai Like"))
+    lm_interval = lm_info.get("interval", 0.15 if like_mode == "super_cepat" else (0.35 if like_mode == "turbo" else 1.0))
 
     v_set = set(verified_viewers or [])
     if active_accounts:
@@ -701,7 +708,7 @@ def render_tiktok_live_cards(
         wi = c.get("worker_idx", 0) + 1
         clg = "[bold green]✓ Sesi Aktif[/bold green]" if c.get("is_logged_in") else "[bold yellow]Mode Tamu[/bold yellow]"
         cv = "[bold green]\\[✓] Penonton Live[/bold green]" if c.get("is_viewer_verified") else "[cyan]\\[?] Memindai[/cyan]"
-        cbtn = "[bold green]\\[✓] Love Btn (1s)[/bold green]" if c.get("has_like_btn") else "[yellow]Mencari Love[/yellow]"
+        cbtn = f"[bold green]\\[✓] Love Btn ({lm_interval}s)[/bold green]" if c.get("has_like_btn") else "[yellow]Mencari Love[/yellow]"
         clikes = c.get("likes_sent", 0)
         cchats = c.get("chats_sent", 0)
         cmsg = c.get("last_chat_message") or "indonesia"
@@ -709,7 +716,7 @@ def render_tiktok_live_cards(
         acc_panel = Panel(
             f"👤 [bold cyan]{cu}[/bold cyan] ({clg})\n"
             f"Status: {cv} │ {cbtn}\n"
-            f"❤️ Real Likes: [bold red]{clikes:,} klik nyata[/bold red] (NO DUMMY)\n"
+            f"❤️ Real Likes: [bold red]{clikes:,} klik nyata[/bold red] [{lm_badge}] (NO DUMMY)\n"
             f"💬 Chat (3s)  : [bold cyan]{cchats} terkirim[/bold cyan] │ \"{cmsg[:18]}\"",
             title=f"[bold cyan]KARTU AKUN #{wi}: {cu}[/bold cyan]",
             border_style="cyan",
@@ -742,8 +749,8 @@ def render_tiktok_live_cards(
         )
         c3 = Panel(
             f"[bold red]❤️ {likes:,} klik nyata[/bold red] (1:1 NO DUMMY)\n"
-            f"[green]✓ Berhasil: {success}[/green]\n"
-            f"[yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
+            f"⚡ Mode: [bold magenta]{lm_badge}[/bold magenta] ({lm_interval}s/like)\n"
+            f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ {fail}[/yellow] │ [red]✗ {error}[/red]",
             title="[bold magenta]❤️ REAL LIKES & STATS[/bold magenta]",
             border_style="magenta",
             box=box.ROUNDED,
@@ -791,6 +798,7 @@ def render_tiktok_live_cards(
         )
         c3 = Panel(
             f"[bold red]❤️ {likes:,} klik nyata[/bold red] (1:1 NO DUMMY)\n"
+            f"Mode Like: [bold magenta]{lm_badge}[/bold magenta] ({lm_interval}s/like)\n"
             f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
             title="[bold magenta]❤️ REAL LIKES & STATISTIK[/bold magenta]",
             border_style="magenta",
@@ -832,7 +840,7 @@ def render_tiktok_live_cards(
             expand=True
         )
         c_mobile2 = Panel(
-            f"❤️ Real Likes: [bold red]{likes:,} klik nyata[/bold red] (NO DUMMY)\n"
+            f"❤️ Real Likes: [bold red]{likes:,} klik nyata[/bold red] [{lm_badge}]\n"
             f"💬 Chat (3s)  : [bold cyan]{chats} pesan terkirim[/bold cyan]\n"
             f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
             title="[bold magenta]📊 STATISTIK LIVE[/bold magenta]",
@@ -875,7 +883,7 @@ def render_tiktok_live_cards(
     return Group(grid, *log_elements, footer)
 
 
-def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = "", mode: str = "parallel", interactive: bool = True):
+def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = "", mode: str = "parallel", interactive: bool = True, like_mode: str = "super_cepat"):
     console.clear()
     console.print(render_banner())
     console.print(Panel(
@@ -945,6 +953,28 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
         else:
             chosen_mode = mode if mode in ("parallel", "sequential") else tiktok_cfg.get("execution_mode", "parallel")
 
+    # Mode kecepatan like
+    default_like_mode = like_mode if like_mode in ("santai", "turbo", "super_cepat") else (tiktok_cfg.get("like_mode") or "super_cepat")
+    if interactive:
+        console.print(f"\n[bold cyan]🚀 Pilih Kecepatan Tap-tap Like (100% Real Likes 1:1):[/bold cyan]")
+        console.print(f"   [bold cyan][1][/bold cyan] [bold green]🐢 Santai Like[/bold green]     — [white]Interval 1.0s / like (~1 like/detik per akun, aman & stabil)[/white]")
+        console.print(f"   [bold cyan][2][/bold cyan] [bold yellow]⚡ Turbo Like[/bold yellow]      — [white]Interval 0.35s / like (~3 like/detik per akun, bertenaga)[/white]")
+        console.print(f"   [bold cyan][3][/bold cyan] [bold red]🚀 Super Cepat Like[/bold red] — [white]Interval 0.15s / like (~6-7 like/detik per akun, tap instan deras)[/white]")
+        lm_default_num = "3"
+        if default_like_mode == "santai":
+            lm_default_num = "1"
+        elif default_like_mode == "turbo":
+            lm_default_num = "2"
+        lm_pick = Prompt.ask("  [bold white]Pilihan Kecepatan Like [1/2/3][/bold white]", choices=["1", "2", "3"], default=lm_default_num).strip()
+        if lm_pick == "1":
+            chosen_like_mode = "santai"
+        elif lm_pick == "2":
+            chosen_like_mode = "turbo"
+        else:
+            chosen_like_mode = "super_cepat"
+    else:
+        chosen_like_mode = default_like_mode
+
     default_user = target_user or tiktok_cfg.get("target_user") or "@evelyn.vln"
     default_speed = tap_speed or tiktok_cfg.get("tap_speed") or 50
     default_chat = chat_message or tiktok_cfg.get("chat_message") or "Semangat live kak! Support selalu 🔥"
@@ -969,8 +999,9 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
         t_chat = default_chat
 
     mode_label = "⚡ Paralel (Serentak)" if chosen_mode == "parallel" else "🔄 Bergantian (Rotasi)"
+    lm_name = "Super Cepat Like" if chosen_like_mode == "super_cepat" else ("Turbo Like" if chosen_like_mode == "turbo" else "Santai Like")
     console.print(f"\n[bold cyan]🚀 Memulai bot Chromium TikTok Live (Headless) untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
-    console.print(f"[dim]Menyiapkan akun: {account_label} • Mode: {mode_label}...[/dim]")
+    console.print(f"[dim]Menyiapkan akun: {account_label} • Mode: {mode_label} • Kecepatan Like: {lm_name}...[/dim]")
     console.print("[dim]Tekan Ctrl+C untuk menghentikan bot dan kembali ke menu.[/dim]\n")
 
     server_url = "http://127.0.0.1:5000"
@@ -981,6 +1012,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
             json={
                 "target_user": t_user,
                 "tap_speed": t_speed,
+                "like_mode": chosen_like_mode,
                 "auto_chat": do_chat,
                 "chat_message": t_chat,
                 "account_ids": chosen_account_ids,
@@ -1067,7 +1099,9 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                     mode=st_data.get("execution_mode", chosen_mode) if is_server_active else chosen_mode,
                     verified_viewers=st_data.get("verified_viewers", []) if is_server_active else [],
                     active_accounts=st_data.get("active_accounts", []) if is_server_active else [],
-                    account_stats=st_data.get("account_stats", {}) if is_server_active else {}
+                    account_stats=st_data.get("account_stats", {}) if is_server_active else {},
+                    like_mode=st_data.get("like_mode", chosen_like_mode) if is_server_active else chosen_like_mode,
+                    like_mode_info=st_data.get("like_mode_info", {}) if is_server_active else {}
                 )
                 live.update(card_ui)
     except KeyboardInterrupt:
@@ -1367,6 +1401,7 @@ def main():
     tt_parser = subparsers.add_parser("tiktok-live", help="Mulai otomasi TikTok Live (Auto Tap-tap Like & Chat)")
     tt_parser.add_argument("--target", "-t", default="@evelyn.vln", help="Username host TikTok LIVE (default: @evelyn.vln)")
     tt_parser.add_argument("--speed", "-s", type=int, default=50, help="Kecepatan tap-tap like per detik (default: 50)")
+    tt_parser.add_argument("--like-mode", "-l", choices=["santai", "turbo", "super_cepat"], default="super_cepat", help="Mode kecepatan like: santai (1.0s), turbo (0.35s), super_cepat (0.15s) (default: super_cepat)")
     tt_parser.add_argument("--chat", "-c", default="Semangat live kak! Support selalu 🔥", help="Pesan live chat")
     tt_parser.add_argument("--mode", "-m", choices=["parallel", "sequential", "paralel", "bergantian"], default="parallel", help="Mode eksekusi: parallel (serentak) atau sequential (bergantian)")
 
@@ -1426,7 +1461,7 @@ def main():
             run_task_interactive(args.business, screen_count=args.slots, star_rating=args.stars)
         elif args.command == "tiktok-live":
             mode_arg = "sequential" if args.mode in ("sequential", "bergantian") else "parallel"
-            run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat, mode=mode_arg, interactive=False)
+            run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat, mode=mode_arg, interactive=False, like_mode=args.like_mode)
     except KeyboardInterrupt:
         console.print("\n[bold yellow]⚠️ Ctrl+C terdeteksi. Menghentikan semua tugas otomasi...[/bold yellow]")
         stop_all_running_tasks()

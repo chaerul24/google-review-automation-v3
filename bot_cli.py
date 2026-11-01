@@ -312,7 +312,7 @@ class ServerClient:
         except Exception:
             return []
 
-    def start_tiktok_live(self, target_user: str, tap_speed: int = 50, auto_chat: bool = True, chat_message: str = "", account_ids: Optional[List[Any]] = None, mode: str = "parallel") -> Dict[str, Any]:
+    def start_tiktok_live(self, target_user: str, tap_speed: int = 50, auto_chat: bool = True, chat_message: str = "", account_ids: Optional[List[Any]] = None, mode: str = "parallel", like_mode: str = "super_cepat") -> Dict[str, Any]:
         """Start TikTok Live automation bot on server."""
         payload = {
             "target_user": target_user,
@@ -320,9 +320,14 @@ class ServerClient:
             "auto_chat": auto_chat,
             "chat_message": chat_message,
             "account_ids": account_ids,
-            "mode": mode
+            "mode": mode,
+            "like_mode": like_mode
         }
         return self._request("/api/tiktok-live/start", method="POST", data=payload)
+
+    def set_tiktok_like_mode(self, like_mode: str) -> Dict[str, Any]:
+        """Dynamically update like speed mode on server (santai, turbo, super_cepat)."""
+        return self._request("/api/tiktok-live/set-like-mode", method="POST", data={"like_mode": like_mode})
 
     def stop_tiktok_live(self) -> Dict[str, Any]:
         """Stop TikTok Live automation bot on server."""
@@ -2545,7 +2550,7 @@ def run_task_stream(
 
 # ── TikTok Live Menu & Interactive Runner ─────────────────────────────────────
 
-def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str, Any]] = None):
+def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str, Any]] = None, default_like_mode: Optional[str] = None):
     """Interactive screen to configure and run TikTok Live Automation Bot (Tap-tap Likes & Auto Chat)."""
     print_header_screen(client, title="TIKTOK LIVE (MULAI) — OTOMASI STREAMING")
     
@@ -2563,6 +2568,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
 
     default_user = tiktok_cfg.get("target_user") or "@evelyn.vln"
     default_speed = int(tiktok_cfg.get("tap_speed") or 50)
+    configured_like_mode = default_like_mode or tiktok_cfg.get("like_mode") or "super_cepat"
     default_chat_enabled = tiktok_cfg.get("auto_chat", True)
     default_chat_msg = tiktok_cfg.get("chat_message") or "Semangat live kak! Support selalu 🔥"
 
@@ -2614,10 +2620,37 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
         m_in = input(f" {C_GREEN}Pilih Mode Multi-Akun [1/2] (default: 1): {C_RESET}").strip()
         chosen_mode = "sequential" if m_in == "2" else "parallel"
 
+    # Pilihan Mode Kecepatan Like (100% Real Likes 1:1)
+    print(f" {C_CYAN}┌── [PILIHAN KECEPATAN TAP-TAP LIKE (REAL LIKES 1:1)]{C_RESET}")
+    print(f" {C_CYAN}│{C_RESET}   [1] {C_BOLD}{C_GREEN}🐢 Santai Like{C_RESET}     — Interval 1.0s / like (Stabil, aman & natural)")
+    print(f" {C_CYAN}│{C_RESET}   [2] {C_BOLD}{C_YELLOW}⚡ Turbo Like{C_RESET}      — Interval 0.35s / like (~3 like/detik per akun, bertenaga)")
+    print(f" {C_CYAN}│{C_RESET}   [3] {C_BOLD}{C_RED}🚀 Super Cepat Like{C_RESET} — Interval 0.15s / like (~6-7 like/detik per akun, tap instan deras)")
+    print(f" {C_CYAN}└──{C_RESET}")
+    lm_default_num = "3"
+    if configured_like_mode == "santai":
+        lm_default_num = "1"
+    elif configured_like_mode == "turbo":
+        lm_default_num = "2"
+    lm_in = input(f" {C_GREEN}Pilih Kecepatan Like [1/2/3] (default: {lm_default_num}): {C_RESET}").strip()
+    if lm_in == "1":
+        chosen_like_mode = "santai"
+    elif lm_in == "2":
+        chosen_like_mode = "turbo"
+    elif lm_in == "3":
+        chosen_like_mode = "super_cepat"
+    else:
+        chosen_like_mode = configured_like_mode if configured_like_mode in ("santai", "turbo", "super_cepat") else "super_cepat"
+
     box_header("PENGATURAN OTOMASI TIKTOK LIVE")
     mode_str = f"{C_GREEN}⚡ Paralel (Serentak){C_RESET}" if chosen_mode == "parallel" else f"{C_YELLOW}🔄 Bergantian (Rotasi){C_RESET}"
+    lm_labels = {
+        "santai": f"{C_GREEN}🐢 Santai Like (1.0s/like){C_RESET}",
+        "turbo": f"{C_YELLOW}⚡ Turbo Like (0.35s/like){C_RESET}",
+        "super_cepat": f"{C_RED}🚀 Super Cepat Like (0.15s/like){C_RESET}",
+    }
+    like_mode_str = lm_labels.get(chosen_like_mode, f"{C_RED}🚀 Super Cepat Like (0.15s/like){C_RESET}")
     print(f" {C_CYAN}┌── [MODUL TIKTOK LIVE: FITUR TERSEDIA]{C_RESET}")
-    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}❤️  Auto Tap-tap Likes  :{C_RESET} {C_GREEN}Aktif{C_RESET} (Meningkatkan algoritma & interaksi live)")
+    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}❤️  Auto Tap-tap Likes  :{C_RESET} {C_GREEN}Aktif{C_RESET} ({like_mode_str})")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}💬  Auto Live Chat      :{C_RESET} {C_GREEN}Aktif{C_RESET} (Kirim pesan interaksi otomatis)")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}👥  Akun Bot TikTok     :{C_RESET} {C_CYAN}{account_label}{C_RESET}")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}⚡  Mode Eksekusi       :{C_RESET} {mode_str}")
@@ -2647,6 +2680,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     "enabled": True,
                     "target_user": target_user,
                     "tap_speed": tap_speed,
+                    "like_mode": chosen_like_mode,
                     "auto_chat": auto_chat,
                     "chat_message": chat_msg,
                     "multi_account": True
@@ -2671,7 +2705,8 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                 auto_chat=auto_chat,
                 chat_message=chat_msg,
                 account_ids=chosen_account_ids,
-                mode=chosen_mode
+                mode=chosen_mode,
+                like_mode=chosen_like_mode
             )
             spin.stop(f" {C_GREEN}✓ Bot TikTok Live berhasil diaktifkan di server!{C_RESET}")
         except Exception as e:
@@ -2709,6 +2744,12 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     live_mode = st.get("execution_mode", chosen_mode)
                     mode_tag = f"{C_GREEN}⚡ Paralel{C_RESET}" if live_mode == "parallel" else f"{C_YELLOW}🔄 Bergantian{C_RESET}"
 
+                    cur_like_mode = st.get("like_mode") or chosen_like_mode
+                    like_info = st.get("like_mode_info") or {}
+                    lm_badge = like_info.get("badge") or ("🚀 Super Cepat" if cur_like_mode == "super_cepat" else ("⚡ Turbo" if cur_like_mode == "turbo" else "🐢 Santai"))
+                    lm_name = like_info.get("name") or ("Super Cepat Like" if cur_like_mode == "super_cepat" else ("Turbo Like" if cur_like_mode == "turbo" else "Santai Like"))
+                    lm_interval = like_info.get("interval", 0.15 if cur_like_mode == "super_cepat" else (0.35 if cur_like_mode == "turbo" else 1.0))
+
                     if st.get("account_count", 0) > 1:
                         cur_acc = st.get("current_account") or ("Paralel" if live_mode == "parallel" else "Rotasi")
                         live_acc_label = f"Multi-Akun ({st.get('account_count')} Akun - {cur_acc})"
@@ -2731,7 +2772,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                         overview_lines = [
                             f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 LIVE ON-AIR{C_RESET}  ⏱ {time_str}",
                             f" {C_BOLD}{C_WHITE}Mode Eksekusi  {C_RESET} : {mode_tag}   │  {C_BOLD}{C_WHITE}Total Akun:{C_RESET} {len(active_accs) or 1} browser terisolasi",
-                            f" {C_BOLD}{C_WHITE}Real Likes (1:1){C_RESET}: {C_BOLD}{C_RED}❤️ {likes:,} klik nyata{C_RESET} (NO DUMMY) │ {C_BOLD}{C_CYAN}💬 Chat 3s:{C_RESET} {chats} terkirim",
+                            f" {C_BOLD}{C_WHITE}Real Likes (1:1){C_RESET}: {C_BOLD}{C_RED}❤️ {likes:,} klik nyata{C_RESET} [{lm_badge} ~{lm_interval}s, NO DUMMY] │ {C_BOLD}{C_CYAN}💬 Chat 3s:{C_RESET} {chats} terkirim",
                             f" ───────────────────────────────────────────────────────────────────",
                             f" {C_BOLD}{C_WHITE}Statistik Sistem{C_RESET}: {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
                         ]
@@ -2741,7 +2782,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                         overview_lines = [
                             f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [LIVE] ⏱ {time_str}",
                             f" {C_BOLD}{C_CYAN}⚡ MODE  {C_RESET} : {mode_tag} │ 👥 {len(active_accs) or 1} akun",
-                            f" {C_BOLD}{C_MAGENTA}❤️ LIKES {C_RESET} : {C_RED}{likes:,} (REAL){C_RESET} │ 💬 {chats} chat (3s)",
+                            f" {C_BOLD}{C_MAGENTA}❤️ LIKES {C_RESET} : {C_RED}{likes:,} REAL{C_RESET} [{lm_badge}] │ 💬 {chats} chat (3s)",
                             f" ───────────────────────────────────────",
                             f" {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
                         ]
@@ -2773,7 +2814,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                                     f" {C_BOLD}{C_WHITE}Sesi Cookie    {C_RESET} : {sesi_tag}",
                                     f" {C_BOLD}{C_WHITE}Daftar Penonton{C_RESET} : {v_tag}",
                                     f" {C_BOLD}{C_WHITE}Tombol Love    {C_RESET} : {btn_tag}",
-                                    f" {C_BOLD}{C_WHITE}Real Likes (1:1){C_RESET}: {C_BOLD}{C_RED}❤️ {a_likes:,} klik nyata{C_RESET} (1 like/detik, TANPA DUMMY)",
+                                    f" {C_BOLD}{C_WHITE}Real Likes (1:1){C_RESET}: {C_BOLD}{C_RED}❤️ {a_likes:,} klik nyata{C_RESET} [{lm_name} ~{lm_interval}s, TANPA DUMMY]",
                                     f" {C_BOLD}{C_WHITE}Live Chat (3s) {C_RESET} : {C_BOLD}{C_CYAN}💬 {a_chats} terkirim{C_RESET} │ Pesan: \"{a_msg[:24]}\"",
                                     f" {C_BOLD}{C_WHITE}Status Engine  {C_RESET} : {C_GREEN}🟢 ONLINE (Browser Terpisah Berjalan){C_RESET}",
                                 ]
@@ -2783,7 +2824,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                                 acc_lines = [
                                     f" {C_BOLD}{C_CYAN}SESI   {C_RESET} : {C_GREEN}✓ Aktif{C_RESET} (Browser #{w_i})",
                                     f" {C_BOLD}{C_WHITE}PENONTON{C_RESET}: {C_GREEN}✓ Live{C_RESET} │ Love: {C_GREEN}✓ Btn{C_RESET}",
-                                    f" {C_BOLD}{C_MAGENTA}LIKES  {C_RESET} : {C_RED}❤️ {a_likes:,} REAL{C_RESET} (No Dummy)",
+                                    f" {C_BOLD}{C_MAGENTA}LIKES  {C_RESET} : {C_RED}❤️ {a_likes:,} REAL{C_RESET} [{lm_badge}]",
                                     f" {C_BOLD}{C_YELLOW}CHAT 3S{C_RESET} : 💬 {a_chats} terkirim │ \"{a_msg[:14]}\"",
                                     f" {C_BOLD}{C_GREEN}STATUS {C_RESET} : 🟢 ONLINE",
                                 ]
@@ -3191,6 +3232,7 @@ def main():
     p_tt = subparsers.add_parser("tiktok-live", help="Mulai otomasi TikTok Live (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie)")
     p_tt.add_argument("--target", "-t", default="@evelyn.vln", help="Username host TikTok LIVE (default: @evelyn.vln)")
     p_tt.add_argument("--speed", "-s", type=int, default=50, help="Kecepatan tap-tap like per detik (default: 50)")
+    p_tt.add_argument("--like-mode", "-l", choices=["santai", "turbo", "super_cepat"], default=None, help="Mode kecepatan like: santai (1.0s), turbo (0.35s), super_cepat (0.15s) (default: super_cepat)")
     p_tt.add_argument("--chat", "-c", default="Semangat live kak! Support selalu 🔥", help="Pesan live chat")
     p_tt.add_argument("--no-chat", action="store_true", help="Nonaktifkan kirim chat otomatis")
     p_tt.add_argument("--accounts", "-a", nargs="*", default=None, help="ID atau username akun TikTok (default: semua akun cookie)")
@@ -3258,7 +3300,7 @@ def main():
             elif args.command == "run":
                 run_task_stream(client, args.business, count=args.slots, star_rating=args.stars, mode=args.mode, delay=args.delay)
             elif args.command == "tiktok-live":
-                handle_tiktok_live_menu(client)
+                handle_tiktok_live_menu(client, default_like_mode=args.like_mode)
             elif args.command == "review-del":
                 if args.maps:
                     run_delete_maps_stream(

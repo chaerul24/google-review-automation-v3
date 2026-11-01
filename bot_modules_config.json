@@ -12,8 +12,8 @@
     "enabled": true,
     "name": "TikTok Live",
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
-    "target_user": "@autobotix.live",
-    "tap_speed": 20,
+    "target_user": "@evelyn.vln",
+    "tap_speed": 50,
     "auto_chat": true,
     "chat_message": "Semangat live kak! Support selalu 🔥",
     "gift_detection": true

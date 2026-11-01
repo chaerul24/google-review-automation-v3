@@ -11,12 +11,12 @@
   "tiktok_live": {
     "enabled": true,
     "name": "TikTok Live",
-    "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
-    "target_user": "@cutmey1231",
+    "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie).",
+    "target_user": "@feri_shaster22",
     "tap_speed": 5,
-    "auto_chat": false,
+    "auto_chat": true,
     "chat_message": "Halo kak",
-    "gift_detection": false
+    "multi_account": true
   },
   "youtube_live": {
     "enabled": false,

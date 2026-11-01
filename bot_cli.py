@@ -302,14 +302,24 @@ class ServerClient:
         """Update bot modules configuration on server."""
         return self._request("/api/bot-config", method="POST", data={"configs": configs})
 
-    def start_tiktok_live(self, target_user: str, tap_speed: int = 50, auto_chat: bool = True, chat_message: str = "", gift_detection: bool = True) -> Dict[str, Any]:
+    def get_tiktok_cookies(self) -> List[Dict[str, Any]]:
+        """Retrieve all imported TikTok account cookies from server."""
+        try:
+            res = self._request("/api/tiktok-cookies")
+            if isinstance(res, dict) and "cookies" in res:
+                return res.get("cookies", [])
+            return res if isinstance(res, list) else []
+        except Exception:
+            return []
+
+    def start_tiktok_live(self, target_user: str, tap_speed: int = 50, auto_chat: bool = True, chat_message: str = "", account_ids: Optional[List[Any]] = None) -> Dict[str, Any]:
         """Start TikTok Live automation bot on server."""
         payload = {
             "target_user": target_user,
             "tap_speed": tap_speed,
             "auto_chat": auto_chat,
             "chat_message": chat_message,
-            "gift_detection": gift_detection
+            "account_ids": account_ids
         }
         return self._request("/api/tiktok-live/start", method="POST", data=payload)
 
@@ -2473,13 +2483,51 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
     default_speed = int(tiktok_cfg.get("tap_speed") or 50)
     default_chat_enabled = tiktok_cfg.get("auto_chat", True)
     default_chat_msg = tiktok_cfg.get("chat_message") or "Semangat live kak! Support selalu 🔥"
-    default_gift = tiktok_cfg.get("gift_detection", True)
+
+    # Multi-account cookie selection
+    avail_accounts = client.get_tiktok_cookies()
+    chosen_account_ids = None
+    account_label = "Mode Tamu"
+
+    if avail_accounts:
+        print(f" {C_CYAN}┌── [AKUN TIKTOK (COOKIE) TERSEDIA ({len(avail_accounts)} AKUN)]{C_RESET}")
+        for idx, acc in enumerate(avail_accounts, 1):
+            u = acc.get("username", "@user")
+            n = acc.get("nickname") or "User"
+            st_b = f"{C_GREEN}[Sesi Aktif ✓]{C_RESET}" if acc.get("status") in ("active", "unknown") else f"{C_YELLOW}[{acc.get('status')}]{C_RESET}"
+            print(f" {C_CYAN}│{C_RESET}   [{idx}] {C_BOLD}{C_WHITE}{u}{C_RESET} ({n}) {st_b}")
+        if len(avail_accounts) > 1:
+            print(f" {C_CYAN}│{C_RESET}   [0] {C_BOLD}{C_YELLOW}★ Gunakan Semua Akun (Multi-Akun Rotasi Otomatis){C_RESET}")
+        print(f" {C_CYAN}└──{C_RESET}\n")
+
+        if len(avail_accounts) > 1:
+            acc_pick = input(f" {C_GREEN}Pilih Akun yang digunakan [0-{len(avail_accounts)}] (default: 0): {C_RESET}").strip()
+            if acc_pick == "0" or not acc_pick:
+                chosen_account_ids = [a["id"] for a in avail_accounts]
+                account_label = f"Multi-Akun ({len(avail_accounts)} Akun)"
+            else:
+                try:
+                    p_idx = int(acc_pick) - 1
+                    if 0 <= p_idx < len(avail_accounts):
+                        chosen_account_ids = [avail_accounts[p_idx]["id"]]
+                        account_label = avail_accounts[p_idx].get("username")
+                    else:
+                        chosen_account_ids = [a["id"] for a in avail_accounts]
+                        account_label = f"Multi-Akun ({len(avail_accounts)} Akun)"
+                except Exception:
+                    chosen_account_ids = [a["id"] for a in avail_accounts]
+                    account_label = f"Multi-Akun ({len(avail_accounts)} Akun)"
+        else:
+            chosen_account_ids = [avail_accounts[0]["id"]]
+            account_label = avail_accounts[0].get("username")
+    else:
+        print(f" {C_YELLOW}Peringatan: Belum ada cookie akun TikTok diimpor. Berjalan dalam Mode Tamu (Guest).{C_RESET}\n")
 
     box_header("PENGATURAN OTOMASI TIKTOK LIVE")
     print(f" {C_CYAN}┌── [MODUL TIKTOK LIVE: FITUR TERSEDIA]{C_RESET}")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}❤️  Auto Tap-tap Likes  :{C_RESET} {C_GREEN}Aktif{C_RESET} (Meningkatkan algoritma & interaksi live)")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}💬  Auto Live Chat      :{C_RESET} {C_GREEN}Aktif{C_RESET} (Kirim pesan interaksi otomatis)")
-    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}🎁  Gift Stream Monitor :{C_RESET} {C_GREEN}Aktif{C_RESET} (Deteksi & respons hadiah penonton)")
+    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}👥  Akun Bot TikTok     :{C_RESET} {C_CYAN}{account_label}{C_RESET}")
     print(f" {C_CYAN}└──{C_RESET}\n")
 
     try:
@@ -2500,9 +2548,6 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
             if chat_msg_in:
                 chat_msg = chat_msg_in
 
-        gift_opt = input(f" {C_GREEN}Deteksi & sambut gift penonton? [Y/n] (default: {'Y' if default_gift else 'N'}): {C_RESET}").strip().lower()
-        gift_detection = default_gift if gift_opt == "" else (gift_opt in ("y", "yes", "1"))
-
         try:
             client.update_bot_config({
                 "tiktok_live": {
@@ -2511,7 +2556,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     "tap_speed": tap_speed,
                     "auto_chat": auto_chat,
                     "chat_message": chat_msg,
-                    "gift_detection": gift_detection
+                    "multi_account": True
                 }
             })
         except Exception:
@@ -2524,7 +2569,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
             time.sleep(1)
             return
 
-        spin = Spinner(f"Menghubungkan worker ke siaran TikTok Live {target_user}...")
+        spin = Spinner(f"Menghubungkan worker ke siaran TikTok Live {target_user} ({account_label})...")
         spin.start()
         try:
             client.start_tiktok_live(
@@ -2532,7 +2577,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                 tap_speed=tap_speed,
                 auto_chat=auto_chat,
                 chat_message=chat_msg,
-                gift_detection=gift_detection
+                account_ids=chosen_account_ids
             )
             spin.stop(f" {C_GREEN}✓ Bot TikTok Live berhasil diaktifkan di server!{C_RESET}")
         except Exception as e:
@@ -2562,11 +2607,18 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
 
                     likes = st.get("likes_sent", 0)
                     chats = st.get("chats_sent", 0)
-                    gifts = st.get("gifts_detected", 0)
                     success = st.get("success_count", 0)
                     fail = st.get("fail_count", 0)
                     error = st.get("error_count", 0)
                     logs = st.get("logs", [])
+
+                    if st.get("account_count", 0) > 1:
+                        cur_acc = st.get("current_account") or "Rotasi"
+                        live_acc_label = f"Multi-Akun ({st.get('account_count')} Akun - {cur_acc})"
+                    elif st.get("current_account"):
+                        live_acc_label = st.get("current_account")
+                    else:
+                        live_acc_label = account_label
 
                     cols = get_terminal_width()
                     # Refresh screen so stats stay fixed at the top
@@ -2577,21 +2629,20 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     if cols >= 80:
                         card_lines = [
                             f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 ON-AIR (Display :99){C_RESET}  ⏱ {time_str}",
-                            f" {C_BOLD}{C_WHITE}Metrik Likes   {C_RESET} : {C_BOLD}{C_RED}❤️ {likes:,} tap{C_RESET} ({tap_speed} tap/s)  │  {C_BOLD}{C_WHITE}Engine :{C_RESET} {C_GREEN}Native Chromium{C_RESET}",
-                            f" {C_BOLD}{C_WHITE}Statistik Live {C_RESET} : {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
+                            f" {C_BOLD}{C_WHITE}Akun TikTok    {C_RESET} : {C_BOLD}{C_CYAN}{live_acc_label}{C_RESET}   │  {C_BOLD}{C_WHITE}Engine :{C_RESET} {C_GREEN}Native Chromium{C_RESET}",
+                            f" {C_BOLD}{C_WHITE}Metrik Likes   {C_RESET} : {C_BOLD}{C_RED}❤️ {likes:,} tap{C_RESET} ({tap_speed} tap/s)  │  {C_BOLD}{C_CYAN}💬 Chat :{C_RESET} {chats} terkirim",
                             f" ───────────────────────────────────────────────────────────────────",
-                            f" {C_BOLD}{C_CYAN}💬 Chat Terkirim{C_RESET}: {chats} pesan       │  {C_BOLD}{C_MAGENTA}🎁 Gift Terdeteksi:{C_RESET} {gifts} gift",
+                            f" {C_BOLD}{C_WHITE}Statistik Live {C_RESET} : {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
                         ]
                         print_box(card_lines, width=68, title=f"{C_BOLD}{C_RED}CARD UI • TIKTOK LIVE DASHBOARD{C_RESET}")
                     else:
                         c_w = min(cols - 4, 46)
                         card_lines = [
                             f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [LIVE :99] ⏱ {time_str}",
-                            f" {C_BOLD}{C_MAGENTA}⚡ LIKES {C_RESET} : {C_RED}❤️ {likes:,}{C_RESET} ({tap_speed}/s)",
+                            f" {C_BOLD}{C_CYAN}👤 AKUN  {C_RESET} : {live_acc_label[:20]}",
+                            f" {C_BOLD}{C_MAGENTA}⚡ LIKES {C_RESET} : {C_RED}❤️ {likes:,}{C_RESET} ({tap_speed}/s) │ 💬 {chats}",
                             f" ───────────────────────────────────────",
                             f" {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
-                            f" ───────────────────────────────────────",
-                            f" {C_BOLD}{C_CYAN}💬 CHAT  {C_RESET} : {chats} │ {C_BOLD}🎁 GIFT:{C_RESET} {gifts}",
                         ]
                         print_box(card_lines, width=c_w, title=f"{C_BOLD}{C_RED}TIKTOK LIVE (HP CARD){C_RESET}")
 
@@ -3000,12 +3051,12 @@ def main():
     p_rdel.add_argument("--all-accounts", "-a", action="store_true", help="Hapus ulasan dari SEMUA akun bot di Google Maps")
 
     # Command: tiktok-live
-    p_tt = subparsers.add_parser("tiktok-live", help="Mulai otomasi TikTok Live (Auto Tap-tap Like & Chat)")
+    p_tt = subparsers.add_parser("tiktok-live", help="Mulai otomasi TikTok Live (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie)")
     p_tt.add_argument("--target", "-t", default="@evelyn.vln", help="Username host TikTok LIVE (default: @evelyn.vln)")
     p_tt.add_argument("--speed", "-s", type=int, default=50, help="Kecepatan tap-tap like per detik (default: 50)")
     p_tt.add_argument("--chat", "-c", default="Semangat live kak! Support selalu 🔥", help="Pesan live chat")
     p_tt.add_argument("--no-chat", action="store_true", help="Nonaktifkan kirim chat otomatis")
-    p_tt.add_argument("--no-gift", action="store_true", help="Nonaktifkan deteksi gift penonton")
+    p_tt.add_argument("--accounts", "-a", nargs="*", default=None, help="ID atau username akun TikTok (default: semua akun cookie)")
 
     args = parser.parse_args()
     client = ServerClient(base_url=args.server, api_key=args.key or "")

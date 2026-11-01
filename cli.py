@@ -580,7 +580,6 @@ def render_tiktok_live_cards(
     likes: int,
     speed: int,
     chats: int,
-    gifts: int,
     success: int = 0,
     fail: int = 0,
     error: int = 0,
@@ -605,7 +604,7 @@ def render_tiktok_live_cards(
         )
         c2 = Panel(
             f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge}\n[dim]Chromium :99[/dim]",
-            title="[bold cyan]👤 AKUN BOT[/bold cyan]",
+            title="[bold cyan]👤 AKUN TIKTOK[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             expand=True
@@ -620,10 +619,10 @@ def render_tiktok_live_cards(
             expand=True
         )
         c4 = Panel(
-            f"💬 [bold cyan]{chats} chat[/bold cyan] │ 🎁 [bold magenta]{gifts} gift[/bold magenta]\n"
-            f"DOM: [green]WebSocket ✓[/green]\n"
-            f"Stream: [green]Normal[/green]",
-            title="[bold yellow]💬 CHAT & GIFT[/bold yellow]",
+            f"💬 [bold cyan]{chats} chat terkirim[/bold cyan]\n"
+            f"Auto-Chat: [green]Aktif ✓[/green]\n"
+            f"Interval: [white]30 detik[/white]",
+            title="[bold yellow]💬 LIVE CHAT[/bold yellow]",
             border_style="yellow",
             box=box.ROUNDED,
             expand=True
@@ -645,7 +644,7 @@ def render_tiktok_live_cards(
         )
         c2 = Panel(
             f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nEngine: [dim]Native Chromium :99[/dim]",
-            title="[bold cyan]👤 AKUN PENGIRIM[/bold cyan]",
+            title="[bold cyan]👤 AKUN TIKTOK[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             expand=True
@@ -659,9 +658,9 @@ def render_tiktok_live_cards(
             expand=True
         )
         c4 = Panel(
-            f"💬 [bold cyan]{chats} pesan[/bold cyan]  │  🎁 [bold magenta]{gifts} gift[/bold magenta]\n"
-            f"Monitor: [green]DOM WebSocket Active ✓[/green]",
-            title="[bold yellow]💬 LIVE CHAT & GIFT[/bold yellow]",
+            f"💬 [bold cyan]{chats} pesan live chat terkirim[/bold cyan]\n"
+            f"Status: [green]Auto-Chat Aktif (Interval 30s) ✓[/green]",
+            title="[bold yellow]💬 LIVE CHAT[/bold yellow]",
             border_style="yellow",
             box=box.ROUNDED,
             expand=True
@@ -681,7 +680,7 @@ def render_tiktok_live_cards(
         )
         c_mobile2 = Panel(
             f"❤️ Likes: [bold red]{likes:,} tap[/bold red] (⚡ {speed}/s)\n"
-            f"💬 Chat: [bold cyan]{chats}[/bold cyan] │ 🎁 Gift: [bold magenta]{gifts}[/bold magenta]\n"
+            f"💬 Chat: [bold cyan]{chats} pesan terkirim[/bold cyan]\n"
             f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
             title="[bold magenta]📊 STATISTIK LIVE[/bold magenta]",
             border_style="magenta",
@@ -725,18 +724,46 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
     console.print(render_banner())
     console.print(Panel(
         Align.center("[bold cyan]🎵 TIKTOK LIVE (MULAI) — OTOMASI LIVE STREAMING[/bold cyan]\n"
-                     "[dim]Auto Tap-tap Likes, Auto Chat & Gift Monitor pada Virtual Display :99[/dim]"),
+                     "[dim]Auto Tap-tap Likes, Auto Chat & Multi-Akun Cookie pada Virtual Display :99[/dim]"),
         box=box.ROUNDED,
         border_style="magenta",
     ))
 
-    # Read active TikTok cookie from DB
-    active_tt = db.get_active_tiktok_cookie()
-    tt_username = active_tt.get("username", "@belum_ada") if active_tt else "Belum Ada"
-    tt_status = active_tt.get("status", "unknown") if active_tt else "none"
+    # Read active TikTok accounts from DB (Multi-Account Support)
+    all_tt = db.get_all_tiktok_cookies()
+    chosen_account_ids = None
+    account_label = "Mode Tamu"
 
-    if active_tt:
-        console.print(f" [bold white]Akun TikTok (Cookie):[/bold white] [bold cyan]{tt_username}[/bold cyan] ({active_tt.get('nickname') or 'User'}) [bold green][Sesi Aktif ✓][/bold green]")
+    if all_tt:
+        console.print(f"\n[bold green]👥 Akun TikTok (Cookie) Tersedia ({len(all_tt)} Akun):[/bold green]")
+        for idx, acc in enumerate(all_tt, 1):
+            u = acc.get("username", "@user")
+            n = acc.get("nickname") or "User"
+            st_badge = "[green][Sesi Aktif ✓][/green]" if acc.get("status") in ("active", "unknown") else f"[yellow][{acc.get('status')}][/yellow]"
+            console.print(f"   [bold cyan][{idx}][/bold cyan] {u} ({n}) {st_badge}")
+        if len(all_tt) > 1:
+            console.print(f"   [bold cyan][0][/bold cyan] [bold yellow]★ Gunakan Semua Akun (Multi-Akun Rotasi Otomatis)[/bold yellow]")
+
+        if interactive and len(all_tt) > 1:
+            acc_pick = Prompt.ask("  [bold white]Pilih Akun yang digunakan (0 untuk Semua Akun)[/bold white]", default="0").strip()
+            if acc_pick == "0" or not acc_pick:
+                chosen_account_ids = [a["id"] for a in all_tt]
+                account_label = f"Multi-Akun ({len(all_tt)} Akun)"
+            else:
+                try:
+                    p_idx = int(acc_pick) - 1
+                    if 0 <= p_idx < len(all_tt):
+                        chosen_account_ids = [all_tt[p_idx]["id"]]
+                        account_label = all_tt[p_idx].get("username")
+                    else:
+                        chosen_account_ids = [a["id"] for a in all_tt]
+                        account_label = f"Multi-Akun ({len(all_tt)} Akun)"
+                except Exception:
+                    chosen_account_ids = [a["id"] for a in all_tt]
+                    account_label = f"Multi-Akun ({len(all_tt)} Akun)"
+        else:
+            chosen_account_ids = [a["id"] for a in all_tt]
+            account_label = f"Multi-Akun ({len(all_tt)} Akun)" if len(all_tt) > 1 else all_tt[0].get("username")
     else:
         console.print(" [bold yellow]Peringatan: Belum ada akun TikTok diimpor. Bot akan berjalan dalam Mode Tamu (Guest).[/bold yellow]")
 
@@ -767,17 +794,14 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
         t_chat = default_chat
         if do_chat:
             t_chat = Prompt.ask("  [bold white]Pesan Live Chat[/bold white]", default=default_chat).strip()
-
-        do_gift = Confirm.ask("  [bold white]Deteksi & Log Gift Penonton Otomatis?[/bold white]", default=tiktok_cfg.get("gift_detection", True))
     else:
         t_user = default_user if default_user.startswith("@") else f"@{default_user}"
         t_speed = max(5, min(100, default_speed))
         do_chat = tiktok_cfg.get("auto_chat", True)
         t_chat = default_chat
-        do_gift = tiktok_cfg.get("gift_detection", True)
 
     console.print(f"\n[bold cyan]🚀 Memulai bot Chromium TikTok Live pada Virtual Display :99 untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
-    console.print("[dim]Menyuntikkan cookie sesi akun TikTok & membuka live stream...[/dim]")
+    console.print(f"[dim]Menyiapkan akun cookie: {account_label}...[/dim]")
     console.print("[dim]Tekan Ctrl+C untuk menghentikan bot dan kembali ke menu.[/dim]\n")
 
     server_url = "http://127.0.0.1:5000"
@@ -790,7 +814,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                 "tap_speed": t_speed,
                 "auto_chat": do_chat,
                 "chat_message": t_chat,
-                "gift_detection": do_gift
+                "account_ids": chosen_account_ids
             },
             timeout=8
         )
@@ -806,12 +830,12 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
     start_time = time.time()
     likes_sent = 0
     chats_sent = 0
-    gifts_count = 0
     success_count = 0
     fail_count = 0
     error_count = 0
     time_str = "00:00"
     is_logged_in_state = False
+    tt_username = account_label
 
     # Clear screen so statistics cards are pinned at the top without scrolling
     console.clear()
@@ -836,11 +860,17 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                                 break
                             likes_sent = st_data.get("likes_sent", likes_sent)
                             chats_sent = st_data.get("chats_sent", chats_sent)
-                            gifts_count = st_data.get("gifts_detected", gifts_count)
                             success_count = st_data.get("success_count", 0)
                             fail_count = st_data.get("fail_count", 0)
                             error_count = st_data.get("error_count", 0)
                             is_logged_in_state = st_data.get("is_logged_in", False)
+                            
+                            if st_data.get("account_count", 0) > 1:
+                                cur_acc = st_data.get("current_account") or "Rotasi"
+                                tt_username = f"👥 {st_data.get('account_count')} Akun ({cur_acc})"
+                            elif st_data.get("current_account"):
+                                tt_username = st_data.get("current_account")
+
                             raw_logs = st_data.get("logs", [])
                             for l in raw_logs[-10:]:
                                 lvl = (l.get("level") or "info").lower()
@@ -866,7 +896,6 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                     likes=likes_sent,
                     speed=t_speed,
                     chats=chats_sent,
-                    gifts=gifts_count,
                     success=success_count,
                     fail=fail_count,
                     error=error_count,
@@ -889,8 +918,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
     console.print(f"  [bold]Akun TikTok:[/bold] {tt_username} ({'Login Sukses' if is_logged_in_state else 'Mode Tamu'})")
     console.print(f"  [bold]Durasi Aktif:[/bold] {time_str}")
     console.print(f"  [bold]Total Likes Terkirim:[/bold] [red]❤️ {likes_sent:,}[/red]")
-    console.print(f"  [bold]Total Chat Terkirim:[/bold] [cyan]💬 {chats_sent}[/cyan]")
-    console.print(f"  [bold]Total Gift Terdeteksi:[/bold] [magenta]🎁 {gifts_count}[/magenta]\n")
+    console.print(f"  [bold]Total Chat Terkirim:[/bold] [cyan]💬 {chats_sent}[/cyan]\n")
 
 
 def interactive_loop():

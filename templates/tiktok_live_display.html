@@ -151,17 +151,6 @@
         <!-- Floating hearts and tap ripples will be spawned here dynamically -->
       </div>
 
-      <!-- GIFT DETECTOR BANNER (Animated Slide In) -->
-      <div id="gift-banner" class="absolute top-20 right-3 z-40 transition-all duration-500 transform translate-x-96 opacity-0">
-        <div class="bg-gradient-to-r from-pink-600/90 to-purple-600/90 backdrop-blur-md border border-white/30 px-3.5 py-2 rounded-2xl shadow-xl flex items-center gap-2.5 text-white">
-          <span id="gift-icon" class="text-2xl animate-bounce">🌹</span>
-          <div>
-            <div class="text-[10px] font-bold text-pink-200 uppercase tracking-wider">Gift Terdeteksi!</div>
-            <div id="gift-text" class="text-xs font-black">1x Rose dari @user</div>
-          </div>
-        </div>
-      </div>
-
       <!-- BOTTOM OVERLAY: Live Chat Stream & Bot Activity -->
       <div class="relative z-20 p-3 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-2">
 
@@ -218,8 +207,8 @@
           </div>
 
           <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
-            <div class="text-slate-400 text-[10px] mb-0.5">GIFT DETEKSI</div>
-            <div id="side-gifts" class="text-purple-400 font-bold text-base">0</div>
+            <div class="text-slate-400 text-[10px] mb-0.5">AKUN BOT TIKTOK</div>
+            <div id="side-account" class="text-purple-400 font-bold text-xs truncate">Multi-Akun</div>
           </div>
         </div>
 
@@ -254,14 +243,11 @@
     const topLikesEl = document.getElementById('top-likes');
     const sideLikesEl = document.getElementById('side-likes');
     const sideChatsEl = document.getElementById('side-chats');
-    const sideGiftsEl = document.getElementById('side-gifts');
+    const sideAccountEl = document.getElementById('side-account');
     const hudDurationEl = document.getElementById('hud-duration');
     const chatBox = document.getElementById('chat-box');
     const heartContainer = document.getElementById('heart-container');
     const sideLogs = document.getElementById('side-logs');
-    const giftBanner = document.getElementById('gift-banner');
-    const giftIcon = document.getElementById('gift-icon');
-    const giftText = document.getElementById('gift-text');
 
     streamerNameEl.innerText = targetParam;
     topUsernameEl.innerText = targetParam;
@@ -319,22 +305,8 @@
       document.getElementById('viewer-count').innerText = (baseViewers / 1000).toFixed(1) + 'k';
     }, 3000);
 
-    // Show animated gift popup banner
-    function showGiftPopup(giftIco, msg) {
-      giftIcon.innerText = giftIco || '🎁';
-      giftText.innerText = msg || '1x Gift dideteksi!';
-      giftBanner.classList.remove('translate-x-96', 'opacity-0');
-      giftBanner.classList.add('translate-x-0', 'opacity-100');
-
-      setTimeout(() => {
-        giftBanner.classList.remove('translate-x-0', 'opacity-100');
-        giftBanner.classList.add('translate-x-96', 'opacity-0');
-      }, 3500);
-    }
-
     // Polling server telemetry every 800ms
     let lastChatCount = 0;
-    let lastGiftCount = 0;
     let knownLogIds = new Set();
 
     async function pollStatus() {
@@ -343,6 +315,12 @@
         if (!res.ok) return;
         const data = await res.json();
         const st = data.state || {};
+
+        if (st.current_account) {
+          const accCount = st.account_count || 1;
+          const label = accCount > 1 ? `${st.current_account} (${accCount} Akun)` : st.current_account;
+          if (sideAccountEl) sideAccountEl.innerText = label;
+        }
 
         if (st.likes_sent !== undefined) {
           const lFormatted = Number(st.likes_sent).toLocaleString();
@@ -367,14 +345,6 @@
             bubble.innerHTML = `<span class="font-bold text-pink-400">🤖 AutoBotix Bot:</span> ${st.chat_message || 'Semangat live kak! Support selalu 🔥'}`;
             chatBox.appendChild(bubble);
             chatBox.scrollTop = chatBox.scrollHeight;
-          }
-        }
-
-        if (st.gifts_detected !== undefined) {
-          sideGiftsEl.innerText = st.gifts_detected;
-          if (st.gifts_detected > lastGiftCount) {
-            lastGiftCount = st.gifts_detected;
-            showGiftPopup('🌹', `Gift baru terdeteksi! Total: ${st.gifts_detected} gift`);
           }
         }
 

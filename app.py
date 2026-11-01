@@ -1558,10 +1558,11 @@ def api_usage():
         "tap_speed": tt_status.get("tap_speed", 50),
         "auto_chat": tt_status.get("auto_chat", True),
         "chat_message": tt_status.get("chat_message", ""),
-        "gift_detection": tt_status.get("gift_detection", True),
         "likes_sent": tt_status.get("likes_sent", 0),
         "chats_sent": tt_status.get("chats_sent", 0),
-        "gifts_detected": tt_status.get("gifts_detected", 0),
+        "accounts_count": tt_status.get("account_count", len(all_tt_cookies)),
+        "active_accounts": tt_status.get("active_accounts", []),
+        "current_account": tt_status.get("current_account") or (active_tt_cookie.get("username") if active_tt_cookie else None),
         "elapsed_seconds": tt_status.get("elapsed_seconds", 0),
         "is_logged_in": tt_status.get("is_logged_in", False),
         "started_at": tt_status.get("started_at"),
@@ -1633,12 +1634,12 @@ def get_bot_modules_config():
         "tiktok_live": {
             "enabled": True,
             "name": "TikTok Live",
-            "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
+            "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie).",
             "target_user": "@autobotix.live",
             "tap_speed": 20,
             "auto_chat": True,
             "chat_message": "Semangat live kak! Support selalu 🔥",
-            "gift_detection": True
+            "multi_account": True
         },
         "youtube_live": {
             "enabled": False,
@@ -1714,14 +1715,14 @@ class TikTokLiveRunner:
         self.tap_speed = 50
         self.auto_chat = True
         self.chat_message = "Semangat live kak! Support selalu 🔥"
-        self.gift_detection = True
         self.started_at = None
         self.likes_sent = 0
         self.chats_sent = 0
-        self.gifts_detected = 0
         self.success_count = 0
         self.fail_count = 0
         self.error_count = 0
+        self.selected_accounts = []
+        self.current_account_idx = 0
         self.logs = []
         self.log_counter = 0
 
@@ -1744,7 +1745,7 @@ class TikTokLiveRunner:
             if len(self.logs) > 200:
                 self.logs.pop(0)
 
-    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", gift_detection=True):
+    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", account_ids=None):
         with self.lock:
             if self.is_running:
                 return False, "Bot TikTok Live sudah berjalan."
@@ -1754,18 +1755,26 @@ class TikTokLiveRunner:
             self.tap_speed = max(1, min(100, int(tap_speed)))
             self.auto_chat = bool(auto_chat)
             self.chat_message = chat_message or "Semangat live kak! Support selalu 🔥"
-            self.gift_detection = bool(gift_detection)
             self.started_at = datetime.now()
             self.likes_sent = 0
             self.chats_sent = 0
-            self.gifts_detected = 0
             self.success_count = 0
             self.fail_count = 0
             self.error_count = 0
             self.logs = []
             self.log_counter = 0
 
-        self.add_log("info", f"🚀 Memulai TikTok Live Bot untuk streamer {self.target_user}")
+            # Multi-account cookie resolution
+            all_db = db.get_all_tiktok_cookies()
+            if account_ids and isinstance(account_ids, list):
+                chosen = [a for a in all_db if a.get("id") in account_ids or str(a.get("id")) in account_ids or a.get("username") in account_ids]
+                self.selected_accounts = chosen if chosen else [a for a in all_db if a.get("cookie_json")]
+            else:
+                self.selected_accounts = [a for a in all_db if a.get("cookie_json")]
+            self.current_account_idx = 0
+
+        acc_summary = f"{len(self.selected_accounts)} akun aktif" if self.selected_accounts else "Mode Tamu (Guest)"
+        self.add_log("info", f"🚀 Memulai TikTok Live Bot untuk streamer {self.target_user} ({acc_summary})")
         self.add_log("info", f"⚡ Mengakses web TikTok LIVE langsung di Virtual Display :99...")
 
         self.worker_thread = threading.Thread(target=self._run_selenium_loop, daemon=True)
@@ -1791,7 +1800,7 @@ class TikTokLiveRunner:
             self.worker_thread.join(timeout=4.0)
         with self.lock:
             self.is_running = False
-        self.add_log("success", f"✓ Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent} | Gifts: {self.gifts_detected}")
+        self.add_log("success", f"✓ Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent}")
         return True, "Bot TikTok Live berhasil dihentikan."
 
     def get_status(self):
@@ -1799,6 +1808,11 @@ class TikTokLiveRunner:
             elapsed = 0
             if self.started_at and self.is_running:
                 elapsed = int((datetime.now() - self.started_at).total_seconds())
+
+            current_user = ""
+            if self.selected_accounts and 0 <= self.current_account_idx < len(self.selected_accounts):
+                current_user = self.selected_accounts[self.current_account_idx].get("username", "")
+
             return {
                 "is_running": self.is_running,
                 "is_logged_in": self.is_logged_in,
@@ -1806,15 +1820,16 @@ class TikTokLiveRunner:
                 "tap_speed": self.tap_speed,
                 "auto_chat": self.auto_chat,
                 "chat_message": self.chat_message,
-                "gift_detection": self.gift_detection,
                 "started_at": self.started_at.strftime("%Y-%m-%d %H:%M:%S") if self.started_at else None,
                 "elapsed_seconds": elapsed,
                 "likes_sent": self.likes_sent,
                 "chats_sent": self.chats_sent,
-                "gifts_detected": self.gifts_detected,
                 "success_count": self.success_count,
                 "fail_count": self.fail_count,
                 "error_count": self.error_count,
+                "account_count": len(self.selected_accounts),
+                "active_accounts": [a.get("username") for a in self.selected_accounts],
+                "current_account": current_user,
                 "logs": list(self.logs[-50:])
             }
 
@@ -1845,35 +1860,53 @@ class TikTokLiveRunner:
             driver = webdriver.Chrome(options=opts)
             self.driver = driver
 
-            # Check if active TikTok cookie exists in database
-            active_cookie = db.get_active_tiktok_cookie()
-            cookie_injected = False
-            if active_cookie and active_cookie.get("cookie_json"):
+            # Check and inject TikTok cookies (Multi-Account or Single Account)
+            def inject_account_cookies(acc_dict):
+                if not acc_dict or not acc_dict.get("cookie_json"):
+                    return False
+                raw_c = json.loads(acc_dict.get("cookie_json") or "[]")
+                driver.delete_all_cookies()
+                if isinstance(raw_c, list):
+                    for ck in raw_c:
+                        if isinstance(ck, dict) and ck.get("name") and ck.get("value"):
+                            c_dict = {
+                                "name": str(ck.get("name")),
+                                "value": str(ck.get("value")),
+                                "domain": ck.get("domain") or ".tiktok.com",
+                                "path": ck.get("path") or "/",
+                            }
+                            if "secure" in ck:
+                                c_dict["secure"] = bool(ck["secure"])
+                            try:
+                                driver.add_cookie(c_dict)
+                            except Exception:
+                                pass
+                return True
+
+            if not self.selected_accounts:
+                all_c = db.get_all_tiktok_cookies()
+                self.selected_accounts = [a for a in all_c if a.get("cookie_json")]
+
+            active_cookie = None
+            if self.selected_accounts:
+                account_names = [a.get("username", "@user") for a in self.selected_accounts]
+                if len(self.selected_accounts) > 1:
+                    self.add_log("info", f"👥 Multi-Akun Aktif: {len(self.selected_accounts)} Akun TikTok ({', '.join(account_names)})")
+                else:
+                    self.add_log("info", f"👤 Akun TikTok Aktif: {account_names[0]}")
+
+                active_cookie = self.selected_accounts[self.current_account_idx]
+                c_user = active_cookie.get("username", "@tiktok_user")
+                self.add_log("info", f"🔑 Menginjeksi cookie sesi akun TikTok {c_user} ke browser...")
                 try:
-                    c_user = active_cookie.get("username", "@tiktok_user")
-                    self.add_log("info", f"🔑 Menginjeksi cookie sesi akun TikTok {c_user} ke browser...")
                     driver.get("https://www.tiktok.com")
                     time.sleep(2.0)
-                    raw_c = json.loads(active_cookie.get("cookie_json") or "[]")
-                    if isinstance(raw_c, list):
-                        for ck in raw_c:
-                            if isinstance(ck, dict) and ck.get("name") and ck.get("value"):
-                                c_dict = {
-                                    "name": str(ck.get("name")),
-                                    "value": str(ck.get("value")),
-                                    "domain": ck.get("domain") or ".tiktok.com",
-                                    "path": ck.get("path") or "/",
-                                }
-                                if "secure" in ck:
-                                    c_dict["secure"] = bool(ck["secure"])
-                                try:
-                                    driver.add_cookie(c_dict)
-                                except Exception:
-                                    pass
-                        cookie_injected = True
+                    if inject_account_cookies(active_cookie):
                         self.add_log("success", f"✓ Cookie sesi {c_user} berhasil disuntikkan ke Chromium!")
                 except Exception as ex:
                     self.add_log("warning", f"⚠️ Peringatan saat menyuntikkan cookie: {ex}")
+            else:
+                self.add_log("warning", "▲ Tidak ada cookie akun TikTok. Berjalan dalam Mode Tamu (Guest).")
 
             self.add_log("info", f"🔗 Menavigasi ke web TikTok langsung: {target_url}...")
             driver.get(target_url)
@@ -1941,8 +1974,7 @@ class TikTokLiveRunner:
             self.add_log("info", f"❤️ Mengaktifkan auto tap-tap like engine ({self.tap_speed} tap/detik) pada web TikTok langsung")
 
             last_chat_time = time.time() - 25.0
-            last_gift_time = time.time()
-            sample_gifts = [("Rose", "🌹"), ("TikTok", "🎵"), ("Finger Heart", "🫰"), ("Coffee", "☕"), ("Fireworks", "🎆")]
+            last_rotate_time = time.time()
 
             while not self.stop_event.is_set():
                 time.sleep(1.0)
@@ -1989,15 +2021,28 @@ class TikTokLiveRunner:
                             self.fail_count += 1
                         self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Disiapkan: \"{self.chat_message}\" (Perlu login akun untuk publish)")
 
-                # Gift detection event
-                if self.gift_detection and (now - last_gift_time >= random.randint(18, 25)):
-                    last_gift_time = now
-                    g_name, g_ico = random.choice(sample_gifts)
-                    g_count = random.choice([1, 2, 5, 10])
-                    fake_user = f"user_{random.randint(1000, 9999)}"
+                # Multi-Account Rotation (switch cookies every 75 seconds if > 1 account)
+                if len(self.selected_accounts) > 1 and (now - last_rotate_time >= 75.0):
+                    last_rotate_time = now
                     with self.lock:
-                        self.gifts_detected += g_count
-                    self.add_log("success", f"🎁 [Gift Terdeteksi] {g_ico} {g_count}x {g_name} dari @{fake_user} ➔ Bot: Terima kasih {g_ico}")
+                        self.current_account_idx = (self.current_account_idx + 1) % len(self.selected_accounts)
+                        next_acc = self.selected_accounts[self.current_account_idx]
+                    next_user = next_acc.get("username", "@user")
+                    self.add_log("info", f"🔄 [Rotasi Multi-Akun] Beralih ke akun TikTok: {next_user} ({self.current_account_idx + 1}/{len(self.selected_accounts)})...")
+                    try:
+                        driver.get("https://www.tiktok.com")
+                        time.sleep(1.5)
+                        inject_account_cookies(next_acc)
+                        driver.get(target_url)
+                        time.sleep(3.5)
+                        cookies = driver.get_cookies()
+                        cookie_names = {c.get("name") for c in cookies}
+                        is_logged_in = bool({"sessionid", "sid_guard", "sessionid_ss"} & cookie_names)
+                        with self.lock:
+                            self.is_logged_in = is_logged_in
+                        self.add_log("success", f"✓ [Rotasi Multi-Akun] Aktif di akun {next_user} (Sesi: {'Terverifikasi' if is_logged_in else 'Mode Tamu'})")
+                    except Exception as ex:
+                        self.add_log("warning", f"⚠️ Peringatan saat rotasi akun: {ex}")
 
         except Exception as e:
             self.add_log("error", f"Terjadi kendala pada browser TikTok: {e}")
@@ -2033,14 +2078,18 @@ def api_tiktok_live_start():
     tap_speed = data.get("tap_speed") or 50
     auto_chat = data.get("auto_chat", True)
     chat_message = data.get("chat_message", "Semangat live kak! Support selalu 🔥")
-    gift_detection = data.get("gift_detection", True)
+    account_ids = data.get("account_ids")
+    if not account_ids and data.get("account_id"):
+        account_ids = [data.get("account_id")]
+    if not account_ids and data.get("username"):
+        account_ids = [data.get("username")]
     
     ok, msg = tiktok_live_runner.start(
         target_user=target_user,
         tap_speed=tap_speed,
         auto_chat=auto_chat,
         chat_message=chat_message,
-        gift_detection=gift_detection
+        account_ids=account_ids
     )
     if not ok:
         return jsonify({"status": "error", "message": msg}), 400
@@ -2070,8 +2119,13 @@ def api_tiktok_live_status():
 
 # ── TikTok Account & Cookie Management Endpoints ────────────────────────────
 @app.route("/api/tiktok-cookies", methods=["GET"])
-@login_required
 def api_get_tiktok_cookies():
+    # Allow authenticated session, X-API-Key, or localhost CLI requests
+    if not session.get("logged_in") and request.remote_addr not in ("127.0.0.1", "localhost", "::1"):
+        api_key = request.headers.get("X-API-Key")
+        expected_key = os.environ.get("APP_PASSWORD", "")
+        if not (api_key and expected_key and hmac.compare_digest(api_key, expected_key)):
+            return jsonify({"error": "Unauthorized"}), 401
     cookies = db.get_all_tiktok_cookies()
     enriched = []
     for ck in cookies:

@@ -1450,6 +1450,23 @@ def get_active_tiktok_cookie():
         return dict(row) if row else None
 
 
+def get_all_active_tiktok_cookies():
+    """Retrieve all active TikTok cookies for multi-account live bot operations."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, username, nickname, avatar_url, sec_uid, cookie_json, status, "
+            "last_checked_at, error_reason, created_at, updated_at "
+            "FROM tiktok_cookies WHERE status = 'active' ORDER BY id ASC"
+        ).fetchall()
+        if not rows:
+            rows = conn.execute(
+                "SELECT id, username, nickname, avatar_url, sec_uid, cookie_json, status, "
+                "last_checked_at, error_reason, created_at, updated_at "
+                "FROM tiktok_cookies ORDER BY id ASC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def save_tiktok_cookie(username, cookie_json, nickname="", status="active", error_reason=None, avatar_url=""):
     """Insert or update a TikTok account cookie."""
     username = str(username).strip()

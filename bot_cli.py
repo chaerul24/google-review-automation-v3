@@ -2722,11 +2722,27 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     sys.stdout.write("\033[H\033[J")
                     print_header_screen(client, title=f"MONITOR TIKTOK LIVE: {target_user}")
 
+                    verified_set = set(st.get("verified_viewers") or [])
+                    active_accs = st.get("active_accounts") or []
+
                     # Responsive Card UI (PC/Laptop vs Mobile Termux) - WITHOUT Ctrl+C inside card
                     if cols >= 80:
+                        if active_accs:
+                            v_badges = []
+                            for acc_u in active_accs:
+                                short_u = acc_u[:14]
+                                if acc_u in verified_set:
+                                    v_badges.append(f"{C_BOLD}{C_GREEN}[✓] {short_u}{C_RESET}")
+                                else:
+                                    v_badges.append(f"{C_CYAN}[?] {short_u}{C_RESET}")
+                            penonton_str = f" {C_BOLD}{C_WHITE}Daftar Penonton{C_RESET} : " + "  ".join(v_badges)
+                        else:
+                            penonton_str = f" {C_BOLD}{C_WHITE}Daftar Penonton{C_RESET} : {C_YELLOW}Mode Tamu (Guest View){C_RESET}"
+
                         card_lines = [
                             f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 LIVE ON-AIR{C_RESET}  ⏱ {time_str}",
                             f" {C_BOLD}{C_WHITE}Akun TikTok    {C_RESET} : {C_BOLD}{C_CYAN}{live_acc_label}{C_RESET}   │  {C_BOLD}{C_WHITE}Mode   :{C_RESET} {mode_tag}",
+                            penonton_str,
                             f" {C_BOLD}{C_WHITE}Metrik Likes   {C_RESET} : {C_BOLD}{C_RED}❤️ {likes:,} tap{C_RESET} ({tap_speed} tap/s)  │  {C_BOLD}{C_CYAN}💬 Chat :{C_RESET} {chats} terkirim",
                             f" ───────────────────────────────────────────────────────────────────",
                             f" {C_BOLD}{C_WHITE}Statistik Live {C_RESET} : {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
@@ -2734,9 +2750,22 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                         print_box(card_lines, width=68, title=f"{C_BOLD}{C_RED}CARD UI • TIKTOK LIVE DASHBOARD{C_RESET}")
                     else:
                         c_w = min(cols - 4, 46)
+                        if active_accs:
+                            v_badges = []
+                            for acc_u in active_accs:
+                                short_u = acc_u[:10]
+                                if acc_u in verified_set:
+                                    v_badges.append(f"{C_BOLD}{C_GREEN}[✓]{short_u}{C_RESET}")
+                                else:
+                                    v_badges.append(f"{C_CYAN}[?]{short_u}{C_RESET}")
+                            penonton_str = f" {C_BOLD}{C_WHITE}Penonton{C_RESET}: " + " ".join(v_badges)
+                        else:
+                            penonton_str = f" {C_BOLD}{C_WHITE}Penonton{C_RESET}: {C_YELLOW}Mode Tamu{C_RESET}"
+
                         card_lines = [
                             f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [LIVE] ⏱ {time_str}",
                             f" {C_BOLD}{C_CYAN}👤 AKUN  {C_RESET} : {live_acc_label[:18]} │ {mode_tag}",
+                            penonton_str,
                             f" {C_BOLD}{C_MAGENTA}⚡ LIKES {C_RESET} : {C_RED}❤️ {likes:,}{C_RESET} ({tap_speed}/s) │ 💬 {chats}",
                             f" ───────────────────────────────────────",
                             f" {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",

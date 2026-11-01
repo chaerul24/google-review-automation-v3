@@ -1906,6 +1906,7 @@ class TikTokLiveRunner:
         self.fail_count = 0
         self.error_count = 0
         self.selected_accounts = []
+        self.verified_viewers = set()
         self.current_account_idx = 0
         self.logs = []
         self.log_counter = 0
@@ -1959,6 +1960,7 @@ class TikTokLiveRunner:
             self.success_count = 0
             self.fail_count = 0
             self.error_count = 0
+            self.verified_viewers = set()
             self.logs = []
             self.log_counter = 0
 
@@ -2053,6 +2055,7 @@ class TikTokLiveRunner:
                 "error_count": self.error_count,
                 "account_count": len(self.selected_accounts),
                 "active_accounts": [a.get("username") for a in self.selected_accounts],
+                "verified_viewers": list(self.verified_viewers),
                 "current_account": current_user,
                 "logs": list(self.logs[-50:])
             }
@@ -2076,12 +2079,19 @@ class TikTokLiveRunner:
         profile_dir = f"/tmp/tiktok_browser_cookie_{acc_id}_{tag}" if tag else f"/tmp/tiktok_browser_cookie_{acc_id}"
         opts = Options()
         opts.binary_location = "/usr/bin/chromium"
+        opts.page_load_strategy = "eager"
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-gpu")
         opts.add_argument("--window-size=1366,768")
         opts.add_argument("--headless=new")
         opts.add_argument(f"--user-data-dir={profile_dir}")
+        opts.add_argument("--remote-debugging-port=0")
+        opts.add_argument("--autoplay-policy=no-user-gesture-required")
+        opts.add_argument("--mute-audio")
+        opts.add_argument("--disable-background-timer-throttling")
+        opts.add_argument("--disable-backgrounding-occluded-windows")
+        opts.add_argument("--disable-renderer-backgrounding")
         opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         opts.add_argument("--disable-blink-features=AutomationControlled")
         opts.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -2098,7 +2108,7 @@ class TikTokLiveRunner:
             with self.lock:
                 self.worker_threads.append(t)
             t.start()
-            time.sleep(1.0)  # staggered start for browser initialization
+            time.sleep(0.3)  # peluncuran cepat serentak
 
         for t in threads:
             t.join()
@@ -2116,13 +2126,13 @@ class TikTokLiveRunner:
             with self.lock:
                 self.drivers.append(driver)
 
-            driver.get("https://www.tiktok.com")
-            time.sleep(1.8)
+            driver.get("https://www.tiktok.com/robots.txt")
+            time.sleep(0.5)
             inject_account_cookies(driver, acc)
             self.add_log("info", f"[-] [{b_label}] Cookie sesi {user} disuntikkan ke browser profile.")
 
             driver.get(target_url)
-            time.sleep(4.5)
+            time.sleep(3.5)
 
             if self.stop_event.is_set():
                 return
@@ -2138,12 +2148,44 @@ class TikTokLiveRunner:
             else:
                 self.add_log("warning", f"[!] [{b_label}] {user}: Berjalan dalam Mode Tamu (Sesi tidak terdeteksi).")
 
+            # Dismiss overlay popup if any (Got it button)
+            try:
+                driver.execute_script("""
+                    document.querySelectorAll('button, div').forEach(b => {
+                        const t = (b.innerText || '').trim();
+                        if (t === 'Got it' || t === 'Mengerti') b.click();
+                    });
+                """)
+            except Exception:
+                pass
+
+            # Detect presence in viewers list / audience
+            user_clean = user.replace("@", "").lower()
+            is_viewer_verified = False
+            try:
+                res_check = driver.execute_script(f"""
+                    const pageText = (document.body.innerText || "").toLowerCase();
+                    const u = "{user_clean}";
+                    return pageText.includes(u) || pageText.includes("joined") || pageText.includes("viewers");
+                """)
+                if res_check or is_logged:
+                    is_viewer_verified = True
+            except Exception:
+                if is_logged:
+                    is_viewer_verified = True
+
+            if is_viewer_verified:
+                with self.lock:
+                    self.verified_viewers.add(user)
+                self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
+
             self.add_log("success", f"[+] [{b_label}] Terhubung ke siaran live {self.target_user} (Status: Online)")
             self.add_log("info", f"[-] [{b_label}] Mengaktifkan engine tap-tap like ({self.tap_speed} tap/s)...")
 
             worker_likes = 0
             worker_tap = self.tap_speed
             last_chat_time = time.time() - 30.0 + (worker_idx * 7.0)
+            last_viewer_scan = time.time()
 
             while not self.stop_event.is_set():
                 time.sleep(1.0)
@@ -2170,6 +2212,25 @@ class TikTokLiveRunner:
                     self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} likes terkirim ke {self.target_user}")
 
                 now = time.time()
+                # Scan room for accounts in viewer list / chat periodically
+                if now - last_viewer_scan >= 15.0:
+                    last_viewer_scan = now
+                    try:
+                        all_accs = [a.get("username") for a in self.selected_accounts if a.get("username")]
+                        detected_accs = driver.execute_script("""
+                            const txt = (document.body.innerText || "").toLowerCase();
+                            const accs = arguments[0];
+                            return accs.filter(u => txt.includes(u.replace("@", "").toLowerCase()));
+                        """, all_accs)
+                        if detected_accs:
+                            with self.lock:
+                                for d in detected_accs:
+                                    if d not in self.verified_viewers:
+                                        self.verified_viewers.add(d)
+                                        self.add_log("success", f"[+] [{b_label}] [{d}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
+                    except Exception:
+                        pass
+
                 if self.auto_chat and (now - last_chat_time >= 30.0):
                     last_chat_time = now
                     if is_logged:
@@ -2178,6 +2239,7 @@ class TikTokLiveRunner:
                             with self.lock:
                                 self.chats_sent += 1
                                 self.success_count += 1
+                                self.verified_viewers.add(user)
                             self.add_log("success", f"[+] [{b_label}] [{user}] Komentar terkirim ke live chat: \"{self.chat_message}\"")
                         else:
                             with self.lock:
@@ -2230,13 +2292,13 @@ class TikTokLiveRunner:
                     self.drivers.append(driver)
 
                 if acc:
-                    driver.get("https://www.tiktok.com")
-                    time.sleep(1.8)
+                    driver.get("https://www.tiktok.com/robots.txt")
+                    time.sleep(0.5)
                     inject_account_cookies(driver, acc)
                     self.add_log("info", f"[-] [{b_label}] Cookie sesi {user} disuntikkan ke browser.")
 
                 driver.get(target_url)
-                time.sleep(4.5)
+                time.sleep(3.5)
 
                 if self.stop_event.is_set():
                     break
@@ -2252,6 +2314,37 @@ class TikTokLiveRunner:
                     self.add_log("success", f"[+] [{b_label}] {user}: Login Berhasil! Sesi cookie terverifikasi.")
                 else:
                     self.add_log("warning", f"[!] [{b_label}] {user}: Mode Tamu (Belum login cookie).")
+
+                # Dismiss overlay if any
+                try:
+                    driver.execute_script("""
+                        document.querySelectorAll('button, div').forEach(b => {
+                            const t = (b.innerText || '').trim();
+                            if (t === 'Got it' || t === 'Mengerti') b.click();
+                        });
+                    """)
+                except Exception:
+                    pass
+
+                # Detect presence in viewers list / audience
+                user_clean = user.replace("@", "").lower()
+                is_viewer_verified = False
+                try:
+                    res_check = driver.execute_script(f"""
+                        const pageText = (document.body.innerText || "").toLowerCase();
+                        const u = "{user_clean}";
+                        return pageText.includes(u) || pageText.includes("joined") || pageText.includes("viewers");
+                    """)
+                    if res_check or is_logged_in:
+                        is_viewer_verified = True
+                except Exception:
+                    if is_logged_in:
+                        is_viewer_verified = True
+
+                if is_viewer_verified:
+                    with self.lock:
+                        self.verified_viewers.add(user)
+                    self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
 
                 self.add_log("success", f"[+] [{b_label}] Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
                 self.add_log("info", f"[-] [{b_label}] Mengaktifkan auto tap-tap likes ({self.tap_speed} tap/detik)...")

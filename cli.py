@@ -669,10 +669,25 @@ def render_tiktok_live_cards(
     fail: int = 0,
     error: int = 0,
     logs: List[str] = None,
-    mode: str = "parallel"
+    mode: str = "parallel",
+    verified_viewers: List[str] = None,
+    active_accounts: List[str] = None
 ) -> Group:
     login_badge = "[bold green]✓ Sesi Aktif[/bold green]" if is_logged_in else "[bold yellow]Mode Tamu[/bold yellow]"
     mode_badge = "[bold green]⚡ Paralel[/bold green]" if mode == "parallel" else "[bold yellow]🔄 Bergantian[/bold yellow]"
+
+    v_set = set(verified_viewers or [])
+    if active_accounts:
+        v_badges = []
+        for u in active_accounts:
+            short_u = u[:12]
+            if u in v_set:
+                v_badges.append(f"[bold green]\\[✓] {short_u}[/bold green]")
+            else:
+                v_badges.append(f"[cyan]\\[?] {short_u}[/cyan]")
+        penonton_rich = " ".join(v_badges)
+    else:
+        penonton_rich = "[yellow]Mode Tamu[/yellow]"
 
     if width >= 135:
         # PC / DESKTOP ULTRAWIDE (>= 135 cols): 4 Horizon Cards Grid
@@ -690,8 +705,8 @@ def render_tiktok_live_cards(
             expand=True
         )
         c2 = Panel(
-            f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge} │ {mode_badge}\n[dim]Native Headless[/dim]",
-            title="[bold cyan]👤 AKUN & MODE[/bold cyan]",
+            f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge} │ {mode_badge}\nPenonton: {penonton_rich}",
+            title="[bold cyan]👤 AKUN & DAFTAR PENONTON[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             expand=True
@@ -730,8 +745,8 @@ def render_tiktok_live_cards(
             expand=True
         )
         c2 = Panel(
-            f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nMode: {mode_badge} • [dim]Headless Engine[/dim]",
-            title="[bold cyan]👤 AKUN & MODE[/bold cyan]",
+            f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nMode: {mode_badge} • [dim]Headless[/dim]\nPenonton: {penonton_rich}",
+            title="[bold cyan]👤 AKUN & DAFTAR PENONTON[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             expand=True
@@ -759,7 +774,8 @@ def render_tiktok_live_cards(
         # HP / MOBILE TERMUX (< 65 cols): Stacked Compact Mobile Cards
         c_mobile1 = Panel(
             f"[bold yellow]{t_user}[/bold yellow] • [bold red]🔴 LIVE[/bold red] • ⏱ [bold white]{time_str}[/bold white]\n"
-            f"👤 {tt_username} ({login_badge}) │ {mode_badge}",
+            f"👤 {tt_username} ({login_badge}) │ {mode_badge}\n"
+            f"Penonton: {penonton_rich}",
             title="[bold red]📱 STREAMER & LIVE (HP)[/bold red]",
             border_style="red",
             box=box.ROUNDED,
@@ -998,7 +1014,9 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                     fail=fail_count,
                     error=error_count,
                     logs=recent_logs,
-                    mode=st_data.get("execution_mode", chosen_mode) if is_server_active else chosen_mode
+                    mode=st_data.get("execution_mode", chosen_mode) if is_server_active else chosen_mode,
+                    verified_viewers=st_data.get("verified_viewers", []) if is_server_active else [],
+                    active_accounts=st_data.get("active_accounts", []) if is_server_active else []
                 )
                 live.update(card_ui)
     except KeyboardInterrupt:

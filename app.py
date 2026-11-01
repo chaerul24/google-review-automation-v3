@@ -1495,6 +1495,28 @@ def api_usage():
         except Exception:
             pass
 
+    # Query completed review accounts for this business or the latest finished account
+    with db.get_db() as conn:
+        if task_exec["is_running"] and (rev_rows or pend_rows):
+            active_biz_id = (rev_rows or pend_rows)[0]["business_id"]
+            comp_rows = conn.execute("""
+                SELECT DISTINCT e.email
+                FROM reviews r
+                JOIN emails e ON r.email_id = e.id
+                WHERE r.business_id = ? AND r.status = 'reviewed'
+            """, (active_biz_id,)).fetchall()
+            task_exec["completed_emails"] = [r["email"] for r in comp_rows]
+        else:
+            # When idle/standby, fetch the latest completed review account from the recent batch
+            latest_comp = conn.execute("""
+                SELECT DISTINCT e.email
+                FROM reviews r
+                JOIN emails e ON r.email_id = e.id
+                WHERE r.status = 'reviewed'
+                ORDER BY r.id DESC LIMIT 1
+            """).fetchall()
+            task_exec["completed_emails"] = [r["email"] for r in latest_comp]
+
     return jsonify({
         "status": "ok",
         "total_requests": total_requests,

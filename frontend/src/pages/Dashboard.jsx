@@ -259,6 +259,7 @@ export default function Dashboard({ onLogout }) {
   const [rotationIndex, setRotationIndex] = useState(0);
   const [isRotatingQueue, setIsRotatingQueue] = useState(true);
   const [isSimulationActive, setIsSimulationActive] = useState(false); // Standby by default until task starts
+  const [completedCookieIds, setCompletedCookieIds] = useState(new Set());
 
   const loadUsageData = async () => {
     try {
@@ -697,6 +698,14 @@ export default function Dashboard({ onLogout }) {
       const breakTip2 = stump2[0];
       const midBreak = { x: (breakTip1.x + breakTip2.x) / 2, y: (breakTip1.y + breakTip2.y) / 2 };
 
+      // Midpoint on cubic Bézier at t = 0.52 for the checkmark badge on tentacle
+      const mt = 0.48;
+      const t = 0.52;
+      const midPoint = {
+        x: mt * mt * mt * p0.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * p3.x,
+        y: mt * mt * mt * p0.y + 3 * mt * mt * t * p1.y + 3 * mt * t * t * p2.y + t * t * t * p3.y,
+      };
+
       return {
         index: i,
         id: `node_cookie_${c.id}`,
@@ -714,6 +723,7 @@ export default function Dashboard({ onLogout }) {
         breakTip1,
         breakTip2,
         midBreak,
+        midPoint,
         color: isNeedsLogin ? '#EF4444' : colors[i % colors.length],
         animDur: `${(2.0 + (i % 5) * 0.3).toFixed(1)}s`,
       };
@@ -2816,6 +2826,24 @@ export default function Dashboard({ onLogout }) {
                   const currentActiveCookieId = isTaskActive && activeTurnNode ? activeTurnNode.id : null;
                   const currentTurnNumber = eligibleCookies.length > 0 ? (rotationIndex % eligibleCookies.length) + 1 : 1;
 
+                  // Completed accounts / tentacles set
+                  const completedEmails = new Set(liveTask?.completed_emails || []);
+                  const completedNodeIds = new Set(completedCookieIds);
+                  tentacleNodes.forEach((n) => {
+                    if (completedEmails.has(n.email)) {
+                      completedNodeIds.add(n.id);
+                    }
+                  });
+
+                  if (isSimulationActive && eligibleCookies.length > 0 && rotationIndex > 0) {
+                    for (let step = 0; step < rotationIndex; step++) {
+                      const doneNode = eligibleCookies[step % eligibleCookies.length];
+                      if (doneNode && doneNode.id !== currentActiveCookieId) {
+                        completedNodeIds.add(doneNode.id);
+                      }
+                    }
+                  }
+
                   return (
                     <>
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-3 border-b border-slate-800/80 text-xs text-slate-400 mb-2 gap-2.5">
@@ -2885,7 +2913,13 @@ export default function Dashboard({ onLogout }) {
                           {/* Optional preview simulation toggle button */}
                           {!isLiveRunning && (
                             <button
-                              onClick={() => setIsSimulationActive(!isSimulationActive)}
+                              onClick={() => {
+                                if (!isSimulationActive) {
+                                  setRotationIndex(0);
+                                  setCompletedCookieIds(new Set());
+                                }
+                                setIsSimulationActive(!isSimulationActive);
+                              }}
                               className={`px-2.5 py-1 rounded-md text-[10px] font-mono border transition-all cursor-pointer flex items-center gap-1 ${
                                 isSimulationActive
                                   ? 'bg-cyan-950/70 text-cyan-300 border-cyan-700/80 font-bold'
@@ -3039,7 +3073,59 @@ export default function Dashboard({ onLogout }) {
                                 );
                               }
 
-                              // 2. KONDISI NORMAL:
+                              const isCompleted = completedNodeIds.has(node.id) && !node.isNeedsLogin;
+
+                              // 2. KONDISI SUDAH SELESAI (COMPLETED):
+                              // TENTAKEL HIJAU ZAMRUD TERHUBUNG DENGAN ICON CENTANG (CHECKMARK)
+                              if (isCompleted) {
+                                return (
+                                  <g key={`tentacle-${node.id}`} className="transition-all duration-500">
+                                    <path
+                                      d={node.pathD}
+                                      fill="none"
+                                      stroke="#10B981"
+                                      strokeWidth={isSelected ? '6.5' : '4.5'}
+                                      opacity={isSelected ? 0.45 : 0.22}
+                                      filter="url(#glow-node)"
+                                    />
+                                    <path
+                                      d={node.pathD}
+                                      fill="none"
+                                      stroke="#10B981"
+                                      strokeWidth="2.2"
+                                      strokeLinecap="round"
+                                      opacity={0.95}
+                                    />
+                                    <path
+                                      d={node.pathD}
+                                      fill="none"
+                                      stroke="#D1FAE5"
+                                      strokeWidth="0.8"
+                                      strokeDasharray="4 4"
+                                      opacity={0.65}
+                                    />
+                                    {/* Icon Centang (Checkmark Badge) directly on the tentacle curve */}
+                                    <g
+                                      transform={`translate(${node.midPoint.x.toFixed(1)}, ${node.midPoint.y.toFixed(1)})`}
+                                      className="select-none transition-all duration-300"
+                                      title={`${node.fullName} - Ulasan Selesai Diposting`}
+                                    >
+                                      <circle r="13" fill="#10B981" opacity="0.3" filter="url(#glow-node)" className="animate-pulse" />
+                                      <circle r="9.5" fill="#064E3B" stroke="#10B981" strokeWidth="1.8" />
+                                      <path
+                                        d="M -3.5 -0.2 L -1 2.4 L 3.5 -2.2"
+                                        fill="none"
+                                        stroke="#FFFFFF"
+                                        strokeWidth="2.0"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    </g>
+                                  </g>
+                                );
+                              }
+
+                              // 3. KONDISI NORMAL:
                               // JIKA BELUM MULAI JALANKAN TASK (!isTaskActive) -> TENTAKEL DORMANT / STANDBY (TIDAK LANGSUNG AKTIF!)
                               if (!isTaskActive) {
                                 return (
@@ -3056,7 +3142,7 @@ export default function Dashboard({ onLogout }) {
                                 );
                               }
 
-                              // 3. JIKA TASK SEDANG BERJALAN:
+                              // 4. JIKA TASK SEDANG BERJALAN:
                               // Mode Paralel: SEMUA akun aktif terhubung!
                               // Mode Bergilir: HANYA akun yang sedang dipakai (activeCookieId) yang terhubung!
                               const isConnected = isParallel ? true : (node.id === currentActiveCookieId);
@@ -3144,13 +3230,21 @@ export default function Dashboard({ onLogout }) {
                                           ? 'working'
                                           : brokenCookies.length > 0
                                           ? 'confused'
+                                          : completedNodeIds.size > 0
+                                          ? 'happy'
                                           : 'happy'
                                       }
                                       speechText={
                                         selectedNodeId && selectedNodeId !== 'router'
-                                          ? `fokus ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'}!`
+                                          ? completedNodeIds.has(selectedNodeId)
+                                            ? `${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'} ulasan selesai! ✓`
+                                            : `fokus ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'}!`
                                           : !isTaskActive
-                                          ? (brokenCookies.length > 0 ? `${brokenCookies.length} butuh login!` : 'siap bertugas!')
+                                          ? (completedNodeIds.size > 0
+                                              ? `${completedNodeIds.size} ulasan selesai! ✓`
+                                              : brokenCookies.length > 0
+                                              ? `${brokenCookies.length} butuh login!`
+                                              : 'siap bertugas!')
                                           : isParallel
                                           ? 'paralel aktif! ⚡'
                                           : `ulasan #${currentTurnNumber} 🚀`
@@ -3202,8 +3296,9 @@ export default function Dashboard({ onLogout }) {
                               const pillX = node.x - pillW / 2;
                               const pillY = node.y - pillH / 2;
                               const isNeedsLogin = node.isNeedsLogin;
+                              const isCompleted = completedNodeIds.has(node.id) && !isNeedsLogin;
                               const isTurnActive = isTaskActive && !isParallel && node.id === currentActiveCookieId;
-                              const isConnected = isTaskActive && (isParallel || isTurnActive);
+                              const isConnected = isCompleted || (isTaskActive && (isParallel || isTurnActive));
 
                               return (
                                 <g
@@ -3211,16 +3306,16 @@ export default function Dashboard({ onLogout }) {
                                   onClick={() => setSelectedNodeId(node.id)}
                                   className="cursor-pointer group select-none transition-all duration-300"
                                 >
-                                  {/* Halo Glow for Active / Selected Node */}
-                                  {(isSelected || isTurnActive) && (
+                                  {/* Halo Glow for Active / Selected / Completed Node */}
+                                  {(isSelected || isTurnActive || isCompleted) && (
                                     <rect
                                       x={pillX - 2}
                                       y={pillY - 2}
                                       width={pillW + 4}
                                       height={pillH + 4}
                                       rx="9"
-                                      fill={isNeedsLogin ? '#EF4444' : node.color}
-                                      opacity={isTurnActive ? '0.45' : '0.35'}
+                                      fill={isNeedsLogin ? '#EF4444' : isCompleted ? '#10B981' : node.color}
+                                      opacity={isTurnActive ? '0.45' : isCompleted ? '0.35' : '0.35'}
                                       filter={isNeedsLogin ? 'url(#glow-rose)' : 'url(#glow-node)'}
                                     />
                                   )}
@@ -3234,6 +3329,8 @@ export default function Dashboard({ onLogout }) {
                                     fill={
                                       isNeedsLogin
                                         ? '#1C1316'
+                                        : isCompleted
+                                        ? '#06201B'
                                         : isTurnActive
                                         ? '#132038'
                                         : '#0F172A'
@@ -3241,6 +3338,8 @@ export default function Dashboard({ onLogout }) {
                                     stroke={
                                       isNeedsLogin
                                         ? '#EF4444'
+                                        : isCompleted
+                                        ? '#10B981'
                                         : isTurnActive
                                         ? node.color
                                         : isConnected
@@ -3252,6 +3351,8 @@ export default function Dashboard({ onLogout }) {
                                         ? 2.4
                                         : isTurnActive
                                         ? 2.2
+                                        : isCompleted
+                                        ? 1.8
                                         : isNeedsLogin
                                         ? 1.5
                                         : isConnected
@@ -3259,7 +3360,7 @@ export default function Dashboard({ onLogout }) {
                                         : 1.0
                                     }
                                     strokeDasharray={isNeedsLogin ? '5 2.5' : undefined}
-                                    opacity={!isConnected && !isNeedsLogin ? 0.65 : 1.0}
+                                    opacity={!isConnected && !isNeedsLogin && !isCompleted ? 0.65 : 1.0}
                                     className="transition-all duration-300 group-hover:brightness-125"
                                   />
 
@@ -3270,6 +3371,8 @@ export default function Dashboard({ onLogout }) {
                                     fill={
                                       isNeedsLogin
                                         ? '#FDA4AF'
+                                        : isCompleted
+                                        ? '#6EE7B7'
                                         : isTurnActive
                                         ? '#FFFFFF'
                                         : isConnected
@@ -3283,7 +3386,7 @@ export default function Dashboard({ onLogout }) {
                                     {node.name}
                                   </text>
 
-                                  {/* Status indicator dot */}
+                                  {/* Status indicator: Perlu Login / Selesai (Icon Centang) / Aktif / Standby */}
                                   {isNeedsLogin ? (
                                     <g>
                                       <circle
@@ -3299,6 +3402,19 @@ export default function Dashboard({ onLogout }) {
                                         fill="#EF4444"
                                         opacity="0.3"
                                         className="animate-ping"
+                                      />
+                                    </g>
+                                  ) : isCompleted ? (
+                                    /* Icon Centang (Checkmark) on Node Pill */
+                                    <g transform={`translate(${node.x + pillW / 2 - 12}, ${node.y})`}>
+                                      <circle r="7.5" fill="#10B981" filter="url(#glow-node)" />
+                                      <path
+                                        d="M -3.0 -0.2 L -0.8 2.0 L 3.0 -2.2"
+                                        fill="none"
+                                        stroke="#FFFFFF"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
                                       />
                                     </g>
                                   ) : isTurnActive ? (
@@ -3328,7 +3444,7 @@ export default function Dashboard({ onLogout }) {
                                     />
                                   )}
 
-                                  {/* Sub-badge di bawah Pill: Standby / Sedang Dipakai / Paralel / Perlu Login */}
+                                  {/* Sub-badge di bawah Pill: Perlu Login / Selesai / Sedang Dipakai / Standby / Paralel */}
                                   {isNeedsLogin ? (
                                     <g>
                                       <rect
@@ -3351,6 +3467,30 @@ export default function Dashboard({ onLogout }) {
                                         letterSpacing="0.3"
                                       >
                                         PERLU LOGIN
+                                      </text>
+                                    </g>
+                                  ) : isCompleted ? (
+                                    <g>
+                                      <rect
+                                        x={node.x - 34}
+                                        y={node.y + 16}
+                                        width="68"
+                                        height="13"
+                                        rx="3"
+                                        fill="#064E3B"
+                                        stroke="#10B981"
+                                        strokeWidth="0.9"
+                                      />
+                                      <text
+                                        x={node.x}
+                                        y={node.y + 25.5}
+                                        textAnchor="middle"
+                                        fill="#6EE7B7"
+                                        fontSize="7.2"
+                                        fontWeight="bold"
+                                        letterSpacing="0.2"
+                                      >
+                                        ✓ SELESAI
                                       </text>
                                     </g>
                                   ) : isTurnActive ? (
@@ -3488,6 +3628,7 @@ export default function Dashboard({ onLogout }) {
                         const isRouter = selectedNodeId === 'router' || !selNode;
                         const isNeedsLogin = !isRouter && selNode?.isNeedsLogin;
                         const isCurrentlyUsed = isTaskActive && !isParallel && selNode?.id === currentActiveCookieId;
+                        const isCompletedNode = !isRouter && completedNodeIds.has(selNode?.id);
 
                         return (
                           <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
@@ -3518,6 +3659,8 @@ export default function Dashboard({ onLogout }) {
                                     `⚠️ ${selNode.fullName} (TERPUTUS)`
                                   ) : isCurrentlyUsed ? (
                                     `🚀 ${selNode.fullName} (DIGUNAKAN)`
+                                  ) : isCompletedNode ? (
+                                    `✅ ${selNode.fullName} (SELESAI)`
                                   ) : (
                                     `🍪 ${selNode.fullName}`
                                   )}
@@ -3531,6 +3674,8 @@ export default function Dashboard({ onLogout }) {
                                     isNeedsLogin
                                       ? 'text-rose-400'
                                       : isCurrentlyUsed
+                                      ? 'text-emerald-400'
+                                      : isCompletedNode
                                       ? 'text-emerald-400'
                                       : 'text-cyan-400'
                                   }`}
@@ -3579,6 +3724,11 @@ export default function Dashboard({ onLogout }) {
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                     SEDANG DIGUNAKAN BOT
                                   </span>
+                                ) : isCompletedNode ? (
+                                  <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    ✓ SELESAI (ULASAN TERPOSTING)
+                                  </span>
                                 ) : (
                                   <span className="font-bold text-slate-300 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -3589,12 +3739,7 @@ export default function Dashboard({ onLogout }) {
 
                               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
                                 <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
-                                {!isTaskActive ? (
-                                  <span className="font-bold text-slate-400 font-mono text-xs flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                    IDLE (Menunggu Perintah Task)
-                                  </span>
-                                ) : isNeedsLogin ? (
+                                {isNeedsLogin ? (
                                   <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                     OFFLINE (TENTAKEL PUTUS)
@@ -3603,6 +3748,16 @@ export default function Dashboard({ onLogout }) {
                                   <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                     RUNNING (POSTING ULASAN)
+                                  </span>
+                                ) : isCompletedNode ? (
+                                  <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    SUKSES (Telah Memposting Maps)
+                                  </span>
+                                ) : !isTaskActive ? (
+                                  <span className="font-bold text-slate-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                    IDLE (Menunggu Perintah Task)
                                   </span>
                                 ) : (
                                   <span className="font-bold text-emerald-400 font-mono text-xs flex items-center gap-1.5">

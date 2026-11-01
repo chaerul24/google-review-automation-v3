@@ -182,6 +182,7 @@ export default function Dashboard({ onLogout }) {
 
   // Live Sharescreen (Dual Mode: Google Maps Display :99 vs TikTok Live Multi-Account Cards)
   const [screenTs, setScreenTs] = useState(Date.now());
+  const [streamSessionKey, setStreamSessionKey] = useState(Date.now());
   const [screenLogs, setScreenLogs] = useState([]);
   const [streamActive, setStreamActive] = useState(true);
   const [streamError, setStreamError] = useState(false);
@@ -246,7 +247,7 @@ export default function Dashboard({ onLogout }) {
     };
 
     fetchScreenData();
-    const interval = setInterval(fetchScreenData, 2500);
+    const interval = setInterval(fetchScreenData, 1500);
     return () => {
       mounted = false;
       clearInterval(interval);
@@ -479,6 +480,7 @@ export default function Dashboard({ onLogout }) {
         }).catch(() => {})
       ]);
       setBotConfigSavedSuccess(true);
+      setStreamSessionKey(Date.now());
       setScreenTs(Date.now());
       setTimeout(() => setBotConfigSavedSuccess(false), 2500);
     } catch (err) {
@@ -2576,6 +2578,7 @@ export default function Dashboard({ onLogout }) {
 
                   <button
                     onClick={() => {
+                      setStreamSessionKey(Date.now());
                       setScreenTs(Date.now());
                       setStreamError(false);
                     }}
@@ -2731,10 +2734,10 @@ export default function Dashboard({ onLogout }) {
                         </div>
                       ) : (liveTask?.is_running && !liveTask?.current_task?.includes('tiktok') && streamActive && !streamError) ? (
                         <img
-                          key={screenTs}
-                          src={`/api/screen/stream.mjpg?t=${screenTs}`}
+                          key={`gmap-stream-${streamSessionKey}`}
+                          src={`/api/screen/stream.mjpg?v=${streamSessionKey}`}
                           alt="Live Sharescreen Display :99"
-                          className="w-full h-full object-contain"
+                          className="w-full h-full object-contain select-none"
                           onError={() => setStreamError(true)}
                         />
                       ) : (
@@ -2955,11 +2958,15 @@ export default function Dashboard({ onLogout }) {
                             {isDisplayOn ? (
                               <>
                                 <img
-                                  key={`${screenTs}-${wIdx}`}
-                                  src={`/api/tiktok-live/screen/${wIdx}.png?t=${screenTs}`}
+                                  key={`tt-stream-${wIdx}-${streamSessionKey}`}
+                                  src={`/api/tiktok-live/screen/${wIdx}.mjpg?v=${streamSessionKey}`}
                                   alt={`Display ${card.username}`}
-                                  className="w-full h-full object-cover"
+                                  className="w-full h-full object-cover select-none"
                                   loading="eager"
+                                  onError={(e) => {
+                                    // Fallback ke fast single snapshot jika stream sedang bersiap
+                                    e.currentTarget.src = `/api/tiktok-live/screen/${wIdx}.png?t=${Date.now()}`;
+                                  }}
                                 />
                                 {/* Overlay Badges on Top of Screen */}
                                 <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 pointer-events-none">

@@ -1,3 +1,4 @@
+import base64
 import csv
 import hashlib
 import hmac
@@ -2096,8 +2097,23 @@ class TikTokLiveRunner:
         self.verified_viewers = set()
         self.current_account_idx = 0
         self.account_stats = {}  # Per-account real-time telemetry card
+        self.latest_frames = {}  # In-memory real-time frames: {worker_idx: {"data": bytes, "ts": float}}
         self.logs = []
         self.log_counter = 0
+
+    def update_worker_frame(self, worker_idx, img_bytes):
+        with self.lock:
+            self.latest_frames[worker_idx] = {
+                "data": img_bytes,
+                "ts": time.time()
+            }
+
+    def get_worker_frame(self, worker_idx):
+        with self.lock:
+            f = self.latest_frames.get(worker_idx)
+            if f:
+                return f["data"], f["ts"]
+        return None, 0.0
 
     def add_log(self, level, message):
         self.log_counter += 1
@@ -2262,6 +2278,7 @@ class TikTokLiveRunner:
         with self.lock:
             self.is_running = False
             self.worker_threads.clear()
+            self.latest_frames.clear()
 
         self.add_log("success", f"[+] Bot TikTok Live dihentikan. Total Real Likes: {self.likes_sent:,} | Chats: {self.chats_sent}")
         return True, "Bot TikTok Live berhasil dihentikan."
@@ -2398,11 +2415,21 @@ class TikTokLiveRunner:
                         if "/live" in curr and "chrome-error" not in curr:
                             rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
                             if rendered:
-                                driver.save_screenshot(screen_path)
+                                try:
+                                    cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "jpeg", "quality": 60})
+                                    if cdp_res and "data" in cdp_res:
+                                        raw_jpeg = base64.b64decode(cdp_res["data"])
+                                        self.update_worker_frame(worker_idx, raw_jpeg)
+                                        with open(screen_path, "wb") as f_out:
+                                            f_out.write(raw_jpeg)
+                                    else:
+                                        driver.save_screenshot(screen_path)
+                                except Exception:
+                                    driver.save_screenshot(screen_path)
                                 break
                     except Exception:
                         pass
-                    time.sleep(0.8)
+                    time.sleep(0.5)
 
             if self.stop_event.is_set():
                 return
@@ -2489,14 +2516,15 @@ class TikTokLiveRunner:
             self.add_log("info", f"[-] [{b_label}] Mengaktifkan engine tap love setiap 1 detik...")
 
             worker_likes = 0
+            last_like_time = 0.0
             # Komentar setiap 3.0 detik per akun cookie!
             last_chat_time = time.time() - 3.0 + (worker_idx * 0.4)
             last_viewer_scan = time.time()
             last_live_check = time.time()
-            last_screen_time = time.time()
+            last_screen_time = 0.0
 
             while not self.stop_event.is_set():
-                time.sleep(1.0)
+                time.sleep(0.08)
                 if self.stop_event.is_set():
                     break
 
@@ -2512,43 +2540,45 @@ class TikTokLiveRunner:
 
                 # Dispatch love click every 1.0 second to room-chat-like-btn
                 # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE, TANPA DATA DUMMY/MULTIPLIER)
-                try:
-                    click_res = driver.execute_script("""
-                        const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
-                        if (btn) {
-                            btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                            btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                            btn.click();
-                            return { ok: true, method: 'room-chat-like-btn' };
-                        }
-                        const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                        if (layer) {
-                            layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                            return { ok: true, method: 'canvas_layer' };
-                        }
-                        return { ok: false, method: 'none' };
-                    """)
-                    if click_res and click_res.get("ok"):
-                        method = click_res.get("method")
-                        if method == "room-chat-like-btn" and not has_logged_like_btn:
-                            has_logged_like_btn = True
-                            self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
-                        worker_likes += 1
-                        with self.lock:
-                            self.likes_sent += 1
-                            self.success_count += 1
-                            if user in self.account_stats:
-                                self.account_stats[user]["likes_sent"] = worker_likes
-                                self.account_stats[user]["has_like_btn"] = True
-                    else:
+                if now - last_like_time >= 1.0:
+                    last_like_time = now
+                    try:
+                        click_res = driver.execute_script("""
+                            const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+                            if (btn) {
+                                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                                btn.click();
+                                return { ok: true, method: 'room-chat-like-btn' };
+                            }
+                            const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
+                            if (layer) {
+                                layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
+                                return { ok: true, method: 'canvas_layer' };
+                            }
+                            return { ok: false, method: 'none' };
+                        """)
+                        if click_res and click_res.get("ok"):
+                            method = click_res.get("method")
+                            if method == "room-chat-like-btn" and not has_logged_like_btn:
+                                has_logged_like_btn = True
+                                self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
+                            worker_likes += 1
+                            with self.lock:
+                                self.likes_sent += 1
+                                self.success_count += 1
+                                if user in self.account_stats:
+                                    self.account_stats[user]["likes_sent"] = worker_likes
+                                    self.account_stats[user]["has_like_btn"] = True
+                        else:
+                            with self.lock:
+                                self.fail_count += 1
+                    except Exception:
                         with self.lock:
                             self.fail_count += 1
-                except Exception:
-                    with self.lock:
-                        self.fail_count += 1
 
-                if worker_likes > 0 and worker_likes % 60 == 0:
-                    self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
+                    if worker_likes > 0 and worker_likes % 60 == 0:
+                        self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
 
                 # Auto-recovery if browser gets dropped onto error page
                 try:
@@ -2560,15 +2590,28 @@ class TikTokLiveRunner:
                 except Exception:
                     pass
 
-                # Save screenshot of isolated worker browser only when on active live page AND display is enabled
-                if getattr(self, "enable_display", False) and ((now - last_screen_time >= 2.5) or not os.path.exists(screen_path)):
+                # Real-time frame capture: fast CDP in-memory JPEG every 0.35s with zero lag!
+                if getattr(self, "enable_display", False) and (now - last_screen_time >= 0.35):
                     last_screen_time = now
                     try:
                         curr_url = (driver.current_url or "").lower()
                         if "/live" in curr_url and "chrome-error" not in curr_url:
-                            driver.save_screenshot(screen_path)
+                            cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "jpeg", "quality": 55})
+                            if cdp_res and "data" in cdp_res:
+                                raw_jpeg = base64.b64decode(cdp_res["data"])
+                                self.update_worker_frame(worker_idx, raw_jpeg)
+                                try:
+                                    with open(screen_path, "wb") as f_out:
+                                        f_out.write(raw_jpeg)
+                                except Exception:
+                                    pass
+                            else:
+                                driver.save_screenshot(screen_path)
                     except Exception:
-                        pass
+                        try:
+                            driver.save_screenshot(screen_path)
+                        except Exception:
+                            pass
 
                 # Scan room for accounts in viewer list / chat periodically
                 if now - last_viewer_scan >= 15.0:
@@ -2783,18 +2826,23 @@ class TikTokLiveRunner:
 
                 turn_start = time.time()
                 # Komentar setiap 3.0 detik!
+                last_like_time = 0.0
                 last_chat_time = time.time() - 3.0
                 last_live_check = time.time()
-                last_screen_time = time.time()
+                last_screen_time = 0.0
                 turn_duration = 75.0 if total_acc > 1 else float("inf")
                 batch_likes = 0
 
                 while not self.stop_event.is_set():
-                    time.sleep(1.0)
+                    time.sleep(0.08)
                     if self.stop_event.is_set():
                         break
 
                     now = time.time()
+                    if total_acc > 1 and (now - turn_start >= turn_duration):
+                        self.add_log("info", f"[-] [{b_label}] Waktu giliran {user} selesai ({int(turn_duration)}s). Berpindah ke akun selanjutnya...")
+                        break
+
                     # Periodic check: check if live stream is still active every 10 seconds
                     if now - last_live_check >= 10.0:
                         last_live_check = now
@@ -2806,43 +2854,45 @@ class TikTokLiveRunner:
 
                     # Dispatch love click every 1.0 second to room-chat-like-btn
                     # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE)
-                    try:
-                        click_res = driver.execute_script("""
-                            const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
-                            if (btn) {
-                                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                                btn.click();
-                                return { ok: true, method: 'room-chat-like-btn' };
-                            }
-                            const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                            if (layer) {
-                                layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
-                                return { ok: true, method: 'canvas_layer' };
-                            }
-                            return { ok: false, method: 'none' };
-                        """)
-                        if click_res and click_res.get("ok"):
-                            method = click_res.get("method")
-                            if method == "room-chat-like-btn" and not has_logged_like_btn:
-                                has_logged_like_btn = True
-                                self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
-                            batch_likes += 1
-                            with self.lock:
-                                self.likes_sent += 1
-                                self.success_count += 1
-                                if user in self.account_stats:
-                                    self.account_stats[user]["likes_sent"] = batch_likes
-                                    self.account_stats[user]["has_like_btn"] = True
-                        else:
+                    if now - last_like_time >= 1.0:
+                        last_like_time = now
+                        try:
+                            click_res = driver.execute_script("""
+                                const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+                                if (btn) {
+                                    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                                    btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                                    btn.click();
+                                    return { ok: true, method: 'room-chat-like-btn' };
+                                }
+                                const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
+                                if (layer) {
+                                    layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
+                                    return { ok: true, method: 'canvas_layer' };
+                                }
+                                return { ok: false, method: 'none' };
+                            """)
+                            if click_res and click_res.get("ok"):
+                                method = click_res.get("method")
+                                if method == "room-chat-like-btn" and not has_logged_like_btn:
+                                    has_logged_like_btn = True
+                                    self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
+                                batch_likes += 1
+                                with self.lock:
+                                    self.likes_sent += 1
+                                    self.success_count += 1
+                                    if user in self.account_stats:
+                                        self.account_stats[user]["likes_sent"] = batch_likes
+                                        self.account_stats[user]["has_like_btn"] = True
+                            else:
+                                with self.lock:
+                                    self.fail_count += 1
+                        except Exception:
                             with self.lock:
                                 self.fail_count += 1
-                    except Exception:
-                        with self.lock:
-                            self.fail_count += 1
 
-                    if batch_likes > 0 and batch_likes % 60 == 0:
-                        self.add_log("info", f"[-] [{b_label}] {user}: {batch_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
+                        if batch_likes > 0 and batch_likes % 60 == 0:
+                            self.add_log("info", f"[-] [{b_label}] {user}: {batch_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
 
                     # Auto-recovery if browser gets dropped onto error page
                     try:
@@ -2853,15 +2903,28 @@ class TikTokLiveRunner:
                     except Exception:
                         pass
 
-                    # Save screenshot of isolated worker browser only when on active live page AND display is enabled
-                    if getattr(self, "enable_display", False) and ((now - last_screen_time >= 2.5) or not os.path.exists(screen_path)):
+                    # Real-time frame capture: fast CDP in-memory JPEG every 0.35s with zero lag!
+                    if getattr(self, "enable_display", False) and (now - last_screen_time >= 0.35):
                         last_screen_time = now
                         try:
                             curr_url = (driver.current_url or "").lower()
                             if "/live" in curr_url and "chrome-error" not in curr_url:
-                                driver.save_screenshot(screen_path)
+                                cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "jpeg", "quality": 55})
+                                if cdp_res and "data" in cdp_res:
+                                    raw_jpeg = base64.b64decode(cdp_res["data"])
+                                    self.update_worker_frame(idx, raw_jpeg)
+                                    try:
+                                        with open(screen_path, "wb") as f_out:
+                                            f_out.write(raw_jpeg)
+                                    except Exception:
+                                        pass
+                                else:
+                                    driver.save_screenshot(screen_path)
                         except Exception:
-                            pass
+                            try:
+                                driver.save_screenshot(screen_path)
+                            except Exception:
+                                pass
 
                     # Komentar setiap 3.0 detik per akun cookie!
                     if self.auto_chat and (now - last_chat_time >= 3.0):
@@ -2926,19 +2989,79 @@ class TikTokLiveRunner:
 
 tiktok_live_runner = TikTokLiveRunner()
 
+@app.route("/api/tiktok-live/screen/<int:worker_idx>.mjpg")
+def api_tiktok_live_screen_mjpg(worker_idx):
+    """Real-time zero-delay MJPEG video stream of isolated Chromium worker for TikTok Live."""
+    is_display_on = getattr(tiktok_live_runner, "enable_display", False)
+    if not is_display_on:
+        return api_tiktok_live_screen(worker_idx)
+
+    def generate():
+        last_ts = 0.0
+        try:
+            while True:
+                frame_data, ts = tiktok_live_runner.get_worker_frame(worker_idx)
+                if frame_data and ts > last_ts:
+                    last_ts = ts
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
+                elif not frame_data:
+                    screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
+                    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 15000:
+                        try:
+                            mtime = os.path.getmtime(screen_path)
+                            if mtime > last_ts:
+                                last_ts = mtime
+                                with open(screen_path, "rb") as f:
+                                    disk_bytes = f.read()
+                                yield (b'--frame\r\n'
+                                       b'Content-Type: image/jpeg\r\n\r\n' + disk_bytes + b'\r\n')
+                        except Exception:
+                            pass
+                time.sleep(0.08)
+        except (GeneratorExit, StopIteration):
+            return
+        except Exception:
+            return
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "close"
+        }
+    )
+
 @app.route("/api/tiktok-live/screen/<int:worker_idx>.png")
 @app.route("/api/tiktok-live/screen/<int:worker_idx>")
 def api_tiktok_live_screen(worker_idx):
-    """Single-frame PNG snapshot of isolated Chromium Headless worker for TikTok Live."""
+    """Single-frame snapshot of isolated Chromium Headless worker for TikTok Live."""
+    # Fast check in-memory frame buffer (0ms disk I/O)
+    frame_data, ts = tiktok_live_runner.get_worker_frame(worker_idx)
+    if frame_data and len(frame_data) >= 15000:
+        return Response(
+            frame_data,
+            mimetype="image/jpeg",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+
     screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
-    # Filter: pastikan file ada dan ukuran >= 30KB (screenshot live TikTok asli > 80KB-350KB, layar putih/error hanya ~19KB)
-    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 30000:
+    # Filter: pastikan file ada dan ukuran >= 20KB
+    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 20000:
         try:
             with open(screen_path, "rb") as f:
                 img_bytes = f.read()
+            mimetype = "image/jpeg" if img_bytes.startswith(b"\xff\xd8") else "image/png"
             return Response(
                 img_bytes,
-                mimetype="image/png",
+                mimetype=mimetype,
                 headers={
                     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
                     "Pragma": "no-cache",
@@ -3331,37 +3454,53 @@ def api_worker_preview():
 
 @app.route("/api/screen/stream.mjpg")
 @app.route("/api/screen/stream")
-@login_required
 def api_screen_stream():
-    """Live MJPEG video stream of host Chromium Display :99 (1 Display ShareScreen)."""
+    """Live continuous real-time low-latency MJPEG video stream of host Chromium Display :99 (15 FPS, Zero Delay)."""
     display = os.environ.get("CHROMIUM_DISPLAY", ":99")
 
-    def frames():
+    def generate():
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-fflags", "nobuffer", "-flags", "low_delay",
+            "-f", "x11grab", "-framerate", "15", "-video_size", "1366x768",
+            "-i", display,
+            "-vf", "scale=1280:-1",
+            "-q:v", "4",
+            "-f", "mpjpeg",
+            "-boundary_tag", "frame",
+            "-",
+        ]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0
+        )
         try:
             while True:
-                proc = subprocess.run(
-                    [
-                        "ffmpeg", "-hide_banner", "-loglevel", "error",
-                        "-f", "x11grab", "-video_size", "1366x768",
-                        "-i", display, "-frames:v", "1",
-                        "-q:v", "5", "-f", "image2pipe", "-vcodec", "mjpeg", "-",
-                    ],
-                    capture_output=True,
-                    timeout=2.0,
-                )
-                if proc.returncode == 0 and proc.stdout:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + proc.stdout + b'\r\n')
-                time.sleep(0.35)
-        except (GeneratorExit, StopIteration):
-            return
-        except Exception:
-            return
+                chunk = proc.stdout.read(8192)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                proc.terminate()
+                proc.wait(timeout=0.3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
 
     return Response(
-        stream_with_context(frames()),
+        stream_with_context(generate()),
         mimetype="multipart/x-mixed-replace; boundary=frame",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "close",
+        },
     )
 
 

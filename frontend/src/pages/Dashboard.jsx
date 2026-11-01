@@ -2238,21 +2238,7 @@ export default function Dashboard({ onLogout }) {
               </div>
             </div>
 
-            {/* Panduan Import Cookie Sesi Google */}
-            <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 flex items-start gap-3">
-              <Cookie className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold text-slate-900">Panduan Import Cookie Sesi Google (Cookie-Editor)</p>
-                <p className="mt-1 text-slate-600 leading-relaxed">
-                  Gunakan ekstensi <b>Cookie-Editor</b> di browser untuk mengekspor cookie akun Google yang sedang login (buka <code>accounts.google.com</code> atau <code>maps.google.com</code>, klik Export &rarr; JSON).
-                  Sistem otomatis memverifikasi keaslian cookie, menyinkronkan profil, dan menjaga sesi tetap aktif untuk otomatisasi bot ulasan Google Maps.
-                </p>
-                <div className="mt-2.5 flex items-center flex-wrap gap-4 text-[11px] text-slate-600 font-mono">
-                  <span>Format: <b className="text-slate-800">{'JSON Array ([{"name": "...", "value": "..."}])'}</b></span>
-                  <span>Browser: <b className="text-slate-800">Chrome / Firefox / Edge</b></span>
-                </div>
-              </div>
-            </div>
+
           </main>
         )}
 

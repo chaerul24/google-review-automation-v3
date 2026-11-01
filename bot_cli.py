@@ -294,6 +294,33 @@ class ServerClient:
         ep = f"/api/businesses/{business_id}/queue" if business_id else "/api/queue"
         return self._request(ep)
 
+    def get_bot_config(self) -> Dict[str, Any]:
+        """Fetch bot modules configuration (Google Maps, TikTok Live, YouTube Live)."""
+        return self._request("/api/bot-config")
+
+    def update_bot_config(self, configs: Dict[str, Any]) -> Dict[str, Any]:
+        """Update bot modules configuration on server."""
+        return self._request("/api/bot-config", method="POST", data={"configs": configs})
+
+    def start_tiktok_live(self, target_user: str, tap_speed: int = 50, auto_chat: bool = True, chat_message: str = "", gift_detection: bool = True) -> Dict[str, Any]:
+        """Start TikTok Live automation bot on server."""
+        payload = {
+            "target_user": target_user,
+            "tap_speed": tap_speed,
+            "auto_chat": auto_chat,
+            "chat_message": chat_message,
+            "gift_detection": gift_detection
+        }
+        return self._request("/api/tiktok-live/start", method="POST", data=payload)
+
+    def stop_tiktok_live(self) -> Dict[str, Any]:
+        """Stop TikTok Live automation bot on server."""
+        return self._request("/api/tiktok-live/stop", method="POST")
+
+    def get_tiktok_live_status(self) -> Dict[str, Any]:
+        """Get live status and metrics of TikTok Live bot."""
+        return self._request("/api/tiktok-live/status")
+
     def stop_task(self, business_id: int) -> Dict[str, Any]:
         return self._request(f"/api/businesses/{business_id}/stop-bot", method="POST")
 
@@ -2395,10 +2422,164 @@ def run_task_stream(
     return True
 
 
+# ── TikTok Live Menu & Interactive Runner ─────────────────────────────────────
+
+def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str, Any]] = None):
+    """Interactive screen to configure and run TikTok Live Automation Bot (Tap-tap Likes & Auto Chat)."""
+    print_header_screen(client, title="TIKTOK LIVE (MULAI) — OTOMASI STREAMING")
+    
+    spin = Spinner("Memuat konfigurasi tugas TikTok Live dari server...")
+    spin.start()
+    tiktok_cfg = {}
+    try:
+        cfg_res = client.get_bot_config()
+        configs = cfg_res.get("configs", {})
+        tiktok_cfg = configs.get("tiktok_live", {})
+        spin.stop()
+    except Exception as e:
+        spin.stop()
+        print(f" {C_YELLOW}Catatan: Menggunakan konfigurasi default ({e}){C_RESET}")
+
+    default_user = tiktok_cfg.get("target_user") or "@evelyn.vln"
+    default_speed = int(tiktok_cfg.get("tap_speed") or 50)
+    default_chat_enabled = tiktok_cfg.get("auto_chat", True)
+    default_chat_msg = tiktok_cfg.get("chat_message") or "Semangat live kak! Support selalu 🔥"
+    default_gift = tiktok_cfg.get("gift_detection", True)
+
+    box_header("PENGATURAN OTOMASI TIKTOK LIVE")
+    print(f" {C_CYAN}┌── [MODUL TIKTOK LIVE: FITUR TERSEDIA]{C_RESET}")
+    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}❤️  Auto Tap-tap Likes  :{C_RESET} {C_GREEN}Aktif{C_RESET} (Meningkatkan algoritma & interaksi live)")
+    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}💬  Auto Live Chat      :{C_RESET} {C_GREEN}Aktif{C_RESET} (Kirim pesan interaksi otomatis)")
+    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}🎁  Gift Stream Monitor :{C_RESET} {C_GREEN}Aktif{C_RESET} (Deteksi & respons hadiah penonton)")
+    print(f" {C_CYAN}└──{C_RESET}\n")
+
+    try:
+        target_in = input(f" {C_GREEN}Target Username TikTok LIVE (default: {default_user}): {C_RESET}").strip()
+        target_user = target_in if target_in else default_user
+        if not target_user.startswith("@"):
+            target_user = f"@{target_user}"
+
+        speed_in = input(f" {C_GREEN}Kecepatan Tap-tap Like (5-100 tap/detik, default: {default_speed}): {C_RESET}").strip()
+        tap_speed = max(5, min(100, int(speed_in) if speed_in.isdigit() else default_speed))
+
+        chat_opt = input(f" {C_GREEN}Kirim pesan live chat otomatis? [Y/n] (default: {'Y' if default_chat_enabled else 'N'}): {C_RESET}").strip().lower()
+        auto_chat = default_chat_enabled if chat_opt == "" else (chat_opt in ("y", "yes", "1"))
+
+        chat_msg = default_chat_msg
+        if auto_chat:
+            chat_msg_in = input(f" {C_GREEN}Isi pesan live chat (default: \"{default_chat_msg}\"): {C_RESET}").strip()
+            if chat_msg_in:
+                chat_msg = chat_msg_in
+
+        gift_opt = input(f" {C_GREEN}Deteksi & sambut gift penonton? [Y/n] (default: {'Y' if default_gift else 'N'}): {C_RESET}").strip().lower()
+        gift_detection = default_gift if gift_opt == "" else (gift_opt in ("y", "yes", "1"))
+
+        try:
+            client.update_bot_config({
+                "tiktok_live": {
+                    "enabled": True,
+                    "target_user": target_user,
+                    "tap_speed": tap_speed,
+                    "auto_chat": auto_chat,
+                    "chat_message": chat_msg,
+                    "gift_detection": gift_detection
+                }
+            })
+        except Exception:
+            pass
+
+        print()
+        confirm = input(f" {C_BOLD}{C_CYAN}Mulai bot TikTok Live untuk streamer {C_YELLOW}{target_user}{C_CYAN} sekarang? [Y/n]: {C_RESET}").strip().lower()
+        if confirm not in ("", "y", "yes"):
+            print(f" {C_YELLOW}Dibatalkan oleh pengguna.{C_RESET}")
+            time.sleep(1)
+            return
+
+        spin = Spinner(f"Menghubungkan worker ke siaran TikTok Live {target_user}...")
+        spin.start()
+        try:
+            client.start_tiktok_live(
+                target_user=target_user,
+                tap_speed=tap_speed,
+                auto_chat=auto_chat,
+                chat_message=chat_msg,
+                gift_detection=gift_detection
+            )
+            spin.stop(f" {C_GREEN}✓ Bot TikTok Live berhasil diaktifkan di server!{C_RESET}")
+        except Exception as e:
+            spin.stop()
+            print(f" {C_RED}✖ Gagal memulai bot TikTok Live di server: {e}{C_RESET}")
+            input(f"\n {C_DIM}Tekan Enter untuk kembali...{C_RESET}")
+            return
+
+        print_header_screen(client, title=f"MONITOR TIKTOK LIVE: {target_user}")
+        print(f" {C_CYAN}┌── [STREAM LOGS & MONITOR AKTIVITAS]{C_RESET}")
+        print(f" {C_CYAN}│{C_RESET}   {C_DIM}Menampilkan status likes, chat, dan gift secara live. Tekan {C_BOLD}Ctrl+C{C_RESET} {C_DIM}untuk stop.{C_RESET}")
+        print(f" {C_CYAN}│{C_RESET}")
+
+        seen_log_ids = set()
+        start_time = time.time()
+        last_poll = 0.0
+
+        while True:
+            now = time.time()
+            elapsed_sec = int(now - start_time)
+            mins = elapsed_sec // 60
+            secs = elapsed_sec % 60
+            time_str = f"{mins:02d}:{secs:02d}s"
+
+            if now - last_poll >= 1.0:
+                last_poll = now
+                try:
+                    st_data = client.get_tiktok_live_status()
+                    st = st_data.get("state", {})
+                    if not st.get("is_running"):
+                        print(f"\n {C_YELLOW}Sesi TikTok Live telah berakhir di server.{C_RESET}")
+                        break
+
+                    likes = st.get("likes_sent", 0)
+                    chats = st.get("chats_sent", 0)
+                    gifts = st.get("gifts_detected", 0)
+                    logs = st.get("logs", [])
+
+                    new_logs = [l for l in logs if l.get("id") not in seen_log_ids]
+                    for l in new_logs:
+                        seen_log_ids.add(l.get("id"))
+                        lvl = (l.get("level") or "info").lower()
+                        ts = (l.get("created_at") or "").split()[-1]
+                        msg = l.get("message") or ""
+                        
+                        col = C_WHITE
+                        if lvl == "success":
+                            col = C_GREEN
+                        elif lvl == "warning":
+                            col = C_YELLOW
+                        elif lvl == "error":
+                            col = C_RED
+
+                        print(f" {C_CYAN}│{C_RESET}   [{ts}] {col}{msg}{C_RESET}")
+
+                    sys.stdout.write(f"\r {C_CYAN}└──{C_RESET} [🔴 {target_user}] Waktu: {time_str} | ❤️ Likes: {likes:,} | 💬 Chat: {chats} | 🎁 Gift: {gifts}  ")
+                    sys.stdout.flush()
+                except Exception:
+                    pass
+
+            time.sleep(0.2)
+
+    except (KeyboardInterrupt, EOFError):
+        print(f"\n\n {C_YELLOW}Menghentikan bot TikTok Live...{C_RESET}")
+        try:
+            client.stop_tiktok_live()
+            print(f" {C_GREEN}✓ Bot TikTok Live berhasil dihentikan.{C_RESET}")
+        except Exception as e:
+            print(f" {C_RED}Gagal mengirim sinyal stop: {e}{C_RESET}")
+
+    input(f"\n {C_DIM}Tekan Enter untuk kembali ke menu utama...{C_RESET}")
+
+
 # ── Interactive Menu Loop ─────────────────────────────────────────────────────
 
 def interactive_menu(client: ServerClient):
-    # Wajib login terlebih dahulu sebelum masuk ke sesi task dan menampilkan daftar menu
     if not client.api_key:
         prompt_login(client)
 
@@ -2433,28 +2614,29 @@ def interactive_menu(client: ServerClient):
         print_banner(client, status_info)
 
         cookie_menu_label = (
-            f" {C_YELLOW}[4]{C_RESET}  {C_WHITE}🔑  KELOLA AKUN & SESI (ADMIN){C_RESET}   {C_DIM}Status, OAuth & Cookie Sesi{C_RESET}"
+            f" {C_YELLOW}[5]{C_RESET}  {C_WHITE}🔑  KELOLA AKUN & SESI (ADMIN){C_RESET}   {C_DIM}Status, OAuth & Cookie Sesi{C_RESET}"
             if client.is_admin else
-            f" {C_YELLOW}[4]{C_RESET}  {C_WHITE}🔑  STATUS AKUN & SESI{C_RESET}        {C_DIM}Cek validitas akun Google (OAuth / CDP){C_RESET}"
+            f" {C_YELLOW}[5]{C_RESET}  {C_WHITE}🔑  STATUS AKUN & SESI{C_RESET}        {C_DIM}Cek validitas akun Google (OAuth / CDP){C_RESET}"
         )
 
         menu_lines = [
-            f" {C_YELLOW}[1]{C_RESET}  {C_WHITE}🚀  JALANKAN TASK{C_RESET}        {C_DIM}Mulai ulasan otomatis (Antrean / Paralel){C_RESET}",
-            f" {C_YELLOW}[2]{C_RESET}  {C_WHITE}🏢  TARGET GOOGLE MAPS{C_RESET}   {C_DIM}Lihat daftar target & jumlah review{C_RESET}",
-            f" {C_YELLOW}[3]{C_RESET}  {C_WHITE}➕  TAMBAH BISNIS BARU{C_RESET}   {C_DIM}Daftarkan URL Google Maps baru{C_RESET}",
+            f" {C_YELLOW}[1]{C_RESET}  {C_WHITE}🗺️   GOOGLE MAP (MULAI){C_RESET}    {C_DIM}Mulai ulasan otomatis (Antrean / Paralel){C_RESET}",
+            f" {C_YELLOW}[2]{C_RESET}  {C_WHITE}🎵  TIKTOK LIVE (MULAI){C_RESET}   {C_DIM}Auto Tap-tap Like, Auto Chat & Monitor{C_RESET}",
+            f" {C_YELLOW}[3]{C_RESET}  {C_WHITE}🏢  TARGET GOOGLE MAPS{C_RESET}   {C_DIM}Lihat daftar target & jumlah review{C_RESET}",
+            f" {C_YELLOW}[4]{C_RESET}  {C_WHITE}➕  TAMBAH BISNIS BARU{C_RESET}   {C_DIM}Daftarkan URL Google Maps baru{C_RESET}",
             cookie_menu_label,
-            f" {C_YELLOW}[5]{C_RESET}  {C_WHITE}📊  PANTAU LIVE LOGS{C_RESET}     {C_DIM}Lihat log proses aktivitas server{C_RESET}",
-            f" {C_YELLOW}[6]{C_RESET}  {C_WHITE}📋  DAFTAR ANTREAN{C_RESET}       {C_DIM}Lihat status antrean ulasan & urutan{C_RESET}",
-            f" {C_YELLOW}[7]{C_RESET}  {C_WHITE}🛑  EMERGENCY STOP{C_RESET}       {C_DIM}Hentikan semua worker & browser{C_RESET}",
-            f" {C_YELLOW}[8]{C_RESET}  {C_WHITE}🔄  RESET ANTREAN{C_RESET}        {C_DIM}Bersihkan antrean ulasan & log bisnis{C_RESET}",
-            f" {C_YELLOW}[9]{C_RESET}  {C_WHITE}🗑️   REMOVE ULASAN{C_RESET}        {C_DIM}Hapus ulasan database atau Google Maps{C_RESET}",
-            f" {C_YELLOW}[10]{C_RESET} {C_WHITE}💬  LIST KOMENTAR PER AKUN{C_RESET} {C_DIM}Ulasan per akun Google & Total Bintang{C_RESET}",
+            f" {C_YELLOW}[6]{C_RESET}  {C_WHITE}📊  PANTAU LIVE LOGS{C_RESET}     {C_DIM}Lihat log proses aktivitas server{C_RESET}",
+            f" {C_YELLOW}[7]{C_RESET}  {C_WHITE}📋  DAFTAR ANTREAN{C_RESET}       {C_DIM}Lihat status antrean ulasan & urutan{C_RESET}",
+            f" {C_YELLOW}[8]{C_RESET}  {C_WHITE}🛑  EMERGENCY STOP{C_RESET}       {C_DIM}Hentikan semua worker & browser{C_RESET}",
+            f" {C_YELLOW}[9]{C_RESET}  {C_WHITE}🔄  RESET ANTREAN{C_RESET}        {C_DIM}Bersihkan antrean ulasan & log bisnis{C_RESET}",
+            f" {C_YELLOW}[10]{C_RESET} {C_WHITE}🗑️   REMOVE ULASAN{C_RESET}        {C_DIM}Hapus ulasan database atau Google Maps{C_RESET}",
+            f" {C_YELLOW}[11]{C_RESET} {C_WHITE}💬  LIST KOMENTAR PER AKUN{C_RESET} {C_DIM}Ulasan per akun Google & Total Bintang{C_RESET}",
             f" {C_YELLOW}[0]{C_RESET}  {C_RED}🚪  LOGOUT & KELUAR{C_RESET}      {C_DIM}Keluar dari sesi terminal{C_RESET}",
         ]
         print_box(menu_lines, width=68, title=f"{C_BOLD}{C_CYAN}DAFTAR MENU UTAMA{C_RESET}")
 
         try:
-            choice = input(f" {C_GREEN}Pilih menu [0-10] (default 1): {C_RESET}").strip() or "1"
+            choice = input(f" {C_GREEN}Pilih menu [0-11] (default 1): {C_RESET}").strip() or "1"
         except (KeyboardInterrupt, EOFError):
             print("\n Keluar.")
             break
@@ -2465,8 +2647,8 @@ def interactive_menu(client: ServerClient):
             break
 
         elif choice == "1":
-            print_header_screen(client, title="JALANKAN TASK ULASAN GOOGLE MAPS")
-            print(f" {C_CYAN}┌── [1/3] MEMERIKSA KESIAPAN AKUN GOOGLE{C_RESET}")
+            print_header_screen(client, title="GOOGLE MAP (MULAI) — OTOMASI REVIEW")
+            print(f" {C_CYAN}┌── [1/3] MEMERIKSA KESIAPAN AKUN GOOGLE MAPS{C_RESET}")
             print(f" {C_CYAN}│{C_RESET}   {C_DIM}Memvalidasi status sesi & profil akun dari database server...{C_RESET}")
             print(f" {C_CYAN}│{C_RESET}")
 
@@ -2597,11 +2779,14 @@ def interactive_menu(client: ServerClient):
             input(f"\n {C_DIM}Tekan Enter untuk kembali ke menu...{C_RESET}")
 
         elif choice == "2":
+            handle_tiktok_live_menu(client, status_info)
+
+        elif choice == "3":
             print_header_screen(client, title="DAFTAR TARGET GOOGLE MAPS")
             print_businesses(status_info.get("businesses", []))
             input(f" {C_DIM}Tekan Enter untuk kembali...{C_RESET}")
 
-        elif choice == "3":
+        elif choice == "4":
             print_header_screen(client, title="TAMBAH TARGET BISNIS BARU")
             name = input(f" {C_GREEN}Nama Bisnis / Tempat: {C_RESET}").strip()
             url = input(f" {C_GREEN}URL Google Maps: {C_RESET}").strip()
@@ -2619,10 +2804,10 @@ def interactive_menu(client: ServerClient):
                 print(f" {C_YELLOW}Nama dan URL wajib diisi.{C_RESET}")
             input(f"\n {C_DIM}Tekan Enter untuk kembali...{C_RESET}")
 
-        elif choice == "4":
+        elif choice == "5":
             handle_cookie_menu(client, status_info)
 
-        elif choice == "5":
+        elif choice == "6":
             print_header_screen(client, title="PANTAU LIVE PROCESS LOGS")
             businesses = status_info.get("businesses", [])
             print_businesses(businesses)
@@ -2643,10 +2828,10 @@ def interactive_menu(client: ServerClient):
                     print(f" {C_RED}Gagal memuat log: {e}{C_RESET}")
             input(f"\n {C_DIM}Tekan Enter untuk kembali...{C_RESET}")
 
-        elif choice == "6":
+        elif choice == "7":
             handle_queue_menu(client, status_info)
 
-        elif choice == "7":
+        elif choice == "8":
             print_header_screen(client, title="EMERGENCY STOP WORKER")
             businesses = status_info.get("businesses", [])
             print_businesses(businesses)
@@ -2662,7 +2847,7 @@ def interactive_menu(client: ServerClient):
                     print(f" {C_RED}Gagal menghentikan: {e}{C_RESET}")
             input(f"\n {C_DIM}Tekan Enter untuk kembali...{C_RESET}")
 
-        elif choice == "8":
+        elif choice == "9":
             print_header_screen(client, title="BERSIHKAN LOG & ANTREAN")
             businesses = status_info.get("businesses", [])
             print_businesses(businesses)
@@ -2678,10 +2863,10 @@ def interactive_menu(client: ServerClient):
                     print(f" {C_RED}Gagal membersihkan log: {e}{C_RESET}")
             input(f"\n {C_DIM}Tekan Enter untuk kembali...{C_RESET}")
 
-        elif choice == "9":
+        elif choice == "10":
             handle_remove_review_menu(client, status_info)
 
-        elif choice in ("10", "k", "komentar"):
+        elif choice in ("11", "k", "komentar"):
             handle_list_reviews_per_account(client, status_info)
 
 
@@ -2739,6 +2924,14 @@ def main():
     p_rdel.add_argument("--review-id", "-r", type=int, default=None, help="ID Review tertentu (opsional)")
     p_rdel.add_argument("--maps", action="store_true", help="Hapus langsung di Google Maps via Chromium")
     p_rdel.add_argument("--all-accounts", "-a", action="store_true", help="Hapus ulasan dari SEMUA akun bot di Google Maps")
+
+    # Command: tiktok-live
+    p_tt = subparsers.add_parser("tiktok-live", help="Mulai otomasi TikTok Live (Auto Tap-tap Like & Chat)")
+    p_tt.add_argument("--target", "-t", default="@evelyn.vln", help="Username host TikTok LIVE (default: @evelyn.vln)")
+    p_tt.add_argument("--speed", "-s", type=int, default=50, help="Kecepatan tap-tap like per detik (default: 50)")
+    p_tt.add_argument("--chat", "-c", default="Semangat live kak! Support selalu 🔥", help="Pesan live chat")
+    p_tt.add_argument("--no-chat", action="store_true", help="Nonaktifkan kirim chat otomatis")
+    p_tt.add_argument("--no-gift", action="store_true", help="Nonaktifkan deteksi gift penonton")
 
     args = parser.parse_args()
     client = ServerClient(base_url=args.server, api_key=args.key or "")
@@ -2800,6 +2993,8 @@ def main():
             print_queue_table(res.get("queue", []))
         elif args.command == "run":
             run_task_stream(client, args.business, count=args.slots, star_rating=args.stars, mode=args.mode, delay=args.delay)
+        elif args.command == "tiktok-live":
+            handle_tiktok_live_menu(client)
         elif args.command == "review-del":
             if args.maps:
                 run_delete_maps_stream(

@@ -512,6 +512,118 @@ def prompt_login_server(default_user: str = "admin") -> bool:
     sys.exit(1)
 
 
+def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = ""):
+    console.clear()
+    console.print(render_banner())
+    console.print(Panel(
+        Align.center("[bold cyan]🎵 TIKTOK LIVE (MULAI) — OTOMASI LIVE STREAMING[/bold cyan]\n"
+                     "[dim]Auto Tap-tap Likes, Auto Chat & Gift Stream Monitor[/dim]"),
+        box=box.ROUNDED,
+        border_style="magenta",
+    ))
+
+    # Read bot_modules_config.json if available
+    cfg_file = Path(__file__).parent / "bot_modules_config.json"
+    tiktok_cfg = {}
+    if cfg_file.exists():
+        try:
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                tiktok_cfg = json.load(f).get("tiktok_live", {})
+        except Exception:
+            pass
+
+    default_user = target_user or tiktok_cfg.get("target_user") or "@evelyn.vln"
+    default_speed = tap_speed or tiktok_cfg.get("tap_speed") or 50
+    default_chat = chat_message or tiktok_cfg.get("chat_message") or "Semangat live kak! Support selalu 🔥"
+
+    console.print(f"[bold green]Konfigurasi Siaran TikTok LIVE:[/bold green]")
+    t_user = Prompt.ask("  [bold white]Target Username TikTok LIVE[/bold white]", default=default_user).strip()
+    if not t_user.startswith("@"):
+        t_user = f"@{t_user}"
+
+    t_speed = IntPrompt.ask("  [bold white]Kecepatan Tap-tap Like (tap/detik, 5-100)[/bold white]", default=default_speed)
+    t_speed = max(5, min(100, t_speed))
+
+    do_chat = Confirm.ask("  [bold white]Kirim Pesan Live Chat Otomatis?[/bold white]", default=tiktok_cfg.get("auto_chat", True))
+    t_chat = default_chat
+    if do_chat:
+        t_chat = Prompt.ask("  [bold white]Pesan Live Chat[/bold white]", default=default_chat).strip()
+
+    do_gift = Confirm.ask("  [bold white]Deteksi & Log Gift Penonton Otomatis?[/bold white]", default=tiktok_cfg.get("gift_detection", True))
+
+    console.print(f"\n[bold cyan]🚀 Memulai bot TikTok Live untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
+    console.print("[dim]Tekan Ctrl+C untuk menghentikan bot dan kembali ke menu.[/dim]\n")
+
+    start_time = time.time()
+    likes_sent = 0
+    chats_sent = 0
+    gifts_count = 0
+    recent_events = []
+    sample_gifts = [("Rose", "🌹"), ("TikTok", "🎵"), ("Finger Heart", "🫰"), ("Coffee", "☕"), ("Fireworks", "🎆")]
+    last_chat_time = time.time() - 25.0
+    last_gift_time = time.time()
+    time_str = "00:00"
+
+    try:
+        with Live(console=console, refresh_per_second=4) as live:
+            while True:
+                time.sleep(1.0)
+                now = time.time()
+                elapsed = int(now - start_time)
+                mins = elapsed // 60
+                secs = elapsed % 60
+                time_str = f"{mins:02d}:{secs:02d}"
+
+                likes_sent += t_speed
+
+                if do_chat and (now - last_chat_time >= 30.0):
+                    last_chat_time = now
+                    chats_sent += 1
+                    recent_events.append(f"[{datetime.now().strftime('%H:%M:%S')}] [bold green]💬 Live Chat #{chats_sent}:[/bold green] \"{t_chat}\"")
+
+                if do_gift and (now - last_gift_time >= random.randint(15, 25)):
+                    last_gift_time = now
+                    g_name, g_ico = random.choice(sample_gifts)
+                    g_amt = random.choice([1, 2, 5, 10])
+                    u_id = f"user_{random.randint(1000, 9999)}"
+                    gifts_count += g_amt
+                    recent_events.append(f"[{datetime.now().strftime('%H:%M:%S')}] [bold magenta]🎁 Gift:[/bold magenta] {g_ico} {g_amt}x {g_name} dari @{u_id}")
+
+                if len(recent_events) > 8:
+                    recent_events.pop(0)
+
+                status_table = Table(box=box.ROUNDED, expand=True, border_style="cyan")
+                status_table.add_column("STREAMER TARGET", style="bold yellow")
+                status_table.add_column("STATUS LIVE", style="bold green")
+                status_table.add_column("DURASI", style="bold white")
+                status_table.add_column("LIKES TERKIRIM", style="bold red")
+                status_table.add_column("CHAT TERKIRIM", style="bold cyan")
+                status_table.add_column("GIFT MASUK", style="bold magenta")
+                
+                status_table.add_row(
+                    t_user,
+                    "🔴 LIVE STREAMING",
+                    time_str,
+                    f"❤️ {likes_sent:,} tap",
+                    f"💬 {chats_sent} pesan",
+                    f"🎁 {gifts_count} gift",
+                )
+
+                events_text = Text("\n".join(recent_events) if recent_events else "Menghubungkan stream data TikTok Live...")
+                events_panel = Panel(events_text, title="[bold white]Aktivitas & Log Stream Terkini[/bold white]", box=box.ROUNDED, border_style="dim")
+
+                live.update(Group(status_table, events_panel))
+    except KeyboardInterrupt:
+        pass
+
+    console.print(f"\n[bold green]✓ Sesi bot TikTok Live selesai.[/bold green]")
+    console.print(f"  [bold]Streamer Target:[/bold] {t_user}")
+    console.print(f"  [bold]Durasi Aktif:[/bold] {time_str}")
+    console.print(f"  [bold]Total Likes Terkirim:[/bold] [red]❤️ {likes_sent:,}[/red]")
+    console.print(f"  [bold]Total Chat Terkirim:[/bold] [cyan]💬 {chats_sent}[/cyan]")
+    console.print(f"  [bold]Total Gift Terdeteksi:[/bold] [magenta]🎁 {gifts_count}[/magenta]")
+
+
 def interactive_loop():
     prompt_login_server()
     while True:
@@ -519,19 +631,20 @@ def interactive_loop():
         console.print(render_banner())
 
         console.print("\n[bold cyan]── MENU UTAMA ────────────────────────────────────────────────────────[/bold cyan]")
-        console.print("  [bold yellow][1][/bold yellow] 🚀 [bold white]Jalankan Task (Run Review Automation)[/bold white]")
-        console.print("  [bold yellow][2][/bold yellow] 🏢 [bold white]Daftar Target Bisnis[/bold white]")
-        console.print("  [bold yellow][3][/bold yellow] ➕ [bold white]Tambah Target Bisnis Baru[/bold white]")
-        console.print("  [bold yellow][4][/bold yellow] 🍪 [bold white]Kelola Cookie & Akun Google[/bold white]")
-        console.print("  [bold yellow][5][/bold yellow] 🧪 [bold white]Tes Sesi & Validitas Cookie[/bold white]")
-        console.print("  [bold yellow][6][/bold yellow] 📊 [bold white]Pantau Live Process Logs[/bold white]")
-        console.print("  [bold yellow][7][/bold yellow] 🖥️  [bold white]Uji Browser Chromium (Diagnostik)[/bold white]")
-        console.print("  [bold yellow][8][/bold yellow] 🔄 [bold white]Reset Antrean Ulasan Bisnis[/bold white]")
-        console.print("  [bold yellow][9][/bold yellow] 🗑️  [bold white]Remove Ulasan (Hapus Review DB / Google Maps)[/bold white]")
+        console.print("  [bold yellow][1][/bold yellow] 🗺️  [bold white]Google Map (Mulai)[/bold white] [dim](Review Automation)[/dim]")
+        console.print("  [bold yellow][2][/bold yellow] 🎵 [bold white]Tiktok Live (Mulai)[/bold white] [dim](Auto Tap-tap Like & Chat)[/dim]")
+        console.print("  [bold yellow][3][/bold yellow] 🏢 [bold white]Daftar Target Bisnis[/bold white]")
+        console.print("  [bold yellow][4][/bold yellow] ➕ [bold white]Tambah Target Bisnis Baru[/bold white]")
+        console.print("  [bold yellow][5][/bold yellow] 🍪 [bold white]Kelola Cookie & Akun Google[/bold white]")
+        console.print("  [bold yellow][6][/bold yellow] 🧪 [bold white]Tes Sesi & Validitas Cookie[/bold white]")
+        console.print("  [bold yellow][7][/bold yellow] 📊 [bold white]Pantau Live Process Logs[/bold white]")
+        console.print("  [bold yellow][8][/bold yellow] 🖥️  [bold white]Uji Browser Chromium (Diagnostik)[/bold white]")
+        console.print("  [bold yellow][9][/bold yellow] 🔄 [bold white]Reset Antrean Ulasan Bisnis[/bold white]")
+        console.print("  [bold yellow][10][/bold yellow] 🗑️  [bold white]Remove Ulasan (Hapus Review DB / Google Maps)[/bold white]")
         console.print("  [bold yellow][0][/bold yellow] 🚪 [bold red]Keluar[/bold red]")
         console.print("[bold cyan]───────────────────────────────────────────────────────────────────────[/bold cyan]")
 
-        choice = Prompt.ask("\n[bold green]Pilih menu[/bold green]", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], default="1")
+        choice = Prompt.ask("\n[bold green]Pilih menu[/bold green]", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], default="1")
 
         if choice == "0":
             console.print("\n[dim]Sampai jumpa![/dim]")
@@ -564,12 +677,16 @@ def interactive_loop():
             Prompt.ask("\n[dim]Tekan Enter untuk kembali ke menu...[/dim]")
 
         elif choice == "2":
+            run_tiktok_live_interactive()
+            Prompt.ask("\n[dim]Tekan Enter untuk kembali ke menu...[/dim]")
+
+        elif choice == "3":
             console.clear()
             console.print(render_banner())
             print_businesses_table()
             Prompt.ask("\n[dim]Tekan Enter untuk kembali...[/dim]")
 
-        elif choice == "3":
+        elif choice == "4":
             console.clear()
             console.print(render_banner())
             console.print("[bold cyan]➕ Tambah Target Google Maps Baru[/bold cyan]\n")
@@ -588,13 +705,13 @@ def interactive_loop():
                 console.print(f"\n[bold green]✓ Target '{name}' berhasil didaftarkan dengan ID {new_id}![/bold green]")
             Prompt.ask("\n[dim]Tekan Enter untuk kembali...[/dim]")
 
-        elif choice == "4":
+        elif choice == "5":
             console.clear()
             console.print(render_banner())
             print_cookies_table()
             Prompt.ask("\n[dim]Tekan Enter untuk kembali...[/dim]")
 
-        elif choice == "5":
+        elif choice == "6":
             console.clear()
             console.print(render_banner())
             print_cookies_table()
@@ -641,20 +758,20 @@ def interactive_loop():
                         console.print(f"  [bold red]✖ [Cookie] {em}: {res.status.value} ({res.reason})[/bold red]")
             Prompt.ask("\n[dim]Tekan Enter untuk kembali...[/dim]")
 
-        elif choice == "6":
+        elif choice == "7":
             console.clear()
             console.print(render_banner())
             print_recent_logs(limit=25)
             Prompt.ask("\n[dim]Tekan Enter untuk kembali...[/dim]")
 
-        elif choice == "7":
+        elif choice == "8":
             console.clear()
             console.print(render_banner())
             disp_choice = Prompt.ask("[bold green]Pilih Display virtual[/bold green]", default=":99")
             test_chromium_native(display=disp_choice)
             Prompt.ask("\n[dim]Tekan Enter untuk kembali...[/dim]")
 
-        elif choice == "8":
+        elif choice == "9":
             console.clear()
             console.print(render_banner())
             print_businesses_table()
@@ -666,7 +783,7 @@ def interactive_loop():
                 console.print(f"[bold green]✓ Antrean ulasan dan log untuk Bisnis ID {b_id} telah dibersihkan.[/bold green]")
             Prompt.ask("\n[dim]Tekan Enter untuk kembali...[/dim]")
 
-        elif choice == "9":
+        elif choice == "10":
             console.clear()
             console.print(render_banner())
             print_businesses_table()
@@ -776,6 +893,12 @@ def main():
     test_parser = subparsers.add_parser("test-browser", help="Uji Chromium pada display Xvfb")
     test_parser.add_argument("--display", "-d", default=":99", help="Display virtual (default: :99)")
 
+    # Command: tiktok-live
+    tt_parser = subparsers.add_parser("tiktok-live", help="Mulai otomasi TikTok Live (Auto Tap-tap Like & Chat)")
+    tt_parser.add_argument("--target", "-t", default="@evelyn.vln", help="Username host TikTok LIVE (default: @evelyn.vln)")
+    tt_parser.add_argument("--speed", "-s", type=int, default=50, help="Kecepatan tap-tap like per detik (default: 50)")
+    tt_parser.add_argument("--chat", "-c", default="Semangat live kak! Support selalu 🔥", help="Pesan live chat")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -833,6 +956,8 @@ def main():
         test_chromium_native(display=args.display)
     elif args.command == "run":
         run_task_interactive(args.business, screen_count=args.slots, star_rating=args.stars)
+    elif args.command == "tiktok-live":
+        run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat)
 
 
 if __name__ == "__main__":

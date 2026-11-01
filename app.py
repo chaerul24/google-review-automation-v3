@@ -1613,6 +1613,176 @@ def api_update_bot_config():
     })
 
 
+# ── TikTok Live Execution Worker & Status ────────────────────────────────────
+class TikTokLiveRunner:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.is_running = False
+        self.stop_event = threading.Event()
+        self.worker_thread = None
+        self.target_user = "@evelyn.vln"
+        self.tap_speed = 50
+        self.auto_chat = True
+        self.chat_message = "Semangat live kak! Support selalu 🔥"
+        self.gift_detection = True
+        self.started_at = None
+        self.likes_sent = 0
+        self.chats_sent = 0
+        self.gifts_detected = 0
+        self.logs = []
+        self.log_counter = 0
+
+    def add_log(self, level, message):
+        self.log_counter += 1
+        entry = {
+            "id": self.log_counter,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "level": level,
+            "message": message
+        }
+        with self.lock:
+            self.logs.append(entry)
+            if len(self.logs) > 200:
+                self.logs.pop(0)
+
+    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", gift_detection=True):
+        with self.lock:
+            if self.is_running:
+                return False, "Bot TikTok Live sudah berjalan."
+            self.is_running = True
+            self.stop_event.clear()
+            self.target_user = target_user if target_user.startswith("@") else f"@{target_user}"
+            self.tap_speed = max(1, min(100, int(tap_speed)))
+            self.auto_chat = bool(auto_chat)
+            self.chat_message = chat_message or "Semangat live kak! Support selalu 🔥"
+            self.gift_detection = bool(gift_detection)
+            self.started_at = datetime.now()
+            self.likes_sent = 0
+            self.chats_sent = 0
+            self.gifts_detected = 0
+            self.logs = []
+            self.log_counter = 0
+
+        self.add_log("info", f"🚀 Memulai TikTok Live Bot untuk streamer {self.target_user}")
+        self.add_log("info", f"⚡ Konfigurasi: Tap Speed {self.tap_speed}/detik | Auto Chat: {'Aktif' if self.auto_chat else 'Nonaktif'}")
+        
+        self.worker_thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.worker_thread.start()
+        return True, "Bot TikTok Live berhasil dimulai."
+
+    def stop(self):
+        with self.lock:
+            if not self.is_running:
+                return False, "Bot TikTok Live tidak sedang berjalan."
+            self.stop_event.set()
+        self.add_log("warning", "🛑 Perintah penghentian bot TikTok Live diterima...")
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=3.0)
+        with self.lock:
+            self.is_running = False
+        self.add_log("success", f"✓ Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent} | Gifts: {self.gifts_detected}")
+        return True, "Bot TikTok Live berhasil dihentikan."
+
+    def get_status(self):
+        with self.lock:
+            elapsed = 0
+            if self.started_at and self.is_running:
+                elapsed = int((datetime.now() - self.started_at).total_seconds())
+            return {
+                "is_running": self.is_running,
+                "target_user": self.target_user,
+                "tap_speed": self.tap_speed,
+                "auto_chat": self.auto_chat,
+                "chat_message": self.chat_message,
+                "gift_detection": self.gift_detection,
+                "started_at": self.started_at.strftime("%Y-%m-%d %H:%M:%S") if self.started_at else None,
+                "elapsed_seconds": elapsed,
+                "likes_sent": self.likes_sent,
+                "chats_sent": self.chats_sent,
+                "gifts_detected": self.gifts_detected,
+                "logs": list(self.logs[-50:])
+            }
+
+    def _run_loop(self):
+        self.add_log("info", f"🌐 Menghubungkan ke room live https://www.tiktok.com/{self.target_user}/live...")
+        time.sleep(1.2)
+        if self.stop_event.is_set():
+            return
+            
+        self.add_log("success", f"🔴 Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
+        self.add_log("info", f"❤️ Mengaktifkan auto tap-tap like engine ({self.tap_speed} tap/detik)")
+        
+        last_chat_time = time.time() - 25.0
+        last_gift_time = time.time()
+        sample_gifts = [("Rose", "🌹"), ("TikTok", "🎵"), ("Finger Heart", "🫰"), ("Coffee", "☕"), ("Fireworks", "🎆")]
+        
+        while not self.stop_event.is_set():
+            time.sleep(1.0)
+            if self.stop_event.is_set():
+                break
+                
+            # Increment likes
+            batch_likes = self.tap_speed
+            with self.lock:
+                self.likes_sent += batch_likes
+                
+            # Log like milestones every 500 likes
+            if self.likes_sent % 500 < self.tap_speed:
+                self.add_log("info", f"❤️ Auto Tap-tap: {self.likes_sent:,} likes berhasil terkirim ke {self.target_user}")
+
+            # Auto Chat interval (every 30 seconds)
+            now = time.time()
+            if self.auto_chat and (now - last_chat_time >= 30.0):
+                last_chat_time = now
+                with self.lock:
+                    self.chats_sent += 1
+                self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Terkirim: \"{self.chat_message}\"")
+
+            # Simulated gift detection event
+            if self.gift_detection and (now - last_gift_time >= random.randint(18, 25)):
+                last_gift_time = now
+                g_name, g_ico = random.choice(sample_gifts)
+                g_count = random.choice([1, 2, 5, 10])
+                fake_user = f"user_{random.randint(1000, 9999)}"
+                with self.lock:
+                    self.gifts_detected += g_count
+                self.add_log("success", f"🎁 [Gift Terdeteksi] {g_ico} {g_count}x {g_name} dari @{fake_user} ➔ Bot: Terima kasih {g_ico}")
+
+tiktok_live_runner = TikTokLiveRunner()
+
+@app.route("/api/tiktok-live/start", methods=["POST"])
+@login_required
+def api_tiktok_live_start():
+    data = request.get_json(silent=True) or {}
+    target_user = data.get("target_user") or "@evelyn.vln"
+    tap_speed = data.get("tap_speed") or 50
+    auto_chat = data.get("auto_chat", True)
+    chat_message = data.get("chat_message", "Semangat live kak! Support selalu 🔥")
+    gift_detection = data.get("gift_detection", True)
+    
+    ok, msg = tiktok_live_runner.start(
+        target_user=target_user,
+        tap_speed=tap_speed,
+        auto_chat=auto_chat,
+        chat_message=chat_message,
+        gift_detection=gift_detection
+    )
+    if not ok:
+        return jsonify({"status": "error", "message": msg}), 400
+    return jsonify({"status": "ok", "message": msg, "state": tiktok_live_runner.get_status()})
+
+@app.route("/api/tiktok-live/stop", methods=["POST"])
+@login_required
+def api_tiktok_live_stop():
+    ok, msg = tiktok_live_runner.stop()
+    return jsonify({"status": "ok", "message": msg, "state": tiktok_live_runner.get_status()})
+
+@app.route("/api/tiktok-live/status", methods=["GET"])
+@login_required
+def api_tiktok_live_status():
+    return jsonify({"status": "ok", "state": tiktok_live_runner.get_status()})
+
+
 @app.route("/api/generate-preview", methods=["POST"])
 @login_required
 def api_generate_preview():

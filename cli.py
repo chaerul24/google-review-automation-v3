@@ -569,6 +569,147 @@ def prompt_login_server(default_user: str = "admin") -> bool:
     sys.exit(1)
 
 
+# ── Responsive Card UI for TikTok Live ──────────────────────────────────────
+
+def render_tiktok_live_cards(
+    width: int,
+    t_user: str,
+    tt_username: str,
+    is_logged_in: bool,
+    time_str: str,
+    likes: int,
+    speed: int,
+    chats: int,
+    gifts: int,
+    logs: List[str]
+) -> Group:
+    login_badge = "[bold green]✓ Sesi Aktif[/bold green]" if is_logged_in else "[bold yellow]Mode Tamu[/bold yellow]"
+
+    if width >= 115:
+        # PC / LAPTOP WIDE (>= 115 cols): 4 Horizon Cards Grid
+        grid = Table.grid(expand=True, padding=(0, 1))
+        grid.add_column(ratio=1)
+        grid.add_column(ratio=1)
+        grid.add_column(ratio=1)
+        grid.add_column(ratio=1)
+
+        c1 = Panel(
+            f"[bold yellow]{t_user}[/bold yellow]\n[bold red]🔴 ON-AIR[/bold red]\n⏱ [bold white]{time_str}[/bold white]",
+            title="[bold red]🔴 STREAMER[/bold red]",
+            border_style="red",
+            box=box.ROUNDED,
+            expand=True
+        )
+        c2 = Panel(
+            f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge}\n[dim]Chromium :99[/dim]",
+            title="[bold cyan]👤 AKUN BOT[/bold cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
+            expand=True
+        )
+        c3 = Panel(
+            f"[bold red]❤️ {likes:,} tap[/bold red]\n⚡ [bold yellow]{speed} tap/s[/bold yellow]\n[green]Status: Aktif[/green]",
+            title="[bold magenta]❤️ TAP LIKES[/bold magenta]",
+            border_style="magenta",
+            box=box.ROUNDED,
+            expand=True
+        )
+        c4 = Panel(
+            f"💬 [bold cyan]{chats} chat[/bold cyan]\n🎁 [bold magenta]{gifts} gift[/bold magenta]\n[green]DOM Live ✓[/green]",
+            title="[bold yellow]💬 CHAT & GIFT[/bold yellow]",
+            border_style="yellow",
+            box=box.ROUNDED,
+            expand=True
+        )
+        grid.add_row(c1, c2, c3, c4)
+
+    elif width >= 65:
+        # LAPTOP / TABLET (65-114 cols): 2x2 Grid Cards
+        grid = Table.grid(expand=True, padding=(0, 1))
+        grid.add_column(ratio=1)
+        grid.add_column(ratio=1)
+
+        c1 = Panel(
+            f"[bold yellow]{t_user}[/bold yellow]  [bold red]🔴 ON-AIR • :99[/bold red]\n⏱ Durasi: [bold white]{time_str}[/bold white]",
+            title="[bold red]🔴 STREAMER TARGET[/bold red]",
+            border_style="red",
+            box=box.ROUNDED,
+            expand=True
+        )
+        c2 = Panel(
+            f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nEngine: [dim]Native Chromium :99[/dim]",
+            title="[bold cyan]👤 AKUN TIKTOK[/bold cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
+            expand=True
+        )
+        c3 = Panel(
+            f"[bold red]❤️ {likes:,} tap[/bold red]  (⚡ [bold yellow]{speed}/dtk[/bold yellow])\nStatus: [green]Auto-Tapping Active 🔥[/green]",
+            title="[bold magenta]❤️ METRIK TAP-TAP LIKES[/bold magenta]",
+            border_style="magenta",
+            box=box.ROUNDED,
+            expand=True
+        )
+        c4 = Panel(
+            f"💬 [bold cyan]{chats} pesan[/bold cyan]  │  🎁 [bold magenta]{gifts} gift[/bold magenta]\nMonitor: [green]DOM WebSocket Active ✓[/green]",
+            title="[bold yellow]💬 LIVE CHAT & GIFT[/bold yellow]",
+            border_style="yellow",
+            box=box.ROUNDED,
+            expand=True
+        )
+        grid.add_row(c1, c2)
+        grid.add_row(c3, c4)
+
+    else:
+        # HP / MOBILE TERMUX (< 65 cols): Stacked Compact Mobile Cards
+        c_mobile1 = Panel(
+            f"[bold yellow]{t_user}[/bold yellow] • [bold red]🔴 LIVE[/bold red] • ⏱ [bold white]{time_str}[/bold white]\n"
+            f"👤 {tt_username} ({login_badge})",
+            title="[bold red]📱 STREAMER & LIVE (HP)[/bold red]",
+            border_style="red",
+            box=box.ROUNDED,
+            expand=True
+        )
+        c_mobile2 = Panel(
+            f"❤️ Likes: [bold red]{likes:,} tap[/bold red] (⚡ {speed}/s)\n"
+            f"💬 Chat : [bold cyan]{chats} pesan[/bold cyan] │ 🎁 Gift: [bold magenta]{gifts} gift[/bold magenta]",
+            title="[bold magenta]📊 STATISTIK LIVE[/bold magenta]",
+            border_style="magenta",
+            box=box.ROUNDED,
+            expand=True
+        )
+        grid = Group(c_mobile1, c_mobile2)
+
+    # Real-Time Logs Card
+    logs_slice = logs[-5:] if width < 65 else logs[-8:]
+    logs_str = "\n".join(logs_slice) if logs_slice else "[dim]Menghubungkan browser Chromium ke siaran TikTok Live...[/dim]"
+    card_logs = Panel(
+        logs_str,
+        title="[bold white]📋 Live Engine Logs (Virtual Display :99)[/bold white]",
+        border_style="bright_blue",
+        box=box.ROUNDED,
+        expand=True
+    )
+
+    # Control Action Footer Card
+    if width >= 65:
+        footer = Panel(
+            Align.center("[bold yellow]Ctrl + C[/bold yellow]: [bold red]Auto-Stop & Tutup Browser[/bold red] • [dim]Native Linux Chromium Display :99[/dim]"),
+            border_style="dim",
+            box=box.ROUNDED,
+            expand=True
+        )
+    else:
+        footer = Panel(
+            Align.center("[bold yellow]Ctrl + C[/bold yellow]: [bold red]Auto-Stop Bot[/bold red]"),
+            border_style="dim",
+            box=box.ROUNDED,
+            expand=True
+        )
+
+    return Group(grid, card_logs, footer)
+
+
 def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = "", interactive: bool = True):
     console.clear()
     console.print(render_banner())
@@ -687,29 +828,19 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                     except Exception:
                         pass
 
-                status_table = Table(box=box.ROUNDED, expand=True, border_style="cyan")
-                status_table.add_column("STREAMER TARGET", style="bold yellow")
-                status_table.add_column("STATUS LIVE", style="bold green")
-                status_table.add_column("STATUS AKUN", style="bold cyan")
-                status_table.add_column("DURASI", style="bold white")
-                status_table.add_column("LIKES", style="bold red")
-                status_table.add_column("CHAT", style="bold cyan")
-                status_table.add_column("GIFT", style="bold magenta")
-                
-                status_table.add_row(
-                    t_user,
-                    "🔴 LIVE (Display :99)",
-                    f"✓ Login {tt_username}" if is_logged_in_state else "Mode Tamu",
-                    time_str,
-                    f"❤️ {likes_sent:,} tap",
-                    f"💬 {chats_sent} pesan",
-                    f"🎁 {gifts_count} gift",
+                card_ui = render_tiktok_live_cards(
+                    width=console.width,
+                    t_user=t_user,
+                    tt_username=tt_username,
+                    is_logged_in=is_logged_in_state,
+                    time_str=time_str,
+                    likes=likes_sent,
+                    speed=t_speed,
+                    chats=chats_sent,
+                    gifts=gifts_count,
+                    logs=recent_logs
                 )
-
-                events_text = Text("\n".join(recent_logs) if recent_logs else "Menghubungkan browser Chromium ke siaran TikTok Live...")
-                events_panel = Panel(events_text, title="[bold white]Real-Time Browser Engine Logs (Virtual Display :99)[/bold white]", box=box.ROUNDED, border_style="dim")
-
-                live.update(Group(status_table, events_panel))
+                live.update(card_ui)
     except KeyboardInterrupt:
         console.print("\n[bold yellow]⚠️ Ctrl+C terdeteksi saat siaran TikTok Live berjalan![/bold yellow]")
         stop_all_running_tasks()

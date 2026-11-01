@@ -2541,8 +2541,32 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
             input(f"\n {C_DIM}Tekan Enter untuk kembali...{C_RESET}")
             return
 
+        cols = get_terminal_width()
         print_header_screen(client, title=f"MONITOR TIKTOK LIVE: {target_user}")
-        print(f" {C_CYAN}┌── [STREAM LOGS & MONITOR AKTIVITAS]{C_RESET}")
+
+        # Responsive Card UI for PC/Laptop vs HP/Mobile Termux
+        if cols >= 80:
+            card_lines = [
+                f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 ON-AIR (Display :99){C_RESET}",
+                f" {C_BOLD}{C_WHITE}Kecepatan Tap  {C_RESET} : {C_RED}{tap_speed} tap/detik{C_RESET}   │  {C_BOLD}{C_WHITE}Status Engine :{C_RESET} {C_GREEN}Native Linux Chromium{C_RESET}",
+                f" ───────────────────────────────────────────────────────────────────",
+                f" {C_BOLD}{C_CYAN}💬 Auto-Chat   {C_RESET} : {'Aktif' if auto_chat else 'Nonaktif'}        │  {C_BOLD}{C_MAGENTA}🎁 Gift Monitor:{C_RESET} {'Aktif' if gift_detection else 'Nonaktif'}",
+                f" {C_BOLD}{C_YELLOW}🛑 Auto-Stop   {C_RESET} : Tekan Ctrl+C untuk berhenti dan menutup browser :99",
+            ]
+            print_box(card_lines, width=68, title=f"{C_BOLD}{C_RED}CARD UI • TIKTOK LIVE DASHBOARD{C_RESET}")
+        else:
+            c_w = min(cols - 4, 46)
+            card_lines = [
+                f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [ON-AIR :99]",
+                f" {C_BOLD}{C_MAGENTA}⚡ SPEED {C_RESET} : {C_RED}{tap_speed} tap/detik{C_RESET}",
+                f" ───────────────────────────────────────",
+                f" {C_BOLD}{C_CYAN}💬 CHAT  {C_RESET} : {'Aktif' if auto_chat else 'Off'} │ {C_BOLD}🎁 GIFT:{C_RESET} {'Aktif' if gift_detection else 'Off'}",
+                f" ───────────────────────────────────────",
+                f" {C_BOLD}{C_YELLOW}🛑 Ctrl+C: Berhenti Otomatis & Tutup{C_RESET}",
+            ]
+            print_box(card_lines, width=c_w, title=f"{C_BOLD}{C_RED}TIKTOK LIVE (HP CARD){C_RESET}")
+
+        print(f"\n {C_CYAN}┌── [STREAM LOGS & MONITOR AKTIVITAS]{C_RESET}")
         print(f" {C_CYAN}│{C_RESET}   {C_DIM}Menampilkan status likes, chat, dan gift secara live. Tekan {C_BOLD}Ctrl+C{C_RESET} {C_DIM}untuk stop.{C_RESET}")
         print(f" {C_CYAN}│{C_RESET}")
 
@@ -2577,7 +2601,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                         lvl = (l.get("level") or "info").lower()
                         ts = (l.get("created_at") or "").split()[-1]
                         msg = l.get("message") or ""
-                        
+
                         col = C_WHITE
                         if lvl == "success":
                             col = C_GREEN
@@ -2588,7 +2612,11 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
 
                         print(f" {C_CYAN}│{C_RESET}   [{ts}] {col}{msg}{C_RESET}")
 
-                    sys.stdout.write(f"\r {C_CYAN}└──{C_RESET} [🔴 {target_user}] Waktu: {time_str} | ❤️ Likes: {likes:,} | 💬 Chat: {chats} | 🎁 Gift: {gifts}  ")
+                    cols = get_terminal_width()
+                    if cols >= 80:
+                        sys.stdout.write(f"\r {C_CYAN}└──{C_RESET} [🔴 {target_user}] {time_str} │ ❤️ {C_BOLD}{C_RED}{likes:,} tap{C_RESET} │ 💬 {C_CYAN}{chats} chat{C_RESET} │ 🎁 {C_MAGENTA}{gifts} gift{C_RESET} │ {C_DIM}Ctrl+C stop{C_RESET} \033[K")
+                    else:
+                        sys.stdout.write(f"\r {C_CYAN}└──{C_RESET} [🔴 {target_user[:10]}] {time_str} │ ❤️ {C_RED}{likes:,}{C_RESET} │ 💬 {chats} │ 🎁 {gifts} \033[K")
                     sys.stdout.flush()
                 except Exception:
                     pass

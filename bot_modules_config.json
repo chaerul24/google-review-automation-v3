@@ -13,8 +13,8 @@
     "name": "TikTok Live",
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
     "target_user": "@cutmey1231",
-    "tap_speed": 50,
-    "auto_chat": true,
+    "tap_speed": 5,
+    "auto_chat": false,
     "chat_message": "Halo kak",
     "gift_detection": false
   },

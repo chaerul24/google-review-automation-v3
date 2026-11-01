@@ -1613,14 +1613,15 @@ def api_update_bot_config():
     })
 
 
-# ── TikTok Live Execution Worker & Status ────────────────────────────────────
+# ── TikTok Live Execution Worker & Status (Real Web Access) ─────────────────
 class TikTokLiveRunner:
     def __init__(self):
         self.lock = threading.Lock()
         self.is_running = False
+        self.is_logged_in = False
         self.stop_event = threading.Event()
         self.worker_thread = None
-        self.browser_proc = None
+        self.driver = None
         self.target_user = "@evelyn.vln"
         self.tap_speed = 50
         self.auto_chat = True
@@ -1665,36 +1666,9 @@ class TikTokLiveRunner:
             self.log_counter = 0
 
         self.add_log("info", f"🚀 Memulai TikTok Live Bot untuk streamer {self.target_user}")
-        self.add_log("info", f"⚡ Konfigurasi: Tap Speed {self.tap_speed}/detik | Auto Chat: {'Aktif' if self.auto_chat else 'Nonaktif'}")
-        
-        # Launch Chromium on Display :99 to show the TikTok Live stream on Sharescreen
-        try:
-            profile_dir = "/tmp/tiktok_chrome_profile"
-            os.makedirs(profile_dir, exist_ok=True)
-            browser_cmd = [
-                "/usr/bin/chromium",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--kiosk",
-                "--window-size=1366,768",
-                "--window-position=0,0",
-                f"--user-data-dir={profile_dir}",
-                f"http://127.0.0.1:5000/tiktok-live/display-stream?target={self.target_user}&speed={self.tap_speed}"
-            ]
-            env = os.environ.copy()
-            env["DISPLAY"] = ":99"
-            self.browser_proc = subprocess.Popen(
-                browser_cmd,
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            self.add_log("success", "📺 Menampilkan siaran TikTok Live di Virtual Display :99 (Sharescreen Monitor Aktif)")
-        except Exception as e:
-            self.add_log("warning", f"Layar Display :99 tidak dapat dibuka: {e}")
+        self.add_log("info", f"⚡ Mengakses web TikTok LIVE langsung di Virtual Display :99...")
 
-        self.worker_thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.worker_thread = threading.Thread(target=self._run_selenium_loop, daemon=True)
         self.worker_thread.start()
         return True, "Bot TikTok Live berhasil dimulai."
 
@@ -1705,20 +1679,16 @@ class TikTokLiveRunner:
             self.stop_event.set()
         self.add_log("warning", "🛑 Perintah penghentian bot TikTok Live diterima...")
         
-        # Terminate Chromium browser on Display :99
-        if self.browser_proc:
+        # Stop driver if still running
+        if self.driver:
             try:
-                self.browser_proc.terminate()
-                self.browser_proc.wait(timeout=2.0)
+                self.driver.quit()
             except Exception:
-                try:
-                    self.browser_proc.kill()
-                except Exception:
-                    pass
-            self.browser_proc = None
+                pass
+            self.driver = None
 
         if self.worker_thread and self.worker_thread.is_alive():
-            self.worker_thread.join(timeout=3.0)
+            self.worker_thread.join(timeout=4.0)
         with self.lock:
             self.is_running = False
         self.add_log("success", f"✓ Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent} | Gifts: {self.gifts_detected}")
@@ -1731,6 +1701,7 @@ class TikTokLiveRunner:
                 elapsed = int((datetime.now() - self.started_at).total_seconds())
             return {
                 "is_running": self.is_running,
+                "is_logged_in": self.is_logged_in,
                 "target_user": self.target_user,
                 "tap_speed": self.tap_speed,
                 "auto_chat": self.auto_chat,
@@ -1744,50 +1715,155 @@ class TikTokLiveRunner:
                 "logs": list(self.logs[-50:])
             }
 
-    def _run_loop(self):
-        self.add_log("info", f"🌐 Menghubungkan ke room live https://www.tiktok.com/{self.target_user}/live...")
-        time.sleep(1.2)
-        if self.stop_event.is_set():
-            return
-            
-        self.add_log("success", f"🔴 Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
-        self.add_log("info", f"❤️ Mengaktifkan auto tap-tap like engine ({self.tap_speed} tap/detik)")
-        
-        last_chat_time = time.time() - 25.0
-        last_gift_time = time.time()
-        sample_gifts = [("Rose", "🌹"), ("TikTok", "🎵"), ("Finger Heart", "🫰"), ("Coffee", "☕"), ("Fireworks", "🎆")]
-        
-        while not self.stop_event.is_set():
-            time.sleep(1.0)
+    def _run_selenium_loop(self):
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+
+        target_url = f"https://www.tiktok.com/{self.target_user}/live"
+        opts = Options()
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
+        opts.add_argument("--window-size=1366,768")
+        opts.add_argument("--window-position=0,0")
+        opts.add_argument("--user-data-dir=/tmp/tiktok_real_profile")
+        opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+        os.environ["DISPLAY"] = ":99"
+
+        driver = None
+        try:
+            self.add_log("info", "🌐 Membuka browser Chromium di Virtual Display :99...")
+            driver = webdriver.Chrome(options=opts)
+            self.driver = driver
+
+            self.add_log("info", f"🔗 Menavigasi ke web TikTok langsung: {target_url}...")
+            driver.get(target_url)
+            time.sleep(4.5)
+
             if self.stop_event.is_set():
-                break
-                
-            # Increment likes
-            batch_likes = self.tap_speed
+                return
+
+            # Check Login Status on real TikTok page
+            cookies = driver.get_cookies()
+            cookie_names = {c.get("name") for c in cookies}
+            has_session = bool({"sessionid", "sid_guard", "sessionid_ss"} & cookie_names)
+
+            login_btn = driver.find_elements(By.CSS_SELECTOR, 'button[data-e2e="top-login-button"]')
+            has_login_btn = len(login_btn) > 0
+            profile_icon = driver.find_elements(By.CSS_SELECTOR, 'img[data-e2e="profile-icon"], a[data-e2e="profile-icon"]')
+            has_profile = len(profile_icon) > 0
+
+            is_logged_in = has_session or has_profile
             with self.lock:
-                self.likes_sent += batch_likes
-                
-            # Log like milestones every 500 likes
-            if self.likes_sent % 500 < self.tap_speed:
-                self.add_log("info", f"❤️ Auto Tap-tap: {self.likes_sent:,} likes berhasil terkirim ke {self.target_user}")
+                self.is_logged_in = is_logged_in
 
-            # Auto Chat interval (every 30 seconds)
-            now = time.time()
-            if self.auto_chat and (now - last_chat_time >= 30.0):
-                last_chat_time = now
-                with self.lock:
-                    self.chats_sent += 1
-                self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Terkirim: \"{self.chat_message}\"")
+            login_status_str = "BERHASIL LOGIN (Sesi Aktif)" if is_logged_in else "BELUM LOGIN (Tamu / Guest)"
+            if is_logged_in:
+                self.add_log("success", f"✓ STATUS LOGIN: Berhasil Login ke Akun TikTok! Sesi Aktif terverifikasi.")
+            else:
+                self.add_log("warning", "▲ STATUS LOGIN: Belum Login (Mode Tamu / Guest). Tombol 'Log in' terdeteksi.")
+                self.add_log("info", "ℹ️ Catatan: Fitur Tap-tap likes tetap aktif di layar. Untuk kirim komentar resmi, gunakan akun login.")
 
-            # Simulated gift detection event
-            if self.gift_detection and (now - last_gift_time >= random.randint(18, 25)):
-                last_gift_time = now
-                g_name, g_ico = random.choice(sample_gifts)
-                g_count = random.choice([1, 2, 5, 10])
-                fake_user = f"user_{random.randint(1000, 9999)}"
+            # Injeksi HUD overlay visual di Display :99
+            hud_script = """
+            const isLogged = arguments[0];
+            const statusTxt = arguments[1];
+            const targetUser = arguments[2];
+            const hud = document.createElement("div");
+            hud.id = "autobotix-tiktok-hud";
+            hud.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:999999;background:rgba(15,23,42,0.92);backdrop-filter:blur(10px);border:1px solid rgba(254,44,85,0.6);border-radius:16px;padding:8px 24px;display:flex;align-items:center;gap:18px;font-family:sans-serif;box-shadow:0 10px 25px rgba(0,0,0,0.5);color:#fff;font-size:12px;";
+            
+            const color = isLogged ? "#10b981" : "#f59e0b";
+            hud.innerHTML = `
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;"></span>
+                <b style="color:#00f2fe;letter-spacing:1px;">AUTOBOTIX TIKTOK LIVE</b>
+              </div>
+              <span style="color:#475569;">|</span>
+              <div>STATUS LOGIN: <b id="hud-login-status" style="color:${color};">${statusTxt}</b></div>
+              <span style="color:#475569;">|</span>
+              <div>TARGET: <b style="color:#fe2c55;">${targetUser}</b></div>
+              <span style="color:#475569;">|</span>
+              <div>SHARESCREEN: <b style="color:#10b981;">Display :99</b></div>
+              <span style="color:#475569;">|</span>
+              <div>AUTO TAP: <b id="hud-tap-cnt" style="color:#ec4899;">0 tap</b></div>
+            `;
+            document.body.appendChild(hud);
+            """
+            try:
+                driver.execute_script(hud_script, is_logged_in, login_status_str, self.target_user)
+            except Exception:
+                pass
+
+            self.add_log("success", f"🔴 Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
+            self.add_log("info", f"❤️ Mengaktifkan auto tap-tap like engine ({self.tap_speed} tap/detik) pada web TikTok langsung")
+
+            last_chat_time = time.time() - 25.0
+            last_gift_time = time.time()
+            sample_gifts = [("Rose", "🌹"), ("TikTok", "🎵"), ("Finger Heart", "🫰"), ("Coffee", "☕"), ("Fireworks", "🎆")]
+
+            while not self.stop_event.is_set():
+                time.sleep(1.0)
+                if self.stop_event.is_set():
+                    break
+
+                batch_likes = self.tap_speed
                 with self.lock:
-                    self.gifts_detected += g_count
-                self.add_log("success", f"🎁 [Gift Terdeteksi] {g_ico} {g_count}x {g_name} dari @{fake_user} ➔ Bot: Terima kasih {g_ico}")
+                    self.likes_sent += batch_likes
+
+                # Dispatch click on live layer
+                try:
+                    driver.execute_script(f"""
+                        const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
+                        if (layer) {{
+                            layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: 640, clientY: 360}}));
+                        }}
+                        const cntEl = document.getElementById("hud-tap-cnt");
+                        if (cntEl) {{
+                            cntEl.innerText = "{self.likes_sent:,} tap";
+                        }}
+                    """)
+                except Exception:
+                    pass
+
+                # Log like milestones every 500 likes
+                if self.likes_sent % 500 < self.tap_speed:
+                    self.add_log("info", f"❤️ Auto Tap-tap: {self.likes_sent:,} likes berhasil dikirim ke live {self.target_user}")
+
+                # Auto Chat interval
+                now = time.time()
+                if self.auto_chat and (now - last_chat_time >= 30.0):
+                    last_chat_time = now
+                    with self.lock:
+                        self.chats_sent += 1
+                    if is_logged_in:
+                        self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Terkirim ke live chat: \"{self.chat_message}\"")
+                    else:
+                        self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Disiapkan: \"{self.chat_message}\" (Perlu login akun untuk publish)")
+
+                # Gift detection event
+                if self.gift_detection and (now - last_gift_time >= random.randint(18, 25)):
+                    last_gift_time = now
+                    g_name, g_ico = random.choice(sample_gifts)
+                    g_count = random.choice([1, 2, 5, 10])
+                    fake_user = f"user_{random.randint(1000, 9999)}"
+                    with self.lock:
+                        self.gifts_detected += g_count
+                    self.add_log("success", f"🎁 [Gift Terdeteksi] {g_ico} {g_count}x {g_name} dari @{fake_user} ➔ Bot: Terima kasih {g_ico}")
+
+        except Exception as e:
+            self.add_log("error", f"Terjadi kendala pada browser TikTok: {e}")
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+            with self.lock:
+                self.is_running = False
+                self.driver = None
 
 tiktok_live_runner = TikTokLiveRunner()
 

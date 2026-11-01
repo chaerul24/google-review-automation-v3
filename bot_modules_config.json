@@ -12,11 +12,11 @@
     "enabled": true,
     "name": "TikTok Live",
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
-    "target_user": "@1",
+    "target_user": "@herestheseverence",
     "tap_speed": 50,
     "auto_chat": true,
     "chat_message": "Semangat live kak! Support selalu 🔥",
-    "gift_detection": true
+    "gift_detection": false
   },
   "youtube_live": {
     "enabled": false,

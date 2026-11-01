@@ -1703,12 +1703,45 @@ def api_update_bot_config():
     })
 
 
-# ── TikTok Live Execution Worker & Status (Real Web Access) ─────────────────
+# ── TikTok Live Execution Worker & Status (Real Web Access - Headless Engine) ──
 def send_comment_to_live(driver, message):
-    """Kirim komentar nyata ke live chat TikTok via DOM / contenteditable & send button."""
+    """Kirim komentar nyata ke live chat TikTok via Selenium typing & Enter (Headless-safe)."""
     if not driver or not message:
         return False, "Driver atau pesan komentar kosong"
 
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+
+    # Primary: Native element focus, typing, and Enter (Works 100% in Headless)
+    try:
+        inputs = driver.find_elements(By.CSS_SELECTOR, '[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"]')
+        if inputs:
+            inp = inputs[0]
+            inp.click()
+            time.sleep(0.3)
+            inp.send_keys(message)
+            time.sleep(0.5)
+            inp.send_keys(Keys.ENTER)
+            time.sleep(1.2)
+
+            txt = driver.execute_script("return arguments[0].innerText || '';", inp)
+            if txt.strip() == "":
+                return True, "enter_key_sent"
+
+            # If still has text, try clicking the send button
+            send_btns = driver.find_elements(By.CSS_SELECTOR, '[data-e2e="room-chat-send-btn"]')
+            if send_btns:
+                btn = send_btns[0]
+                driver.execute_script("arguments[0].classList.remove('invisible', 'cursor-not-allowed');", btn)
+                btn.click()
+                time.sleep(1.2)
+                txt2 = driver.execute_script("return arguments[0].innerText || '';", inp)
+                if txt2.strip() == "":
+                    return True, "send_btn_click"
+    except Exception:
+        pass
+
+    # Secondary Fallback: JavaScript synthetic input
     script = """
     const msg = arguments[0];
     const input = document.querySelector('[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]');
@@ -1721,15 +1754,12 @@ def send_comment_to_live(driver, message):
         input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
 
-        // Check & click send button
         const sendBtn = document.querySelector('[data-e2e="room-chat-send-btn"]');
         if (sendBtn) {
             sendBtn.classList.remove('invisible', 'cursor-not-allowed');
             sendBtn.click();
             return { ok: true, method: "send_btn_click" };
         }
-
-        // Fallback: Dispatch Enter key
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
         return { ok: true, method: "enter_key" };
     } catch(err) {
@@ -1740,17 +1770,6 @@ def send_comment_to_live(driver, message):
         res = driver.execute_script(script, message)
         if res and res.get("ok"):
             return True, res.get("method")
-        
-        # Fallback to selenium send_keys if JS dispatch missed
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.common.keys import Keys
-        inputs = driver.find_elements(By.CSS_SELECTOR, '[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]')
-        if inputs:
-            inp = inputs[0]
-            inp.click()
-            inp.send_keys(message)
-            inp.send_keys(Keys.ENTER)
-            return True, "selenium_keys"
         return False, (res.get("error") if res else "element_not_found")
     except Exception as e:
         return False, str(e)
@@ -1873,7 +1892,7 @@ class TikTokLiveRunner:
         mode_desc = "⚡ Mode Paralel (Serentak)" if self.execution_mode == "parallel" else "🔄 Mode Bergantian (Rotasi)"
         acc_summary = f"{len(self.selected_accounts)} akun aktif" if self.selected_accounts else "Mode Tamu (Guest)"
         self.add_log("info", f"🚀 Memulai TikTok Live Bot: streamer {self.target_user} ({acc_summary} • {mode_desc})")
-        self.add_log("info", f"⚡ Menghubungkan browser Chromium ke siaran LIVE pada Virtual Display :99...")
+        self.add_log("info", f"⚡ Menghubungkan browser Chromium (Headless Engine) ke siaran LIVE...")
 
         master_thread = threading.Thread(target=self._run_master, daemon=True)
         master_thread.start()
@@ -1963,29 +1982,10 @@ class TikTokLiveRunner:
 
     def _run_parallel_mode(self):
         total = len(self.selected_accounts)
-        geometries = []
-        if total == 2:
-            geometries = [(683, 768, 0, 0), (683, 768, 683, 0)]
-        elif total == 3:
-            geometries = [(455, 768, 0, 0), (455, 768, 455, 0), (455, 768, 910, 0)]
-        elif total >= 4:
-            # 2x2 grid on 1366x768 Display :99
-            geometries = [
-                (683, 384, 0, 0),
-                (683, 384, 683, 0),
-                (683, 384, 0, 384),
-                (683, 384, 683, 384),
-            ]
-            for idx in range(4, total):
-                geometries.append((683, 384, (idx % 2) * 683, ((idx // 2) % 2) * 384))
-        else:
-            geometries = [(1366, 768, 0, 0)]
-
-        self.add_log("info", f"⚡ [Mode Paralel] Meluncurkan {total} worker browser serentak di Display :99...")
+        self.add_log("info", f"⚡ [Mode Paralel] Meluncurkan {total} worker Chromium Headless serentak...")
         threads = []
         for i, acc in enumerate(self.selected_accounts):
-            geom = geometries[i] if i < len(geometries) else (683, 384, (i % 2) * 683, 0)
-            t = threading.Thread(target=self._run_single_worker, args=(i, total, acc, geom), daemon=True)
+            t = threading.Thread(target=self._run_single_worker, args=(i, total, acc), daemon=True)
             threads.append(t)
             with self.lock:
                 self.worker_threads.append(t)
@@ -1995,7 +1995,7 @@ class TikTokLiveRunner:
         for t in threads:
             t.join()
 
-    def _run_single_worker(self, worker_idx, total_workers, acc, geom):
+    def _run_single_worker(self, worker_idx, total_workers, acc):
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
 
@@ -2008,20 +2008,17 @@ class TikTokLiveRunner:
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-gpu")
-        w, h, x, y = geom
-        opts.add_argument(f"--window-size={w},{h}")
-        opts.add_argument(f"--window-position={x},{y}")
+        opts.add_argument("--window-size=1366,768")
+        opts.add_argument("--headless=new")
         opts.add_argument(f"--user-data-dir=/tmp/tiktok_worker_{acc_id}_{worker_idx}")
         opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         opts.add_argument("--disable-blink-features=AutomationControlled")
         opts.add_experimental_option("excludeSwitches", ["enable-automation"])
         opts.add_experimental_option("useAutomationExtension", False)
 
-        os.environ["DISPLAY"] = ":99"
-
         driver = None
         try:
-            self.add_log("info", f"🌐 [Worker {worker_idx + 1}/{total_workers}] Membuka Chromium untuk {user} ({w}x{h})...")
+            self.add_log("info", f"🌐 [Worker {worker_idx + 1}/{total_workers}] Membuka Chromium Headless untuk {user}...")
             driver = webdriver.Chrome(options=opts)
             with self.lock:
                 self.drivers.append(driver)
@@ -2047,31 +2044,6 @@ class TikTokLiveRunner:
             else:
                 self.add_log("warning", f"▲ [Worker {worker_idx + 1}] {user}: Berjalan dalam Mode Tamu.")
 
-            status_txt = "LOGIN AKTIF" if is_logged else "MODE TAMU"
-            color = "#10b981" if is_logged else "#f59e0b"
-            hud_script = f"""
-            const hud = document.createElement("div");
-            hud.id = "autobotix-hud-{worker_idx}";
-            hud.style.cssText = "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:999999;background:rgba(15,23,42,0.92);backdrop-filter:blur(8px);border:1px solid rgba(254,44,85,0.7);border-radius:12px;padding:6px 14px;display:flex;align-items:center;gap:10px;font-family:sans-serif;color:#fff;font-size:11px;box-shadow:0 6px 16px rgba(0,0,0,0.5);";
-            hud.innerHTML = `
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 6px #ef4444;"></span>
-                    <b style="color:#00f2fe;">{user}</b>
-                </div>
-                <span style="color:#475569;">|</span>
-                <div>MODE: <b style="color:#10b981;">⚡ PARALEL</b></div>
-                <span style="color:#475569;">|</span>
-                <div>STATUS: <b style="color:{color};">{status_txt}</b></div>
-                <span style="color:#475569;">|</span>
-                <div>TAP: <b id="hud-tap-{worker_idx}" style="color:#ec4899;">0</b></div>
-            `;
-            document.body.appendChild(hud);
-            """
-            try:
-                driver.execute_script(hud_script)
-            except Exception:
-                pass
-
             worker_likes = 0
             worker_tap = self.tap_speed
             last_chat_time = time.time() - 30.0 + (worker_idx * 7.0)
@@ -2090,10 +2062,8 @@ class TikTokLiveRunner:
                     driver.execute_script(f"""
                         const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
                         if (layer) {{
-                            layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: {w // 2}, clientY: {h // 2}}}));
+                            layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: 640, clientY: 360}}));
                         }}
-                        const el = document.getElementById("hud-tap-{worker_idx}");
-                        if (el) el.innerText = "{worker_likes:,}";
                     """)
                 except Exception:
                     with self.lock:
@@ -2138,7 +2108,6 @@ class TikTokLiveRunner:
     def _run_sequential_mode(self):
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.common.by import By
 
         target_url = f"https://www.tiktok.com/{self.target_user}/live"
         opts = Options()
@@ -2147,18 +2116,16 @@ class TikTokLiveRunner:
         opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-gpu")
         opts.add_argument("--window-size=1366,768")
-        opts.add_argument("--window-position=0,0")
+        opts.add_argument("--headless=new")
         opts.add_argument("--user-data-dir=/tmp/tiktok_seq_profile")
         opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         opts.add_argument("--disable-blink-features=AutomationControlled")
         opts.add_experimental_option("excludeSwitches", ["enable-automation"])
         opts.add_experimental_option("useAutomationExtension", False)
 
-        os.environ["DISPLAY"] = ":99"
-
         driver = None
         try:
-            self.add_log("info", "🌐 Membuka browser Chromium di Virtual Display :99 (Mode Bergantian)...")
+            self.add_log("info", "🌐 Membuka browser Chromium Headless (Mode Bergantian)...")
             driver = webdriver.Chrome(options=opts)
             with self.lock:
                 self.drivers.append(driver)
@@ -2210,36 +2177,6 @@ class TikTokLiveRunner:
                 login_status_str = "BELUM LOGIN (Tamu / Guest)"
                 self.add_log("warning", "▲ STATUS LOGIN: Belum Login (Mode Tamu).")
 
-            hud_script = """
-            const isLogged = arguments[0];
-            const statusTxt = arguments[1];
-            const targetUser = arguments[2];
-            const hud = document.createElement("div");
-            hud.id = "autobotix-tiktok-hud";
-            hud.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:999999;background:rgba(15,23,42,0.92);backdrop-filter:blur(10px);border:1px solid rgba(254,44,85,0.6);border-radius:16px;padding:8px 24px;display:flex;align-items:center;gap:18px;font-family:sans-serif;box-shadow:0 10px 25px rgba(0,0,0,0.5);color:#fff;font-size:12px;";
-            
-            const color = isLogged ? "#10b981" : "#f59e0b";
-            hud.innerHTML = `
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 10px #ef4444;"></span>
-                <b style="color:#00f2fe;letter-spacing:1px;">AUTOBOTIX TIKTOK LIVE</b>
-              </div>
-              <span style="color:#475569;">|</span>
-              <div>MODE: <b style="color:#eab308;">🔄 BERGANTIAN</b></div>
-              <span style="color:#475569;">|</span>
-              <div>STATUS: <b id="hud-login-status" style="color:${color};">${statusTxt}</b></div>
-              <span style="color:#475569;">|</span>
-              <div>TARGET: <b style="color:#fe2c55;">${targetUser}</b></div>
-              <span style="color:#475569;">|</span>
-              <div>AUTO TAP: <b id="hud-tap-cnt" style="color:#ec4899;">0 tap</b></div>
-            `;
-            document.body.appendChild(hud);
-            """
-            try:
-                driver.execute_script(hud_script, is_logged_in, login_status_str, self.target_user)
-            except Exception:
-                pass
-
             self.add_log("success", f"🔴 Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
             self.add_log("info", f"❤️ Mengaktifkan auto tap-tap like engine ({self.tap_speed} tap/detik) pada web TikTok langsung")
 
@@ -2261,10 +2198,6 @@ class TikTokLiveRunner:
                         const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
                         if (layer) {{
                             layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: 640, clientY: 360}}));
-                        }}
-                        const cntEl = document.getElementById("hud-tap-cnt");
-                        if (cntEl) {{
-                            cntEl.innerText = "{self.likes_sent:,} tap";
                         }}
                     """)
                 except Exception:

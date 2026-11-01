@@ -2644,7 +2644,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     # Responsive Card UI (PC/Laptop vs Mobile Termux) - WITHOUT Ctrl+C inside card
                     if cols >= 80:
                         card_lines = [
-                            f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 ON-AIR (Display :99){C_RESET}  ⏱ {time_str}",
+                            f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 LIVE ON-AIR{C_RESET}  ⏱ {time_str}",
                             f" {C_BOLD}{C_WHITE}Akun TikTok    {C_RESET} : {C_BOLD}{C_CYAN}{live_acc_label}{C_RESET}   │  {C_BOLD}{C_WHITE}Mode   :{C_RESET} {mode_tag}",
                             f" {C_BOLD}{C_WHITE}Metrik Likes   {C_RESET} : {C_BOLD}{C_RED}❤️ {likes:,} tap{C_RESET} ({tap_speed} tap/s)  │  {C_BOLD}{C_CYAN}💬 Chat :{C_RESET} {chats} terkirim",
                             f" ───────────────────────────────────────────────────────────────────",
@@ -2654,7 +2654,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     else:
                         c_w = min(cols - 4, 46)
                         card_lines = [
-                            f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [LIVE :99] ⏱ {time_str}",
+                            f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [LIVE] ⏱ {time_str}",
                             f" {C_BOLD}{C_CYAN}👤 AKUN  {C_RESET} : {live_acc_label[:18]} │ {mode_tag}",
                             f" {C_BOLD}{C_MAGENTA}⚡ LIKES {C_RESET} : {C_RED}❤️ {likes:,}{C_RESET} ({tap_speed}/s) │ 💬 {chats}",
                             f" ───────────────────────────────────────",
@@ -2689,7 +2689,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
 
                     # Render Ctrl+C as plain text WITHOUT card
                     if cols >= 80:
-                        print(f"\n   {C_DIM}Tekan {C_BOLD}{C_YELLOW}Ctrl+C{C_RESET}{C_DIM} untuk Auto-Stop & Menutup Browser :99{C_RESET}")
+                        print(f"\n   {C_DIM}Tekan {C_BOLD}{C_YELLOW}Ctrl+C{C_RESET}{C_DIM} untuk Auto-Stop & Menutup Bot (Headless){C_RESET}")
                     else:
                         print(f"\n   {C_DIM}Tekan {C_BOLD}{C_YELLOW}Ctrl+C{C_RESET}{C_DIM} untuk Auto-Stop Bot{C_RESET}")
                     sys.stdout.flush()
@@ -2700,7 +2700,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
             time.sleep(0.2)
 
     except (KeyboardInterrupt, EOFError):
-        print(f"\n\n {C_BOLD}{C_RED}🛑 Ctrl+C Terdeteksi: Menghentikan bot TikTok Live & menutup Chromium :99...{C_RESET}")
+        print(f"\n\n {C_BOLD}{C_RED}🛑 Ctrl+C Terdeteksi: Menghentikan bot TikTok Live (Headless)...{C_RESET}")
         try:
             client.stop_tiktok_live()
             print(f" {C_GREEN}✓ Bot TikTok Live berhasil dihentikan.{C_RESET}")

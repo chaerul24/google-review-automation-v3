@@ -598,14 +598,14 @@ def render_tiktok_live_cards(
         grid.add_column(ratio=1)
 
         c1 = Panel(
-            f"[bold yellow]{t_user}[/bold yellow]\n[bold red]🔴 ON-AIR (:99)[/bold red]\n⏱ Durasi: [bold white]{time_str}[/bold white]",
+            f"[bold yellow]{t_user}[/bold yellow]\n[bold red]🔴 LIVE ON-AIR[/bold red]\n⏱ Durasi: [bold white]{time_str}[/bold white]",
             title="[bold red]🔴 STREAMER[/bold red]",
             border_style="red",
             box=box.ROUNDED,
             expand=True
         )
         c2 = Panel(
-            f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge} │ {mode_badge}\n[dim]Chromium :99[/dim]",
+            f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge} │ {mode_badge}\n[dim]Native Headless[/dim]",
             title="[bold cyan]👤 AKUN & MODE[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -638,14 +638,14 @@ def render_tiktok_live_cards(
         grid.add_column(ratio=1)
 
         c1 = Panel(
-            f"[bold yellow]{t_user}[/bold yellow]  [bold red]🔴 ON-AIR • :99[/bold red]\n⏱ Durasi: [bold white]{time_str}[/bold white]",
+            f"[bold yellow]{t_user}[/bold yellow]  [bold red]🔴 LIVE ON-AIR[/bold red]\n⏱ Durasi: [bold white]{time_str}[/bold white]",
             title="[bold red]🔴 STREAMER TARGET[/bold red]",
             border_style="red",
             box=box.ROUNDED,
             expand=True
         )
         c2 = Panel(
-            f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nMode: {mode_badge} • [dim]Display :99[/dim]",
+            f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nMode: {mode_badge} • [dim]Headless Engine[/dim]",
             title="[bold cyan]👤 AKUN & MODE[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -711,7 +711,7 @@ def render_tiktok_live_cards(
     # Control Action Footer (Text WITHOUT Card)
     if width >= 65:
         footer = Align.center(
-            Text.from_markup("\n[dim]Tekan [/dim][bold yellow]Ctrl+C[/bold yellow][dim] untuk Auto-Stop & Tutup Browser (Display :99)[/dim]")
+            Text.from_markup("\n[dim]Tekan [/dim][bold yellow]Ctrl+C[/bold yellow][dim] untuk Auto-Stop & Tutup Bot (Headless)[/dim]")
         )
     else:
         footer = Align.center(
@@ -726,7 +726,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
     console.print(render_banner())
     console.print(Panel(
         Align.center("[bold cyan]🎵 TIKTOK LIVE (MULAI) — OTOMASI LIVE STREAMING[/bold cyan]\n"
-                     "[dim]Auto Tap-tap Likes, Auto Chat & Multi-Akun Cookie pada Virtual Display :99[/dim]"),
+                     "[dim]Auto Tap-tap Likes, Auto Chat & Multi-Akun Cookie (Native Headless Engine)[/dim]"),
         box=box.ROUNDED,
         border_style="magenta",
     ))
@@ -815,7 +815,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
         t_chat = default_chat
 
     mode_label = "⚡ Paralel (Serentak)" if chosen_mode == "parallel" else "🔄 Bergantian (Rotasi)"
-    console.print(f"\n[bold cyan]🚀 Memulai bot Chromium TikTok Live pada Virtual Display :99 untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
+    console.print(f"\n[bold cyan]🚀 Memulai bot Chromium TikTok Live (Headless) untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
     console.print(f"[dim]Menyiapkan akun: {account_label} • Mode: {mode_label}...[/dim]")
     console.print("[dim]Tekan Ctrl+C untuk menghentikan bot dan kembali ke menu.[/dim]\n")
 

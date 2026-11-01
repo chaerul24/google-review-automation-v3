@@ -15,7 +15,7 @@
     "target_user": "@adonara1990",
     "tap_speed": 5,
     "auto_chat": true,
-    "chat_message": "Halo kak",
+    "chat_message": "halo",
     "multi_account": true,
     "execution_mode": "parallel"
   },

@@ -252,6 +252,9 @@ export default function Dashboard({ onLogout }) {
   const [tiktokCookieForm, setTikTokCookieForm] = useState({ username: '', nickname: '', cookie_json: '' });
   const [isSubmittingTikTokCookie, setIsSubmittingTikTokCookie] = useState(false);
   const [testingTikTokId, setTestingTikTokId] = useState(null);
+  const [isDetectingTikTok, setIsDetectingTikTok] = useState(false);
+  const [detectedTikTokInfo, setDetectedTikTokInfo] = useState(null);
+  const detectTimeoutRef = useRef(null);
 
   const [showAddBizModal, setShowAddBizModal] = useState(false);
   const [bizForm, setBizForm] = useState({ name: '', url: '' });
@@ -693,6 +696,38 @@ export default function Dashboard({ onLogout }) {
       setErrorMsg(`Gagal menguji sesi: ${err.message || err}`);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const triggerDetectTikTok = async (cookiePayload) => {
+    const payload = (cookiePayload || tiktokCookieForm.cookie_json || '').trim();
+    if (!payload || payload.length < 10) return;
+    setIsDetectingTikTok(true);
+    setDetectedTikTokInfo(null);
+    try {
+      const res = await api.detectTikTokAccount(payload);
+      setDetectedTikTokInfo(res);
+      if (res.username) {
+        setTikTokCookieForm(prev => ({
+          ...prev,
+          username: prev.username || res.username,
+          nickname: prev.nickname || res.nickname || ''
+        }));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsDetectingTikTok(false);
+    }
+  };
+
+  const handleCookieJsonChange = (val) => {
+    setTikTokCookieForm(prev => ({ ...prev, cookie_json: val }));
+    if (detectTimeoutRef.current) clearTimeout(detectTimeoutRef.current);
+    if (val && val.length > 20) {
+      detectTimeoutRef.current = setTimeout(() => {
+        triggerDetectTikTok(val);
+      }, 700);
     }
   };
 
@@ -2799,6 +2834,7 @@ export default function Dashboard({ onLogout }) {
                 <button
                   onClick={() => {
                     setTikTokCookieForm({ username: '', nickname: '', cookie_json: '' });
+                    setDetectedTikTokInfo(null);
                     setShowTikTokCookieModal(true);
                   }}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-xs transition-colors cursor-pointer"
@@ -5694,8 +5730,80 @@ export default function Dashboard({ onLogout }) {
 
             <form onSubmit={handleAddTikTokCookie} className="space-y-4">
               <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Payload Cookie TikTok (JSON Cookie-Editor / Raw sessionid) *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => triggerDetectTikTok()}
+                    disabled={isDetectingTikTok || !tiktokCookieForm.cookie_json}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-pink-600 hover:text-pink-700 hover:bg-pink-50 px-2 py-0.5 rounded cursor-pointer disabled:opacity-40 transition-colors"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isDetectingTikTok ? 'animate-spin' : ''}`} />
+                    <span>{isDetectingTikTok ? 'Mendeteksi...' : '🔍 Deteksi Akun Otomatis'}</span>
+                  </button>
+                </div>
+                <textarea
+                  required
+                  rows={7}
+                  placeholder='Tempelkan JSON dari ekstensi Cookie-Editor atau token sessionid di sini (contoh: [{"name": "sessionid", "value": "..."}, ...] atau sessionid=xxxxx)'
+                  value={tiktokCookieForm.cookie_json}
+                  onChange={(e) => handleCookieJsonChange(e.target.value)}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData('text');
+                    if (pasted && pasted.length > 10) {
+                      setTimeout(() => triggerDetectTikTok(pasted), 120);
+                    }
+                  }}
+                  className="w-full p-3 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 font-mono"
+                />
+              </div>
+
+              {/* Status Banner Deteksi Otomatis */}
+              {isDetectingTikTok && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 animate-pulse">
+                  <RefreshCw className="w-4 h-4 text-pink-500 animate-spin shrink-0" />
+                  <span>Sedang memindai & mendeteksi profil akun TikTok dari cookie...</span>
+                </div>
+              )}
+
+              {detectedTikTokInfo && !isDetectingTikTok && (
+                detectedTikTokInfo.detected || detectedTikTokInfo.username ? (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 animate-in fade-in">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-900 text-pink-500 flex items-center justify-center shrink-0 border border-emerald-300 overflow-hidden shadow-xs">
+                        {detectedTikTokInfo.avatar_url ? (
+                          <img src={detectedTikTokInfo.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <TikTokLogo className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                          <span>{detectedTikTokInfo.username}</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-200/80 text-emerald-800 font-semibold">
+                            Terdeteksi Otomatis
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 truncate">
+                          {detectedTikTokInfo.nickname ? `Nama: ${detectedTikTokInfo.nickname}` : 'Sesi Aktif Terverifikasi'}
+                        </p>
+                      </div>
+                    </div>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 animate-in fade-in">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="truncate">{detectedTikTokInfo.reason || 'Token sesi belum dapat diverifikasi secara langsung.'}</span>
+                  </div>
+                )
+              )}
+
+              <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Username Akun TikTok (Opsional, otomatis diekstrak jika ada di JSON)
+                  Username Akun TikTok (Otomatis terisi saat cookie ditempel)
                 </label>
                 <input
                   type="text"
@@ -5708,28 +5816,14 @@ export default function Dashboard({ onLogout }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nama Panggilan / Label (Opsional)
+                  Nama Panggilan / Nickname (Otomatis terisi saat cookie ditempel)
                 </label>
                 <input
                   type="text"
-                  placeholder="contoh: Akun Utama / Bot 1"
+                  placeholder="contoh: Evelyn Valencia"
                   value={tiktokCookieForm.nickname}
                   onChange={(e) => setTikTokCookieForm({ ...tiktokCookieForm, nickname: e.target.value })}
                   className="w-full px-3.5 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Payload Cookie TikTok (JSON Cookie-Editor / Raw sessionid) *
-                </label>
-                <textarea
-                  required
-                  rows={8}
-                  placeholder='Tempelkan JSON dari ekstensi Cookie-Editor atau token sessionid di sini (contoh: [{"name": "sessionid", "value": "..."}, ...] atau sessionid=xxxxx)'
-                  value={tiktokCookieForm.cookie_json}
-                  onChange={(e) => setTikTokCookieForm({ ...tiktokCookieForm, cookie_json: e.target.value })}
-                  className="w-full p-3 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 font-mono"
                 />
               </div>
 

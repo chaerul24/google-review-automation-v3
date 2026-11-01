@@ -273,6 +273,13 @@ export const api = {
     return request('/api/tiktok-cookies');
   },
 
+  async detectTikTokAccount(cookie_json) {
+    return request('/api/tiktok-cookies/detect', {
+      method: 'POST',
+      body: JSON.stringify({ cookie_json }),
+    });
+  },
+
   async addTikTokCookie(username, cookie_json, nickname = '') {
     return request('/api/tiktok-cookies', {
       method: 'POST',

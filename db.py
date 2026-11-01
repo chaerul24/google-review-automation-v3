@@ -1450,7 +1450,7 @@ def get_active_tiktok_cookie():
         return dict(row) if row else None
 
 
-def save_tiktok_cookie(username, cookie_json, nickname="", status="active", error_reason=None):
+def save_tiktok_cookie(username, cookie_json, nickname="", status="active", error_reason=None, avatar_url=""):
     """Insert or update a TikTok account cookie."""
     username = str(username).strip()
     if username and not username.startswith("@"):
@@ -1462,16 +1462,17 @@ def save_tiktok_cookie(username, cookie_json, nickname="", status="active", erro
         if existing:
             conn.execute(
                 "UPDATE tiktok_cookies SET cookie_json = ?, nickname = COALESCE(NULLIF(?, ''), nickname), "
+                "avatar_url = COALESCE(NULLIF(?, ''), avatar_url), "
                 "status = ?, error_reason = ?, last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP "
                 "WHERE LOWER(username) = LOWER(?)",
-                (cookie_json, nickname, status, error_reason, username),
+                (cookie_json, nickname, avatar_url, status, error_reason, username),
             )
             return existing["id"], False
         else:
             cur = conn.execute(
-                "INSERT INTO tiktok_cookies (username, nickname, cookie_json, status, error_reason, last_checked_at) "
-                "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-                (username, nickname, cookie_json, status, error_reason),
+                "INSERT INTO tiktok_cookies (username, nickname, avatar_url, cookie_json, status, error_reason, last_checked_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                (username, nickname, avatar_url, cookie_json, status, error_reason),
             )
             return cur.lastrowid, True
 

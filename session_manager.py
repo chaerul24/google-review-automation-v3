@@ -1221,20 +1221,24 @@ def check_tiktok_account_live(cookie_json_or_list: Any, fallback_account: str = 
     """Inspect cookie to verify TikTok session and extract account details.
     
     Supports Cookie-Editor JSON array and raw cookie headers.
-    Returns:
-        {
-            "status": "active" | "needs_login" | "invalid",
-            "is_valid": bool,
-            "account_name": str,
-            "email": str,
-            "reason": str
-        }
+    Attempts live query to TikTok Passport API and HTML scraping to detect:
+    - Real username / unique_id (e.g. @uniqueId)
+    - Real nickname / screen_name
+    - Avatar URL
+    - User ID
     """
+    import ssl
+    import urllib.request
+    import urllib.error
+
     val = validate_cookie_payload(cookie_json_or_list, target_domain="tiktok.com")
     if not val.is_valid and val.status == SessionStatus.INVALID:
         return {
             "status": SessionStatus.INVALID.value,
             "is_valid": False,
+            "username": fallback_account,
+            "nickname": "",
+            "avatar_url": "",
             "account_name": fallback_account,
             "email": fallback_account,
             "reason": val.reason,
@@ -1244,46 +1248,165 @@ def check_tiktok_account_live(cookie_json_or_list: Any, fallback_account: str = 
     has_sid_guard = False
     living_id = None
     uid = None
+    hint_username = ""
+    cookie_parts = []
 
+    # Check for direct username or hints in sanitized cookies
     for ck in val.sanitized_cookies:
         name = (ck.get("name") or "").strip().lower()
         val_str = str(ck.get("value") or "").strip()
+        if name and val_str:
+            cookie_parts.append(f"{ck.get('name')}={val_str}")
         if name == "sessionid" and len(val_str) > 8:
             has_sessionid = True
         elif name == "sid_guard" and len(val_str) > 8:
             has_sid_guard = True
-        elif name == "living_user_id" and val_str:
+        elif name in ("living_user_id", "user_id") and val_str:
             living_id = val_str
-        elif name == "uid_tt" and val_str:
-            uid = val_str[:10]
+        elif name in ("uid_tt", "uid") and val_str:
+            uid = val_str[:12]
+        elif name in ("unique_id", "username", "user_name", "screen_name") and val_str:
+            hint_username = val_str
 
-    account_name = fallback_account
-    if not account_name:
-        if living_id:
-            account_name = f"tiktok_user_{living_id}"
-        elif uid:
-            account_name = f"tiktok_{uid}"
-        elif val.detected_email:
-            account_name = val.detected_email
+    # Also check if raw string payload has hints (e.g. text containing @username or uniqueId)
+    raw_str = str(cookie_json_or_list)
+    if not hint_username:
+        m_u = re.search(r'(?:uniqueId|username|screen_name|unique_id)[\'"]?\s*[:=]\s*[\'"]?@?([a-zA-Z0-9_.-]{3,32})', raw_str, re.I)
+        if m_u:
+            hint_username = m_u.group(1).strip()
         else:
-            account_name = f"tiktok.bot.{int(time.time()) % 10000:04d}"
+            m_url = re.search(r'tiktok\.com/@([a-zA-Z0-9_.-]{3,32})', raw_str)
+            if m_url:
+                hint_username = m_url.group(1).strip()
 
-    if has_sessionid or has_sid_guard:
-        return {
-            "status": SessionStatus.ACTIVE.value,
-            "is_valid": True,
-            "account_name": account_name,
-            "email": account_name,
-            "reason": "Cookie sesi TikTok valid dan aktif (sessionid terverifikasi).",
-        }
-    else:
+    if not has_sessionid and not has_sid_guard:
         return {
             "status": SessionStatus.NEEDS_LOGIN.value,
             "is_valid": False,
-            "account_name": account_name,
-            "email": account_name,
+            "username": fallback_account or (f"@{hint_username}" if hint_username else ""),
+            "nickname": "",
+            "avatar_url": "",
+            "account_name": fallback_account,
+            "email": fallback_account,
             "reason": "Token otentikasi TikTok (sessionid / sid_guard) tidak ditemukan dalam cookie.",
         }
+
+    # Live query to TikTok Passport API: https://www.tiktok.com/passport/web/account/info/
+    detected_user = hint_username or fallback_account
+    detected_nick = ""
+    detected_avatar = ""
+    detected_uid = uid or living_id or ""
+    session_status = SessionStatus.ACTIVE.value
+    session_reason = "Cookie sesi TikTok valid dan aktif (sessionid terverifikasi)."
+
+    if cookie_parts:
+        cookie_header = "; ".join(cookie_parts)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        req = urllib.request.Request(
+            "https://www.tiktok.com/passport/web/account/info/",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Referer": "https://www.tiktok.com/",
+                "Accept": "application/json, text/plain, */*",
+                "Cookie": cookie_header,
+            }
+        )
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                msg = data.get("message")
+                d = data.get("data") or {}
+                if msg == "success" and isinstance(d, dict):
+                    # Successfully authenticated with TikTok passport!
+                    u_api = d.get("username") or d.get("screen_name")
+                    if u_api:
+                        detected_user = u_api
+                    n_api = d.get("screen_name") or d.get("username")
+                    if n_api:
+                        detected_nick = n_api
+                    av_api = d.get("avatar_url")
+                    if av_api:
+                        detected_avatar = av_api
+                    uid_api = d.get("user_id") or d.get("user_id_str")
+                    if uid_api:
+                        detected_uid = str(uid_api)
+                    session_status = SessionStatus.ACTIVE.value
+                    session_reason = f"✓ Terverifikasi resmi dari server TikTok! Akun: @{detected_user}"
+                elif d.get("error_code") == 13 or d.get("name") == "session_expired":
+                    # Token invalid / expired on TikTok server
+                    session_status = SessionStatus.NEEDS_LOGIN.value
+                    session_reason = "Sesi TikTok telah kedaluwarsa pada server TikTok (error_code 13)."
+        except Exception:
+            # If network error, continue fallback checks
+            pass
+
+    # If username still not found from passport API, check web page https://www.tiktok.com/
+    if (not detected_user or detected_user.startswith("tiktok.bot.")) and cookie_parts:
+        try:
+            req_web = urllib.request.Request(
+                "https://www.tiktok.com/",
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Cookie": cookie_header,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+                }
+            )
+            with urllib.request.urlopen(req_web, context=ctx, timeout=6) as resp_web:
+                html = resp_web.read().decode("utf-8", errors="ignore")
+                # Look for profile href
+                m_prof = re.search(r'href="/@([a-zA-Z0-9_.-]+)"[^>]*data-e2e="profile-icon"', html)
+                if not m_prof:
+                    m_prof = re.search(r'data-e2e="profile-icon"[^>]*href="/@([a-zA-Z0-9_.-]+)"', html)
+                if not m_prof:
+                    m_prof = re.search(r'"uniqueId":"([a-zA-Z0-9_.-]+)"', html)
+                if m_prof:
+                    detected_user = m_prof.group(1)
+                    session_status = SessionStatus.ACTIVE.value
+                    session_reason = f"✓ Terverifikasi dari profil TikTok Web! Akun: @{detected_user}"
+
+                # Look for nickname
+                m_nick = re.search(r'"nickname":"([^"]+)"', html)
+                if m_nick and not detected_nick:
+                    detected_nick = m_nick.group(1).encode('utf-8').decode('unicode_escape', errors='ignore')
+
+                # Look for avatar
+                m_av = re.search(r'"avatarThumb":"([^"]+)"', html)
+                if m_av and not detected_avatar:
+                    detected_avatar = m_av.group(1).replace(r'\/', '/').replace('\\u002F', '/')
+        except Exception:
+            pass
+
+    # Fallback name construction
+    if not detected_user:
+        if fallback_account:
+            detected_user = fallback_account
+        elif detected_uid:
+            detected_user = f"tiktok_user_{detected_uid}"
+        elif hint_username:
+            detected_user = hint_username
+        elif val.detected_email:
+            detected_user = val.detected_email.split('@')[0]
+        else:
+            detected_user = f"tiktok.bot.{int(time.time()) % 10000:04d}"
+
+    if detected_user and not detected_user.startswith("@"):
+        detected_user = f"@{detected_user}"
+
+    return {
+        "status": session_status,
+        "is_valid": session_status == SessionStatus.ACTIVE.value,
+        "username": detected_user,
+        "nickname": detected_nick,
+        "avatar_url": detected_avatar,
+        "user_id": detected_uid,
+        "account_name": detected_user,
+        "email": detected_user,
+        "reason": session_reason,
+    }
 
 
 def check_account_live(cookie_json_or_list: Any, fallback_account: str = "") -> dict:

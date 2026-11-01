@@ -721,7 +721,7 @@ export default function Dashboard({ onLogout }) {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex items-start font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Mobile Drawer Backdrop */}
       {mobileMenuOpen && (
         <div
@@ -731,11 +731,11 @@ export default function Dashboard({ onLogout }) {
       )}
 
       {/* ========================================================================= */}
-      {/* SIDEBAR: "hitam tapi bukan kaya hitam" -> Slate-900 (#0F172A) Sharp Flat */}
+      {/* SIDEBAR: Fixed viewport height (h-screen), never stretches with content   */}
       {/* ========================================================================= */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0F172A] text-slate-300 border-r border-slate-800/80 flex flex-col justify-between rounded-none transition-transform duration-200 lg:static lg:translate-x-0 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0F172A] text-slate-300 border-r border-slate-800/80 flex flex-col justify-between rounded-none transition-transform duration-200 h-screen lg:h-screen lg:sticky lg:top-0 lg:self-start lg:shrink-0 overflow-y-auto overflow-x-hidden ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         {/* Sidebar Header Brand */}
@@ -877,7 +877,7 @@ export default function Dashboard({ onLogout }) {
       {/* ========================================================================= */}
       {/* MAIN CONTENT AREA: Pure SaaS Light Mode (Crisp White & Slate-50)          */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 w-full">
         {/* Top Header Bar */}
         <header className="h-16 bg-white border-b border-slate-200/90 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -925,7 +925,7 @@ export default function Dashboard({ onLogout }) {
 
             {/* Profile Dropdown Menu */}
             {profileDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl border border-slate-200/90 shadow-xl z-50 overflow-hidden font-sans py-1.5 divide-y divide-slate-100 transition-all">
+              <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-slate-200/90 shadow-xl z-50 overflow-hidden font-sans py-1.5 divide-y divide-slate-100 transition-all">
                 {/* Header Profile Info */}
                 <div className="px-4 py-3 bg-slate-50/80">
                   <div className="flex items-center gap-3">
@@ -1069,7 +1069,7 @@ export default function Dashboard({ onLogout }) {
                   </span>
                   <span className="text-xs text-slate-500 font-medium">Akun Terdaftar</span>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-1.5">
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                     <span>{activeCookiesCount} Sesi Aktif</span>
@@ -1099,7 +1099,7 @@ export default function Dashboard({ onLogout }) {
                   </span>
                   <span className="text-xs text-slate-500 font-medium">/ {cookies.length} Siap Pakai</span>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-1.5">
                   <span className="text-amber-600 font-medium">
                     {needsLoginCookiesCount} Perlu Re-Auth
                   </span>
@@ -1127,7 +1127,7 @@ export default function Dashboard({ onLogout }) {
                     <CheckCircle2 className="w-3.5 h-3.5" /> Sukses
                   </span>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-1.5">
                   <span>{businesses.length} Target Maps</span>
                   <span className="text-amber-600 font-medium">{queueMetrics.pending || 0} Antrean</span>
                 </div>
@@ -1152,7 +1152,7 @@ export default function Dashboard({ onLogout }) {
                   </span>
                   <span className="text-xs text-slate-500 font-medium">Listing Google Maps</span>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-1.5">
                   <span>RAM Host: {memUsed}/{memTotal} GB</span>
                   <span className="font-mono text-emerald-600 font-semibold">{memPercent}%</span>
                 </div>
@@ -1232,14 +1232,14 @@ export default function Dashboard({ onLogout }) {
                         {total7DaysPending} <span className="text-[11px] font-normal text-slate-500 font-sans">antrean</span>
                       </span>
                     </div>
-                    <div className="px-2 border-l border-slate-200/60">
+                    <div className="px-2 border-t pt-2 sm:border-t-0 sm:pt-0 sm:border-l border-slate-200/60">
                       <span className="text-[10px] uppercase font-bold text-slate-500 block tracking-wider">Puncak Harian</span>
                       <span className="text-base font-extrabold text-blue-600 font-mono">
                         {Math.max(...chartData.map((d) => d.count), 0)}{' '}
                         <span className="text-[11px] font-normal text-slate-500 font-sans">/hari</span>
                       </span>
                     </div>
-                    <div className="px-2 border-l border-slate-200/60">
+                    <div className="px-2 border-t pt-2 sm:border-t-0 sm:pt-0 border-l border-slate-200/60">
                       <span className="text-[10px] uppercase font-bold text-slate-500 block tracking-wider">Efisiensi Bot</span>
                       <span className="text-base font-extrabold text-emerald-600 font-mono">
                         {data?.analytics?.success_rate != null ? `${data.analytics.success_rate}%` : '100%'}
@@ -1979,7 +1979,7 @@ export default function Dashboard({ onLogout }) {
             </div>
 
             {/* Account Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {[
                 { id: 'all', label: `Semua Akun (${cookies.length})` },
                 { id: 'active', label: `● Sesi Aktif (${activeCookiesCount})` },
@@ -2039,7 +2039,7 @@ export default function Dashboard({ onLogout }) {
             {/* Accounts Table */}
             <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full min-w-[780px] text-left text-xs">
                   <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                     <tr>
                       <th className="py-3 px-4 w-10">
@@ -2326,28 +2326,28 @@ export default function Dashboard({ onLogout }) {
               <p className="text-xs text-slate-500 mb-4">Layanan systemd yang menjaga bot review berjalan 24/7</p>
 
               <div className="space-y-3">
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    <div>
-                      <p className="font-mono font-bold text-xs text-slate-900">google-review-automation.service</p>
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-mono font-bold text-xs text-slate-900 truncate">google-review-automation.service</p>
                       <p className="text-[11px] text-slate-500">Flask Web API & Remote Client Hub (Port 5000)</p>
                     </div>
                   </div>
-                  <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 self-start sm:self-auto shrink-0">
                     ACTIVE / RUNNING
                   </span>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    <div>
-                      <p className="font-mono font-bold text-xs text-slate-900">google-review-worker.service</p>
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-mono font-bold text-xs text-slate-900 truncate">google-review-worker.service</p>
                       <p className="text-[11px] text-slate-500">Background Worker Chromium Scheduler & Dispatcher</p>
                     </div>
                   </div>
-                  <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  <span className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 self-start sm:self-auto shrink-0">
                     ACTIVE / RUNNING
                   </span>
                 </div>
@@ -2477,10 +2477,10 @@ export default function Dashboard({ onLogout }) {
       {/* Modal: Edit Akun Google */}
       {showEditAccountModal && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget) setShowEditAccountModal(false); }}
         >
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full shadow-xl">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-blue-600" />
@@ -2579,8 +2579,11 @@ export default function Dashboard({ onLogout }) {
 
       {/* Modal: Tambah Akun Google */}
       {showAddAccountModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full shadow-xl">
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddAccountModal(false); }}
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-600" />
@@ -2656,8 +2659,11 @@ export default function Dashboard({ onLogout }) {
 
       {/* Modal: Tambah / Perbarui Cookie */}
       {showCookieModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-lg w-full shadow-xl">
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowCookieModal(false); }}
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 max-w-lg w-full shadow-xl max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                 <GmailLogo className="w-5 h-5" />
@@ -2726,8 +2732,11 @@ export default function Dashboard({ onLogout }) {
 
       {/* Modal: Tambah Target Bisnis Maps */}
       {showAddBizModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full shadow-xl">
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddBizModal(false); }}
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-blue-600" />
@@ -2789,8 +2798,11 @@ export default function Dashboard({ onLogout }) {
 
       {/* Modal: Fast Run Review Bot */}
       {showFastRunModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-md w-full shadow-xl">
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowFastRunModal(false); }}
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                 <Play className="w-5 h-5 text-blue-600 fill-current" />
@@ -2875,8 +2887,11 @@ export default function Dashboard({ onLogout }) {
 
       {/* Modal: View Cookie / OAuth Snippet */}
       {snippetModalCookie && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-lg w-full shadow-xl">
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setSnippetModalCookie(null); }}
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 max-w-lg w-full shadow-xl max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
                 {snippetModalCookie.auth_method === 'oauth' || snippetModalCookie.auth_method === 'google_oauth' || snippetModalCookie.oauth_access_token ? (

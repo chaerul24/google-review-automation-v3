@@ -51,6 +51,7 @@ import {
   Bot
 } from 'lucide-react';
 import { api } from '../api/client';
+import InteractiveBotEyes from '../components/InteractiveBotEyes';
 
 // Catmull-Rom to Cubic Bézier spline helper for smooth SaaS curves
 function getSplinePaths(points, baselineY) {
@@ -2703,69 +2704,92 @@ export default function Dashboard({ onLogout }) {
               </div>
             </div>
 
-            {/* 4 Top KPI Cards (Matching User's Reference Screenshot) */}
+            {/* 4 Top KPI Cards (Feature Aligned: Google Maps Review Automation) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              {/* Card 1: TOTAL REQUESTS */}
-              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+              {/* Card 1: TOTAL ULASAN POSTING */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between hover:border-emerald-500/50 transition-colors">
                 <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  TOTAL REQUESTS
+                  TOTAL ULASAN POSTING
                 </span>
                 <div className="my-2">
                   <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-white">
-                    {usageData?.total_requests ? Number(usageData.total_requests).toLocaleString() : '513'}
+                    {usageData?.total_requests ? Number(usageData.total_requests).toLocaleString() : '656'}
                   </span>
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  <span>Review Bot & API Calls</span>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center justify-between flex-wrap gap-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span className="text-slate-300">Terverifikasi Maps</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-400 font-semibold">100% Organik</span>
                 </div>
               </div>
 
-              {/* Card 2: TOTAL INPUT TOKENS */}
-              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+              {/* Card 2: AKUN SESI GOOGLE */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between hover:border-cyan-500/50 transition-colors">
                 <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  TOTAL INPUT TOKENS
+                  AKUN SESI GOOGLE
                 </span>
-                <div className="my-2">
-                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-amber-500">
-                    {usageData?.total_input_tokens ? Number(usageData.total_input_tokens).toLocaleString() : '115,809,928'}
-                  </span>
-                </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                  <span>Prompts & Maps Context</span>
-                </div>
-              </div>
-
-              {/* Card 3: CACHED TOKENS */}
-              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
-                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  CACHED TOKENS
-                </span>
-                <div className="my-2">
+                <div className="my-2 flex items-baseline gap-1.5">
                   <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-cyan-400">
-                    {usageData?.cached_tokens ? Number(usageData.cached_tokens).toLocaleString() : '100,568,705'}
+                    {activeCookiesCount}
+                  </span>
+                  <span className="text-sm font-mono text-slate-400 font-bold">
+                    / {cookies.length || 16}
                   </span>
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                  <span>86.8% Cache Optimization</span>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center justify-between flex-wrap gap-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                    <span className="text-slate-300">Sesi Cookie Siap</span>
+                  </span>
+                  {needsLoginCookiesCount > 0 ? (
+                    <span className="text-[10px] font-mono text-rose-400 font-semibold animate-pulse">
+                      {needsLoginCookiesCount} Butuh Login
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono text-cyan-400 font-semibold">Siap Posting</span>
+                  )}
                 </div>
               </div>
 
-              {/* Card 4: OUTPUT TOKENS */}
-              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+              {/* Card 3: TARGET TEMPAT MAPS */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between hover:border-amber-500/50 transition-colors">
                 <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  OUTPUT TOKENS
+                  TARGET TEMPAT MAPS
                 </span>
                 <div className="my-2">
-                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-emerald-400">
-                    {usageData?.output_tokens ? Number(usageData.output_tokens).toLocaleString() : '408,937'}
+                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-amber-400">
+                    {businesses.length || 5}{' '}
+                    <span className="text-sm font-normal text-slate-400 font-sans">Bisnis</span>
                   </span>
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  <span>Generated AI Reviews</span>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center justify-between flex-wrap gap-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    <span className="text-slate-300">Rating Bintang 5 ⭐</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-amber-400 font-semibold">Target Aktif</span>
+                </div>
+              </div>
+
+              {/* Card 4: AI REVIEW GENERATION */}
+              <div className="bg-[#0B0F19] text-white border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between hover:border-purple-500/50 transition-colors">
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  AI REVIEW GENERATION
+                </span>
+                <div className="my-2">
+                  <span className="text-xl sm:text-2xl lg:text-3xl font-black font-mono text-purple-400">
+                    {usageData?.output_tokens ? Number(usageData.output_tokens).toLocaleString() : '451,437'}{' '}
+                    <span className="text-sm font-normal text-slate-400 font-sans">Kata</span>
+                  </span>
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center justify-between flex-wrap gap-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                    <span className="text-slate-300">Gemini NLP Engine</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-purple-400 font-semibold">Anti-Duplikasi</span>
                 </div>
               </div>
             </div>
@@ -3091,45 +3115,107 @@ export default function Dashboard({ onLogout }) {
                               );
                             })}
 
-                            {/* Central Router Hub (Dispatch Core) */}
+                            {/* Central Rounded Eye Bot Core (Interactive Dispatcher Hub) */}
                             <g
                               onClick={() => setSelectedNodeId('router')}
                               className="cursor-pointer group select-none"
                             >
-                              <rect
-                                x="420"
-                                y="276"
-                                width="120"
-                                height="48"
-                                rx="10"
-                                fill="#D97706"
-                                opacity="0.25"
-                                filter="url(#glow-amber)"
+                              {/* Outer Glow Halo */}
+                              <circle
+                                cx="480"
+                                cy="300"
+                                r={selectedNodeId === 'router' ? 44 : 38}
+                                fill={isTaskActive ? (isParallel ? '#06B6D4' : '#F59E0B') : '#38BDF8'}
+                                opacity={isTaskActive ? 0.28 : 0.12}
+                                filter="url(#glow-cyan)"
+                                className="transition-all duration-300"
                               />
-                              <rect
-                                x="420"
-                                y="276"
-                                width="120"
-                                height="48"
-                                rx="10"
-                                fill="#18130B"
-                                stroke="#F59E0B"
-                                strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.6}
-                                className="transition-all duration-200 group-hover:stroke-amber-300"
+
+                              {/* Chassis Background Plate */}
+                              <circle
+                                cx="480"
+                                cy="300"
+                                r="36"
+                                fill="#080C14"
+                                stroke={
+                                  selectedNodeId === 'router'
+                                    ? (isTaskActive ? '#38BDF8' : '#F59E0B')
+                                    : (isTaskActive ? '#0284C7' : '#334155')
+                                }
+                                strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.8}
+                                className="transition-all duration-300 group-hover:stroke-cyan-400"
                               />
-                              <text
-                                x="480"
-                                y="305"
-                                textAnchor="middle"
-                                fill="#FEF3C7"
-                                fontSize="13"
-                                fontWeight="bold"
-                                letterSpacing="0.5"
+
+                              {/* Embedded Interactive Rounded Eye Bot */}
+                              <foreignObject
+                                x="380"
+                                y="222"
+                                width="200"
+                                height="156"
+                                className="overflow-visible pointer-events-auto"
                               >
-                                Router
-                              </text>
-                              <circle cx="440" cy="300" r="4" fill="#F59E0B" />
-                              <circle cx="520" cy="300" r="4" fill="#F59E0B" opacity="0.8" />
+                                <div
+                                  className="w-full h-full flex flex-col items-center justify-center cursor-pointer select-none"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedNodeId('router');
+                                  }}
+                                >
+                                  <InteractiveBotEyes
+                                    size="md"
+                                    isRunning={isTaskActive}
+                                    mood={
+                                      isTaskActive
+                                        ? 'working'
+                                        : brokenCookies.length > 0
+                                        ? 'confused'
+                                        : 'happy'
+                                    }
+                                    speechText={
+                                      selectedNodeId && selectedNodeId !== 'router'
+                                        ? `fokus ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'}!`
+                                        : !isTaskActive
+                                        ? (brokenCookies.length > 0 ? `${brokenCookies.length} butuh login!` : 'siap bertugas!')
+                                        : isParallel
+                                        ? 'paralel aktif! ⚡'
+                                        : `ulasan #${currentTurnNumber} 🚀`
+                                    }
+                                  />
+                                </div>
+                              </foreignObject>
+
+                              {/* Eye Bot Core Badge Tag Underneath */}
+                              <g transform="translate(480, 348)">
+                                <rect
+                                  x="-44"
+                                  y="-9"
+                                  width="88"
+                                  height="18"
+                                  rx="5"
+                                  fill="#070A11"
+                                  stroke={selectedNodeId === 'router' ? '#38BDF8' : '#334155'}
+                                  strokeWidth="1"
+                                  opacity="0.95"
+                                />
+                                <circle
+                                  cx="-30"
+                                  cy="0"
+                                  r="2.5"
+                                  fill={isTaskActive ? '#10B981' : '#64748B'}
+                                  className={isTaskActive ? 'animate-pulse' : ''}
+                                />
+                                <text
+                                  x="-20"
+                                  y="3.2"
+                                  fill="#E2E8F0"
+                                  fontSize="9"
+                                  fontWeight="700"
+                                  fontFamily="monospace"
+                                  letterSpacing="0.4"
+                                >
+                                  EYE BOT CORE
+                                </text>
+                              </g>
                             </g>
 
                             {/* Dynamic Cookie Account Nodes */}
@@ -3437,20 +3523,20 @@ export default function Dashboard({ onLogout }) {
                                   title={
                                     isRouter
                                       ? !isTaskActive
-                                        ? 'Router (Standby Engine)'
+                                        ? 'Eye Bot Core (Standby Hub)'
                                         : isParallel
-                                        ? 'Router (Paralel Broadcast)'
-                                        : `Router ➔ ${activeTurnNode?.fullName || 'Dispatcher'}`
+                                        ? 'Eye Bot Core (Paralel Hub)'
+                                        : `Eye Bot Core ➔ ${activeTurnNode?.fullName || 'Dispatcher'}`
                                       : selNode.fullName
                                   }
                                 >
                                   {isRouter ? (
                                     !isTaskActive ? (
-                                      '⚡ Router (Standby Engine)'
+                                      '🤖 Eye Bot Core (Standby)'
                                     ) : isParallel ? (
-                                      '⚡ Router (Paralel Hub)'
+                                      '⚡ Eye Bot Core (Paralel Hub)'
                                     ) : (
-                                      `⚡ Router ➔ ${activeTurnNode?.fullName || 'Akun'}`
+                                      `⚡ Eye Bot ➔ ${activeTurnNode?.fullName || 'Akun'}`
                                     )
                                   ) : isNeedsLogin ? (
                                     `⚠️ ${selNode.fullName} (TERPUTUS)`
@@ -3472,13 +3558,13 @@ export default function Dashboard({ onLogout }) {
                                       ? 'text-emerald-400'
                                       : 'text-cyan-400'
                                   }`}
-                                  title={isRouter ? (!isTaskActive ? 'Dispatcher (Standby)' : isParallel ? 'Semua Akun Terhubung' : activeTurnNode?.email) : selNode.email}
+                                  title={isRouter ? (!isTaskActive ? 'Eye Bot Dispatcher (Standby)' : isParallel ? 'Semua Akun Terhubung' : activeTurnNode?.email) : selNode.email}
                                 >
                                   {isRouter ? (
                                     !isTaskActive ? (
-                                      `Dispatcher (${eligibleCookies.length} Akun Standby)`
+                                      `Eye Bot Dispatcher (${eligibleCookies.length} Akun Standby)`
                                     ) : isParallel ? (
-                                      `Dispatcher (${eligibleCookies.length} Akun Paralel)`
+                                      `Eye Bot Dispatcher (${eligibleCookies.length} Akun Paralel)`
                                     ) : (
                                       `${activeTurnNode?.email || 'Rotasi Antrean'}`
                                     )

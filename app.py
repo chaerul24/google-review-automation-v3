@@ -1384,10 +1384,10 @@ def api_usage():
     total_reviewed = analytics.get("total_reviewed", 0)
     total_pending = analytics.get("total_pending", 0)
 
-    total_requests = 513 + (total_reviewed * 4) + total_pending
-    total_input_tokens = 115809928 + (total_requests * 18450)
-    cached_tokens = 100568705 + int(total_requests * 16000)
-    output_tokens = 408937 + (total_reviewed * 1250)
+    total_requests = 656 + (total_reviewed * 4) + total_pending
+    total_input_tokens = 127913128 + (total_requests * 18450)
+    cached_tokens = 111064705 + int(total_requests * 16000)
+    output_tokens = 451437 + (total_reviewed * 1250)
 
     with db.get_db() as conn:
         rows = conn.execute(

@@ -454,7 +454,7 @@ def inject_security_context():
 def protect_csrf():
     if request.path in {"/login", "/api/login", "/logout", "/api/logout", "/api/csrf-token", "/api/cli/login", "/api/cli/register"} or request.path.startswith("/api/vm/") or request.path.startswith("/download/") or request.path.startswith("/api/cli/"):
         return
-    if (request.path.startswith("/api/tiktok-live/") or request.path == "/api/worker/emergency-stop") and request.remote_addr in ("127.0.0.1", "localhost", "::1"):
+    if (request.path.startswith("/api/tiktok-live/") or request.path in ("/api/worker/emergency-stop", "/api/bot-config")) and request.remote_addr in ("127.0.0.1", "localhost", "::1"):
         return
     api_key = request.headers.get("X-API-Key")
     expected_key = os.environ.get("APP_PASSWORD", "")
@@ -1709,7 +1709,8 @@ def get_bot_modules_config():
             "star_rating": 5,
             "ai_comments": True,
             "auto_retry": True,
-            "rotation_mode": "queue"
+            "rotation_mode": "queue",
+            "display": False
         },
         "tiktok_live": {
             "enabled": True,
@@ -1719,13 +1720,20 @@ def get_bot_modules_config():
             "tap_speed": 20,
             "auto_chat": True,
             "chat_message": "Semangat live kak! Support selalu 🔥",
-            "multi_account": True
+            "multi_account": True,
+            "display": False
         },
         "youtube_live": {
             "enabled": False,
             "coming_soon": True,
             "name": "Youtube Live (akan datang)",
             "description": "Otomatisasi komentar, auto like, dan engagement live streaming YouTube (Segera Hadir)."
+        },
+        "display": {
+            "enabled": False,
+            "name": "Display",
+            "subtitle": "aktifkan layar untuk memantau bot.",
+            "description": "aktifkan layar untuk memantau bot."
         }
     }
     if os.path.exists(BOT_MODULES_CONFIG_FILE):
@@ -1747,16 +1755,18 @@ def save_bot_modules_config(config_data):
         return False
 
 @app.route("/api/bot-config", methods=["GET"])
-@login_required
 def api_get_bot_config():
+    if not session.get("logged_in") and request.remote_addr not in ("127.0.0.1", "localhost", "::1"):
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
     return jsonify({
         "status": "ok",
         "configs": get_bot_modules_config()
     })
 
 @app.route("/api/bot-config", methods=["POST"])
-@login_required
 def api_update_bot_config():
+    if not session.get("logged_in") and request.remote_addr not in ("127.0.0.1", "localhost", "::1"):
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
     data = request.get_json(silent=True) or {}
     new_configs = data.get("configs") or data
     if not isinstance(new_configs, dict):
@@ -2069,7 +2079,7 @@ class TikTokLiveRunner:
             if len(self.logs) > 200:
                 self.logs.pop(0)
 
-    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", account_ids=None, mode="parallel"):
+    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", account_ids=None, mode="parallel", enable_display=None):
         with self.lock:
             if self.is_running:
                 return False, "Bot TikTok Live sudah berjalan."
@@ -2090,6 +2100,12 @@ class TikTokLiveRunner:
             self.verified_viewers = set()
             self.logs = []
             self.log_counter = 0
+
+            # Display configuration: default false (mati)
+            if enable_display is None:
+                cfg = get_bot_modules_config()
+                enable_display = cfg.get("display", {}).get("enabled", False)
+            self.enable_display = bool(enable_display)
 
             # Parse execution mode
             mode_clean = str(mode or "").strip().lower()
@@ -2219,6 +2235,7 @@ class TikTokLiveRunner:
                 "tap_speed": self.tap_speed,
                 "auto_chat": self.auto_chat,
                 "chat_message": self.chat_message,
+                "enable_display": getattr(self, "enable_display", False),
                 "started_at": self.started_at.strftime("%Y-%m-%d %H:%M:%S") if self.started_at else None,
                 "elapsed_seconds": elapsed,
                 "likes_sent": self.likes_sent,
@@ -2320,20 +2337,21 @@ class TikTokLiveRunner:
                 except Exception:
                     time.sleep(1.5)
 
-            # Tunggu render DOM live sebelum screenshot awal agar tidak menangkap layar putih
-            for _ in range(8):
-                if self.stop_event.is_set():
-                    return
-                try:
-                    curr = (driver.current_url or "").lower()
-                    if "/live" in curr and "chrome-error" not in curr:
-                        rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
-                        if rendered:
-                            driver.save_screenshot(screen_path)
-                            break
-                except Exception:
-                    pass
-                time.sleep(0.8)
+            # Tunggu render DOM live sebelum screenshot awal jika display aktif
+            if getattr(self, "enable_display", False):
+                for _ in range(8):
+                    if self.stop_event.is_set():
+                        return
+                    try:
+                        curr = (driver.current_url or "").lower()
+                        if "/live" in curr and "chrome-error" not in curr:
+                            rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
+                            if rendered:
+                                driver.save_screenshot(screen_path)
+                                break
+                    except Exception:
+                        pass
+                    time.sleep(0.8)
 
             if self.stop_event.is_set():
                 return
@@ -2491,8 +2509,8 @@ class TikTokLiveRunner:
                 except Exception:
                     pass
 
-                # Save screenshot of isolated worker browser only when on active live page
-                if now - last_screen_time >= 2.5:
+                # Save screenshot of isolated worker browser only when on active live page AND display is enabled
+                if getattr(self, "enable_display", False) and (now - last_screen_time >= 2.5):
                     last_screen_time = now
                     try:
                         curr_url = (driver.current_url or "").lower()
@@ -2613,20 +2631,21 @@ class TikTokLiveRunner:
                     except Exception:
                         time.sleep(1.5)
 
-                # Tunggu render DOM live sebelum screenshot awal
-                for _ in range(8):
-                    if self.stop_event.is_set():
-                        break
-                    try:
-                        curr = (driver.current_url or "").lower()
-                        if "/live" in curr and "chrome-error" not in curr:
-                            rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
-                            if rendered:
-                                driver.save_screenshot(screen_path)
-                                break
-                    except Exception:
-                        pass
-                    time.sleep(0.8)
+                # Tunggu render DOM live sebelum screenshot awal jika display aktif
+                if getattr(self, "enable_display", False):
+                    for _ in range(8):
+                        if self.stop_event.is_set():
+                            break
+                        try:
+                            curr = (driver.current_url or "").lower()
+                            if "/live" in curr and "chrome-error" not in curr:
+                                rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
+                                if rendered:
+                                    driver.save_screenshot(screen_path)
+                                    break
+                        except Exception:
+                            pass
+                        time.sleep(0.8)
 
                 if self.stop_event.is_set():
                     break
@@ -2783,8 +2802,8 @@ class TikTokLiveRunner:
                     except Exception:
                         pass
 
-                    # Save screenshot of isolated worker browser only when on active live page
-                    if now - last_screen_time >= 2.5:
+                    # Save screenshot of isolated worker browser only when on active live page AND display is enabled
+                    if getattr(self, "enable_display", False) and (now - last_screen_time >= 2.5):
                         last_screen_time = now
                         try:
                             curr_url = (driver.current_url or "").lower()
@@ -2878,14 +2897,19 @@ def api_tiktok_live_screen(worker_idx):
         except Exception:
             pass
 
+    is_display_on = getattr(tiktok_live_runner, "enable_display", False)
+    sub_title = "Menghubungkan ke Siaran Live TikTok..." if is_display_on else "aktifkan layar untuk memantau bot."
+    info_text = "Menyinkronkan sesi cookie mandiri &amp; merender frame live" if is_display_on else "Status: Display nonaktif (hemat sumber daya)"
+    title_text = f"Browser Worker #{worker_idx + 1}" if is_display_on else "Display Dinonaktifkan"
+
     svg = f"""<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#090d16"/>
         <circle cx="320" cy="135" r="34" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
-        <path d="M312 123l22 12-22 12z" fill="#06b6d4"/>
-        <circle cx="320" cy="135" r="42" fill="none" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.6"/>
-        <text x="50%" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" fill="#f8fafc" text-anchor="middle">Browser Worker #{worker_idx + 1}</text>
-        <text x="50%" y="224" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Menghubungkan ke Siaran Live TikTok...</text>
-        <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Menyinkronkan sesi cookie mandiri &amp; merender frame live</text>
+        <path d="M312 123l22 12-22 12z" fill="{'#06b6d4' if is_display_on else '#64748b'}"/>
+        <circle cx="320" cy="135" r="42" fill="none" stroke="{'#06b6d4' if is_display_on else '#475569'}" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.6"/>
+        <text x="50%" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" fill="#f8fafc" text-anchor="middle">{title_text}</text>
+        <text x="50%" y="224" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">{sub_title}</text>
+        <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">{info_text}</text>
     </svg>"""
     return Response(
         svg,
@@ -2920,13 +2944,18 @@ def api_tiktok_live_start():
     if not account_ids and data.get("username"):
         account_ids = [data.get("username")]
     
+    cfg = get_bot_modules_config()
+    default_display = cfg.get("display", {}).get("enabled", False)
+    display_opt = data.get("display") if "display" in data else data.get("enable_display", default_display)
+
     ok, msg = tiktok_live_runner.start(
         target_user=target_user,
         tap_speed=tap_speed,
         auto_chat=auto_chat,
         chat_message=chat_message,
         account_ids=account_ids,
-        mode=mode
+        mode=mode,
+        enable_display=display_opt
     )
     if not ok:
         return jsonify({"status": "error", "message": msg}), 400

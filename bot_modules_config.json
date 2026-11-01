@@ -6,7 +6,8 @@
     "star_rating": 5,
     "ai_comments": true,
     "auto_retry": true,
-    "rotation_mode": "queue"
+    "rotation_mode": "queue",
+    "display": false
   },
   "tiktok_live": {
     "enabled": true,
@@ -15,14 +16,21 @@
     "target_user": "@nindy_wedding_brebes",
     "tap_speed": 100,
     "auto_chat": true,
-    "chat_message": "Halo kak",
+    "chat_message": "Halo Cantik",
     "multi_account": true,
-    "execution_mode": "parallel"
+    "execution_mode": "parallel",
+    "display": false
   },
   "youtube_live": {
     "enabled": false,
     "coming_soon": true,
     "name": "Youtube Live (akan datang)",
     "description": "Otomatisasi komentar, auto like, dan engagement live streaming YouTube (Segera Hadir)."
+  },
+  "display": {
+    "enabled": false,
+    "name": "Display",
+    "subtitle": "aktifkan layar untuk memantau bot.",
+    "description": "aktifkan layar untuk memantau bot."
   }
 }

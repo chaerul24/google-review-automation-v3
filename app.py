@@ -1558,6 +1558,7 @@ def api_usage():
         "tap_speed": tt_status.get("tap_speed", 50),
         "auto_chat": tt_status.get("auto_chat", True),
         "chat_message": tt_status.get("chat_message", ""),
+        "execution_mode": tt_status.get("execution_mode", "parallel"),
         "likes_sent": tt_status.get("likes_sent", 0),
         "chats_sent": tt_status.get("chats_sent", 0),
         "accounts_count": tt_status.get("account_count", len(all_tt_cookies)),
@@ -1703,18 +1704,105 @@ def api_update_bot_config():
 
 
 # ── TikTok Live Execution Worker & Status (Real Web Access) ─────────────────
+def send_comment_to_live(driver, message):
+    """Kirim komentar nyata ke live chat TikTok via DOM / contenteditable & send button."""
+    if not driver or not message:
+        return False, "Driver atau pesan komentar kosong"
+
+    script = """
+    const msg = arguments[0];
+    const input = document.querySelector('[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]');
+    if (!input) return { ok: false, error: "Input chat tidak ditemukan di layar live" };
+
+    try {
+        input.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, msg);
+        input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Check & click send button
+        const sendBtn = document.querySelector('[data-e2e="room-chat-send-btn"]');
+        if (sendBtn) {
+            sendBtn.classList.remove('invisible', 'cursor-not-allowed');
+            sendBtn.click();
+            return { ok: true, method: "send_btn_click" };
+        }
+
+        // Fallback: Dispatch Enter key
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        return { ok: true, method: "enter_key" };
+    } catch(err) {
+        return { ok: false, error: err.toString() };
+    }
+    """
+    try:
+        res = driver.execute_script(script, message)
+        if res and res.get("ok"):
+            return True, res.get("method")
+        
+        # Fallback to selenium send_keys if JS dispatch missed
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.common.keys import Keys
+        inputs = driver.find_elements(By.CSS_SELECTOR, '[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]')
+        if inputs:
+            inp = inputs[0]
+            inp.click()
+            inp.send_keys(message)
+            inp.send_keys(Keys.ENTER)
+            return True, "selenium_keys"
+        return False, (res.get("error") if res else "element_not_found")
+    except Exception as e:
+        return False, str(e)
+
+
+def inject_account_cookies(driver, acc_dict):
+    """Menyuntikkan cookies akun TikTok ke browser Selenium."""
+    if not acc_dict or not acc_dict.get("cookie_json"):
+        return False
+    try:
+        raw_c = json.loads(acc_dict.get("cookie_json") or "[]")
+    except Exception:
+        return False
+    try:
+        driver.delete_all_cookies()
+    except Exception:
+        pass
+    if isinstance(raw_c, list):
+        for ck in raw_c:
+            if isinstance(ck, dict) and ck.get("name") and ck.get("value"):
+                c_dict = {
+                    "name": str(ck.get("name")),
+                    "value": str(ck.get("value")),
+                    "domain": ck.get("domain") or ".tiktok.com",
+                    "path": ck.get("path") or "/",
+                }
+                if "secure" in ck:
+                    c_dict["secure"] = bool(ck["secure"])
+                try:
+                    driver.add_cookie(c_dict)
+                except Exception:
+                    try:
+                        c_dict.pop("domain", None)
+                        driver.add_cookie(c_dict)
+                    except Exception:
+                        pass
+    return True
+
+
 class TikTokLiveRunner:
     def __init__(self):
         self.lock = threading.Lock()
         self.is_running = False
         self.is_logged_in = False
         self.stop_event = threading.Event()
-        self.worker_thread = None
-        self.driver = None
+        self.worker_threads = []
+        self.drivers = []
         self.target_user = "@evelyn.vln"
         self.tap_speed = 50
         self.auto_chat = True
         self.chat_message = "Semangat live kak! Support selalu 🔥"
+        self.execution_mode = "parallel"  # "parallel" (serentak) or "sequential" (bergantian)
         self.started_at = None
         self.likes_sent = 0
         self.chats_sent = 0
@@ -1745,12 +1833,14 @@ class TikTokLiveRunner:
             if len(self.logs) > 200:
                 self.logs.pop(0)
 
-    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", account_ids=None):
+    def start(self, target_user, tap_speed=50, auto_chat=True, chat_message="", account_ids=None, mode="parallel"):
         with self.lock:
             if self.is_running:
                 return False, "Bot TikTok Live sudah berjalan."
             self.is_running = True
             self.stop_event.clear()
+            self.worker_threads = []
+            self.drivers = []
             self.target_user = target_user if target_user.startswith("@") else f"@{target_user}"
             self.tap_speed = max(1, min(100, int(tap_speed)))
             self.auto_chat = bool(auto_chat)
@@ -1764,6 +1854,13 @@ class TikTokLiveRunner:
             self.logs = []
             self.log_counter = 0
 
+            # Parse execution mode
+            mode_clean = str(mode or "").strip().lower()
+            if mode_clean in ("sequential", "bergantian", "rotasi", "ganti"):
+                self.execution_mode = "sequential"
+            else:
+                self.execution_mode = "parallel"
+
             # Multi-account cookie resolution
             all_db = db.get_all_tiktok_cookies()
             if account_ids and isinstance(account_ids, list):
@@ -1773,12 +1870,13 @@ class TikTokLiveRunner:
                 self.selected_accounts = [a for a in all_db if a.get("cookie_json")]
             self.current_account_idx = 0
 
+        mode_desc = "⚡ Mode Paralel (Serentak)" if self.execution_mode == "parallel" else "🔄 Mode Bergantian (Rotasi)"
         acc_summary = f"{len(self.selected_accounts)} akun aktif" if self.selected_accounts else "Mode Tamu (Guest)"
-        self.add_log("info", f"🚀 Memulai TikTok Live Bot untuk streamer {self.target_user} ({acc_summary})")
-        self.add_log("info", f"⚡ Mengakses web TikTok LIVE langsung di Virtual Display :99...")
+        self.add_log("info", f"🚀 Memulai TikTok Live Bot: streamer {self.target_user} ({acc_summary} • {mode_desc})")
+        self.add_log("info", f"⚡ Menghubungkan browser Chromium ke siaran LIVE pada Virtual Display :99...")
 
-        self.worker_thread = threading.Thread(target=self._run_selenium_loop, daemon=True)
-        self.worker_thread.start()
+        master_thread = threading.Thread(target=self._run_master, daemon=True)
+        master_thread.start()
         return True, "Bot TikTok Live berhasil dimulai."
 
     def stop(self):
@@ -1788,18 +1886,33 @@ class TikTokLiveRunner:
             self.stop_event.set()
         self.add_log("warning", "🛑 Perintah penghentian bot TikTok Live diterima...")
         
-        # Stop driver if still running
-        if self.driver:
+        # Stop all active drivers
+        with self.lock:
+            drivers_to_quit = list(self.drivers)
+        for d in drivers_to_quit:
             try:
-                self.driver.quit()
+                d.quit()
             except Exception:
                 pass
-            self.driver = None
+        with self.lock:
+            self.drivers.clear()
 
-        if self.worker_thread and self.worker_thread.is_alive():
-            self.worker_thread.join(timeout=4.0)
+        # Join active worker threads
+        with self.lock:
+            threads_to_join = list(self.worker_threads)
+        for t in threads_to_join:
+            if t.is_alive():
+                t.join(timeout=3.0)
+
+        try:
+            subprocess.run(["pkill", "-9", "-f", "chromium.*tiktok"], check=False)
+        except Exception:
+            pass
+
         with self.lock:
             self.is_running = False
+            self.worker_threads.clear()
+
         self.add_log("success", f"✓ Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent}")
         return True, "Bot TikTok Live berhasil dihentikan."
 
@@ -1810,12 +1923,15 @@ class TikTokLiveRunner:
                 elapsed = int((datetime.now() - self.started_at).total_seconds())
 
             current_user = ""
-            if self.selected_accounts and 0 <= self.current_account_idx < len(self.selected_accounts):
+            if self.execution_mode == "parallel":
+                current_user = f"Semua ({len(self.selected_accounts)} Akun Paralel)" if len(self.selected_accounts) > 1 else (self.selected_accounts[0].get("username") if self.selected_accounts else "")
+            elif self.selected_accounts and 0 <= self.current_account_idx < len(self.selected_accounts):
                 current_user = self.selected_accounts[self.current_account_idx].get("username", "")
 
             return {
                 "is_running": self.is_running,
                 "is_logged_in": self.is_logged_in,
+                "execution_mode": self.execution_mode,
                 "target_user": self.target_user,
                 "tap_speed": self.tap_speed,
                 "auto_chat": self.auto_chat,
@@ -1833,7 +1949,193 @@ class TikTokLiveRunner:
                 "logs": list(self.logs[-50:])
             }
 
-    def _run_selenium_loop(self):
+    def _run_master(self):
+        try:
+            if self.execution_mode == "parallel" and len(self.selected_accounts) > 1:
+                self._run_parallel_mode()
+            else:
+                self._run_sequential_mode()
+        except Exception as ex:
+            self.add_log("error", f"Terjadi kendala pada runner TikTok Live: {ex}")
+        finally:
+            with self.lock:
+                self.is_running = False
+
+    def _run_parallel_mode(self):
+        total = len(self.selected_accounts)
+        geometries = []
+        if total == 2:
+            geometries = [(683, 768, 0, 0), (683, 768, 683, 0)]
+        elif total == 3:
+            geometries = [(455, 768, 0, 0), (455, 768, 455, 0), (455, 768, 910, 0)]
+        elif total >= 4:
+            # 2x2 grid on 1366x768 Display :99
+            geometries = [
+                (683, 384, 0, 0),
+                (683, 384, 683, 0),
+                (683, 384, 0, 384),
+                (683, 384, 683, 384),
+            ]
+            for idx in range(4, total):
+                geometries.append((683, 384, (idx % 2) * 683, ((idx // 2) % 2) * 384))
+        else:
+            geometries = [(1366, 768, 0, 0)]
+
+        self.add_log("info", f"⚡ [Mode Paralel] Meluncurkan {total} worker browser serentak di Display :99...")
+        threads = []
+        for i, acc in enumerate(self.selected_accounts):
+            geom = geometries[i] if i < len(geometries) else (683, 384, (i % 2) * 683, 0)
+            t = threading.Thread(target=self._run_single_worker, args=(i, total, acc, geom), daemon=True)
+            threads.append(t)
+            with self.lock:
+                self.worker_threads.append(t)
+            t.start()
+            time.sleep(1.0)  # staggered start for browser initialization
+
+        for t in threads:
+            t.join()
+
+    def _run_single_worker(self, worker_idx, total_workers, acc, geom):
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+
+        user = acc.get("username", f"@user_{worker_idx}")
+        acc_id = acc.get("id") or worker_idx
+        target_url = f"https://www.tiktok.com/{self.target_user}/live"
+
+        opts = Options()
+        opts.binary_location = "/usr/bin/chromium"
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
+        w, h, x, y = geom
+        opts.add_argument(f"--window-size={w},{h}")
+        opts.add_argument(f"--window-position={x},{y}")
+        opts.add_argument(f"--user-data-dir=/tmp/tiktok_worker_{acc_id}_{worker_idx}")
+        opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        opts.add_argument("--disable-blink-features=AutomationControlled")
+        opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+        opts.add_experimental_option("useAutomationExtension", False)
+
+        os.environ["DISPLAY"] = ":99"
+
+        driver = None
+        try:
+            self.add_log("info", f"🌐 [Worker {worker_idx + 1}/{total_workers}] Membuka Chromium untuk {user} ({w}x{h})...")
+            driver = webdriver.Chrome(options=opts)
+            with self.lock:
+                self.drivers.append(driver)
+
+            driver.get("https://www.tiktok.com")
+            time.sleep(1.8)
+            inject_account_cookies(driver, acc)
+            self.add_log("info", f"🔑 [Worker {worker_idx + 1}] Cookie sesi {user} disuntikkan, membuka {self.target_user}...")
+
+            driver.get(target_url)
+            time.sleep(4.5)
+
+            if self.stop_event.is_set():
+                return
+
+            cookies = driver.get_cookies()
+            c_names = {c.get("name") for c in cookies}
+            is_logged = bool({"sessionid", "sid_guard", "uid_tt"} & c_names)
+            if is_logged:
+                with self.lock:
+                    self.is_logged_in = True
+                self.add_log("success", f"✓ [Worker {worker_idx + 1}] {user}: Login Berhasil! Sesi aktif.")
+            else:
+                self.add_log("warning", f"▲ [Worker {worker_idx + 1}] {user}: Berjalan dalam Mode Tamu.")
+
+            status_txt = "LOGIN AKTIF" if is_logged else "MODE TAMU"
+            color = "#10b981" if is_logged else "#f59e0b"
+            hud_script = f"""
+            const hud = document.createElement("div");
+            hud.id = "autobotix-hud-{worker_idx}";
+            hud.style.cssText = "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:999999;background:rgba(15,23,42,0.92);backdrop-filter:blur(8px);border:1px solid rgba(254,44,85,0.7);border-radius:12px;padding:6px 14px;display:flex;align-items:center;gap:10px;font-family:sans-serif;color:#fff;font-size:11px;box-shadow:0 6px 16px rgba(0,0,0,0.5);";
+            hud.innerHTML = `
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span style="width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 6px #ef4444;"></span>
+                    <b style="color:#00f2fe;">{user}</b>
+                </div>
+                <span style="color:#475569;">|</span>
+                <div>MODE: <b style="color:#10b981;">⚡ PARALEL</b></div>
+                <span style="color:#475569;">|</span>
+                <div>STATUS: <b style="color:{color};">{status_txt}</b></div>
+                <span style="color:#475569;">|</span>
+                <div>TAP: <b id="hud-tap-{worker_idx}" style="color:#ec4899;">0</b></div>
+            `;
+            document.body.appendChild(hud);
+            """
+            try:
+                driver.execute_script(hud_script)
+            except Exception:
+                pass
+
+            worker_likes = 0
+            worker_tap = self.tap_speed
+            last_chat_time = time.time() - 30.0 + (worker_idx * 7.0)
+
+            while not self.stop_event.is_set():
+                time.sleep(1.0)
+                if self.stop_event.is_set():
+                    break
+
+                worker_likes += worker_tap
+                with self.lock:
+                    self.likes_sent += worker_tap
+                    self.success_count += 1
+
+                try:
+                    driver.execute_script(f"""
+                        const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
+                        if (layer) {{
+                            layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: {w // 2}, clientY: {h // 2}}}));
+                        }}
+                        const el = document.getElementById("hud-tap-{worker_idx}");
+                        if (el) el.innerText = "{worker_likes:,}";
+                    """)
+                except Exception:
+                    with self.lock:
+                        self.fail_count += 1
+
+                if worker_likes % 1000 < worker_tap:
+                    self.add_log("info", f"❤️ [Worker {worker_idx + 1}] {user}: {worker_likes:,} likes terkirim ke {self.target_user}")
+
+                now = time.time()
+                if self.auto_chat and (now - last_chat_time >= 30.0):
+                    last_chat_time = now
+                    if is_logged:
+                        ok, method = send_comment_to_live(driver, self.chat_message)
+                        if ok:
+                            with self.lock:
+                                self.chats_sent += 1
+                                self.success_count += 1
+                            self.add_log("success", f"💬 [{user}] Komentar terkirim ke live: \"{self.chat_message}\"")
+                        else:
+                            with self.lock:
+                                self.fail_count += 1
+                            self.add_log("warning", f"▲ [{user}] Gagal mengirim chat: {method}")
+                    else:
+                        with self.lock:
+                            self.fail_count += 1
+                        self.add_log("warning", f"▲ [{user}] Chat \"{self.chat_message}\" dilewati (perlu login akun)")
+
+        except Exception as ex:
+            with self.lock:
+                self.error_count += 1
+            self.add_log("error", f"Terjadi kendala pada worker {worker_idx + 1} ({user}): {ex}")
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                with self.lock:
+                    if driver in self.drivers:
+                        self.drivers.remove(driver)
+
+    def _run_sequential_mode(self):
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.common.by import By
@@ -1846,7 +2148,7 @@ class TikTokLiveRunner:
         opts.add_argument("--disable-gpu")
         opts.add_argument("--window-size=1366,768")
         opts.add_argument("--window-position=0,0")
-        opts.add_argument("--user-data-dir=/tmp/tiktok_real_profile")
+        opts.add_argument("--user-data-dir=/tmp/tiktok_seq_profile")
         opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         opts.add_argument("--disable-blink-features=AutomationControlled")
         opts.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -1856,32 +2158,10 @@ class TikTokLiveRunner:
 
         driver = None
         try:
-            self.add_log("info", "🌐 Membuka browser Chromium di Virtual Display :99...")
+            self.add_log("info", "🌐 Membuka browser Chromium di Virtual Display :99 (Mode Bergantian)...")
             driver = webdriver.Chrome(options=opts)
-            self.driver = driver
-
-            # Check and inject TikTok cookies (Multi-Account or Single Account)
-            def inject_account_cookies(acc_dict):
-                if not acc_dict or not acc_dict.get("cookie_json"):
-                    return False
-                raw_c = json.loads(acc_dict.get("cookie_json") or "[]")
-                driver.delete_all_cookies()
-                if isinstance(raw_c, list):
-                    for ck in raw_c:
-                        if isinstance(ck, dict) and ck.get("name") and ck.get("value"):
-                            c_dict = {
-                                "name": str(ck.get("name")),
-                                "value": str(ck.get("value")),
-                                "domain": ck.get("domain") or ".tiktok.com",
-                                "path": ck.get("path") or "/",
-                            }
-                            if "secure" in ck:
-                                c_dict["secure"] = bool(ck["secure"])
-                            try:
-                                driver.add_cookie(c_dict)
-                            except Exception:
-                                pass
-                return True
+            with self.lock:
+                self.drivers.append(driver)
 
             if not self.selected_accounts:
                 all_c = db.get_all_tiktok_cookies()
@@ -1891,7 +2171,7 @@ class TikTokLiveRunner:
             if self.selected_accounts:
                 account_names = [a.get("username", "@user") for a in self.selected_accounts]
                 if len(self.selected_accounts) > 1:
-                    self.add_log("info", f"👥 Multi-Akun Aktif: {len(self.selected_accounts)} Akun TikTok ({', '.join(account_names)})")
+                    self.add_log("info", f"🔄 Multi-Akun Bergantian: {len(self.selected_accounts)} Akun ({', '.join(account_names)})")
                 else:
                     self.add_log("info", f"👤 Akun TikTok Aktif: {account_names[0]}")
 
@@ -1900,8 +2180,8 @@ class TikTokLiveRunner:
                 self.add_log("info", f"🔑 Menginjeksi cookie sesi akun TikTok {c_user} ke browser...")
                 try:
                     driver.get("https://www.tiktok.com")
-                    time.sleep(2.0)
-                    if inject_account_cookies(active_cookie):
+                    time.sleep(1.8)
+                    if inject_account_cookies(driver, active_cookie):
                         self.add_log("success", f"✓ Cookie sesi {c_user} berhasil disuntikkan ke Chromium!")
                 except Exception as ex:
                     self.add_log("warning", f"⚠️ Peringatan saat menyuntikkan cookie: {ex}")
@@ -1915,17 +2195,9 @@ class TikTokLiveRunner:
             if self.stop_event.is_set():
                 return
 
-            # Check Login Status on real TikTok page
             cookies = driver.get_cookies()
             cookie_names = {c.get("name") for c in cookies}
-            has_session = bool({"sessionid", "sid_guard", "sessionid_ss"} & cookie_names)
-
-            login_btn = driver.find_elements(By.CSS_SELECTOR, 'button[data-e2e="top-login-button"]')
-            has_login_btn = len(login_btn) > 0
-            profile_icon = driver.find_elements(By.CSS_SELECTOR, 'img[data-e2e="profile-icon"], a[data-e2e="profile-icon"]')
-            has_profile = len(profile_icon) > 0
-
-            is_logged_in = has_session or has_profile
+            is_logged_in = bool({"sessionid", "sid_guard", "uid_tt", "sessionid_ss"} & cookie_names)
             with self.lock:
                 self.is_logged_in = is_logged_in
 
@@ -1936,10 +2208,8 @@ class TikTokLiveRunner:
                 self.add_log("success", f"✓ STATUS LOGIN: Berhasil Login ke Akun TikTok{label_user}! Sesi Aktif terverifikasi.")
             else:
                 login_status_str = "BELUM LOGIN (Tamu / Guest)"
-                self.add_log("warning", "▲ STATUS LOGIN: Belum Login (Mode Tamu / Guest). Tombol 'Log in' terdeteksi.")
-                self.add_log("info", "ℹ️ Catatan: Fitur Tap-tap likes tetap aktif di layar. Untuk kirim komentar resmi, gunakan akun login.")
+                self.add_log("warning", "▲ STATUS LOGIN: Belum Login (Mode Tamu).")
 
-            # Injeksi HUD overlay visual di Display :99
             hud_script = """
             const isLogged = arguments[0];
             const statusTxt = arguments[1];
@@ -1955,11 +2225,11 @@ class TikTokLiveRunner:
                 <b style="color:#00f2fe;letter-spacing:1px;">AUTOBOTIX TIKTOK LIVE</b>
               </div>
               <span style="color:#475569;">|</span>
-              <div>STATUS LOGIN: <b id="hud-login-status" style="color:${color};">${statusTxt}</b></div>
+              <div>MODE: <b style="color:#eab308;">🔄 BERGANTIAN</b></div>
+              <span style="color:#475569;">|</span>
+              <div>STATUS: <b id="hud-login-status" style="color:${color};">${statusTxt}</b></div>
               <span style="color:#475569;">|</span>
               <div>TARGET: <b style="color:#fe2c55;">${targetUser}</b></div>
-              <span style="color:#475569;">|</span>
-              <div>SHARESCREEN: <b style="color:#10b981;">Display :99</b></div>
               <span style="color:#475569;">|</span>
               <div>AUTO TAP: <b id="hud-tap-cnt" style="color:#ec4899;">0 tap</b></div>
             `;
@@ -1986,7 +2256,6 @@ class TikTokLiveRunner:
                     self.likes_sent += batch_likes
                     self.success_count += 1
 
-                # Dispatch click on live layer
                 try:
                     driver.execute_script(f"""
                         const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
@@ -2002,26 +2271,29 @@ class TikTokLiveRunner:
                     with self.lock:
                         self.fail_count += 1
 
-                # Log like milestones every 500 likes
                 if self.likes_sent % 500 < self.tap_speed:
                     self.add_log("info", f"❤️ Auto Tap-tap: {self.likes_sent:,} likes berhasil dikirim ke live {self.target_user}")
 
-                # Auto Chat interval
                 now = time.time()
                 if self.auto_chat and (now - last_chat_time >= 30.0):
                     last_chat_time = now
-                    with self.lock:
-                        self.chats_sent += 1
+                    cur_u = self.selected_accounts[self.current_account_idx].get("username", "@user") if self.selected_accounts else "@user"
                     if is_logged_in:
-                        with self.lock:
-                            self.success_count += 1
-                        self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Terkirim ke live chat: \"{self.chat_message}\"")
+                        ok, method = send_comment_to_live(driver, self.chat_message)
+                        if ok:
+                            with self.lock:
+                                self.chats_sent += 1
+                                self.success_count += 1
+                            self.add_log("success", f"💬 [{cur_u}] Komentar terkirim ke live chat: \"{self.chat_message}\"")
+                        else:
+                            with self.lock:
+                                self.fail_count += 1
+                            self.add_log("warning", f"▲ [{cur_u}] Gagal mengirim chat: {method}")
                     else:
                         with self.lock:
                             self.fail_count += 1
-                        self.add_log("info", f"💬 [Live Chat #{self.chats_sent}] Disiapkan: \"{self.chat_message}\" (Perlu login akun untuk publish)")
+                        self.add_log("warning", f"▲ [{cur_u}] Chat \"{self.chat_message}\" dilewati (perlu login akun)")
 
-                # Multi-Account Rotation (switch cookies every 75 seconds if > 1 account)
                 if len(self.selected_accounts) > 1 and (now - last_rotate_time >= 75.0):
                     last_rotate_time = now
                     with self.lock:
@@ -2031,8 +2303,8 @@ class TikTokLiveRunner:
                     self.add_log("info", f"🔄 [Rotasi Multi-Akun] Beralih ke akun TikTok: {next_user} ({self.current_account_idx + 1}/{len(self.selected_accounts)})...")
                     try:
                         driver.get("https://www.tiktok.com")
-                        time.sleep(1.5)
-                        inject_account_cookies(next_acc)
+                        time.sleep(1.8)
+                        inject_account_cookies(driver, next_acc)
                         driver.get(target_url)
                         time.sleep(3.5)
                         cookies = driver.get_cookies()
@@ -2045,6 +2317,8 @@ class TikTokLiveRunner:
                         self.add_log("warning", f"⚠️ Peringatan saat rotasi akun: {ex}")
 
         except Exception as e:
+            with self.lock:
+                self.error_count += 1
             self.add_log("error", f"Terjadi kendala pada browser TikTok: {e}")
         finally:
             if driver:
@@ -2052,9 +2326,9 @@ class TikTokLiveRunner:
                     driver.quit()
                 except Exception:
                     pass
-            with self.lock:
-                self.is_running = False
-                self.driver = None
+                with self.lock:
+                    if driver in self.drivers:
+                        self.drivers.remove(driver)
 
 tiktok_live_runner = TikTokLiveRunner()
 
@@ -2079,6 +2353,7 @@ def api_tiktok_live_start():
     auto_chat = data.get("auto_chat", True)
     chat_message = data.get("chat_message", "Semangat live kak! Support selalu 🔥")
     account_ids = data.get("account_ids")
+    mode = data.get("mode") or data.get("execution_mode") or data.get("rotation_mode") or "parallel"
     if not account_ids and data.get("account_id"):
         account_ids = [data.get("account_id")]
     if not account_ids and data.get("username"):
@@ -2089,11 +2364,13 @@ def api_tiktok_live_start():
         tap_speed=tap_speed,
         auto_chat=auto_chat,
         chat_message=chat_message,
-        account_ids=account_ids
+        account_ids=account_ids,
+        mode=mode
     )
     if not ok:
         return jsonify({"status": "error", "message": msg}), 400
     return jsonify({"status": "ok", "message": msg, "state": tiktok_live_runner.get_status()})
+
 
 @app.route("/api/tiktok-live/stop", methods=["POST"])
 def api_tiktok_live_stop():

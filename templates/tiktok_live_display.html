@@ -318,7 +318,9 @@
 
         if (st.current_account) {
           const accCount = st.account_count || 1;
-          const label = accCount > 1 ? `${st.current_account} (${accCount} Akun)` : st.current_account;
+          const isPar = st.execution_mode === "parallel";
+          const modeTag = isPar ? "⚡ Paralel" : "🔄 Bergantian";
+          const label = accCount > 1 ? `${st.current_account} [${modeTag}]` : `${st.current_account} [${modeTag}]`;
           if (sideAccountEl) sideAccountEl.innerText = label;
         }
 

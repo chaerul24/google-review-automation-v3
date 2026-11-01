@@ -583,9 +583,11 @@ def render_tiktok_live_cards(
     success: int = 0,
     fail: int = 0,
     error: int = 0,
-    logs: List[str] = None
+    logs: List[str] = None,
+    mode: str = "parallel"
 ) -> Group:
     login_badge = "[bold green]✓ Sesi Aktif[/bold green]" if is_logged_in else "[bold yellow]Mode Tamu[/bold yellow]"
+    mode_badge = "[bold green]⚡ Paralel[/bold green]" if mode == "parallel" else "[bold yellow]🔄 Bergantian[/bold yellow]"
 
     if width >= 135:
         # PC / DESKTOP ULTRAWIDE (>= 135 cols): 4 Horizon Cards Grid
@@ -603,8 +605,8 @@ def render_tiktok_live_cards(
             expand=True
         )
         c2 = Panel(
-            f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge}\n[dim]Chromium :99[/dim]",
-            title="[bold cyan]👤 AKUN TIKTOK[/bold cyan]",
+            f"[bold cyan]{tt_username}[/bold cyan]\n{login_badge} │ {mode_badge}\n[dim]Chromium :99[/dim]",
+            title="[bold cyan]👤 AKUN & MODE[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             expand=True
@@ -643,8 +645,8 @@ def render_tiktok_live_cards(
             expand=True
         )
         c2 = Panel(
-            f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nEngine: [dim]Native Chromium :99[/dim]",
-            title="[bold cyan]👤 AKUN TIKTOK[/bold cyan]",
+            f"[bold cyan]{tt_username}[/bold cyan]  {login_badge}\nMode: {mode_badge} • [dim]Display :99[/dim]",
+            title="[bold cyan]👤 AKUN & MODE[/bold cyan]",
             border_style="cyan",
             box=box.ROUNDED,
             expand=True
@@ -672,7 +674,7 @@ def render_tiktok_live_cards(
         # HP / MOBILE TERMUX (< 65 cols): Stacked Compact Mobile Cards
         c_mobile1 = Panel(
             f"[bold yellow]{t_user}[/bold yellow] • [bold red]🔴 LIVE[/bold red] • ⏱ [bold white]{time_str}[/bold white]\n"
-            f"👤 {tt_username} ({login_badge})",
+            f"👤 {tt_username} ({login_badge}) │ {mode_badge}",
             title="[bold red]📱 STREAMER & LIVE (HP)[/bold red]",
             border_style="red",
             box=box.ROUNDED,
@@ -719,7 +721,7 @@ def render_tiktok_live_cards(
     return Group(grid, *log_elements, footer)
 
 
-def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = "", interactive: bool = True):
+def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat_message: str = "", mode: str = "parallel", interactive: bool = True):
     console.clear()
     console.print(render_banner())
     console.print(Panel(
@@ -742,7 +744,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
             st_badge = "[green][Sesi Aktif ✓][/green]" if acc.get("status") in ("active", "unknown") else f"[yellow][{acc.get('status')}][/yellow]"
             console.print(f"   [bold cyan][{idx}][/bold cyan] {u} ({n}) {st_badge}")
         if len(all_tt) > 1:
-            console.print(f"   [bold cyan][0][/bold cyan] [bold yellow]★ Gunakan Semua Akun (Multi-Akun Rotasi Otomatis)[/bold yellow]")
+            console.print(f"   [bold cyan][0][/bold cyan] [bold yellow]★ Gunakan Semua Akun (Multi-Akun Paralel / Bergantian)[/bold yellow]")
 
         if interactive and len(all_tt) > 1:
             acc_pick = Prompt.ask("  [bold white]Pilih Akun yang digunakan (0 untuk Semua Akun)[/bold white]", default="0").strip()
@@ -777,6 +779,18 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
         except Exception:
             pass
 
+    # Mode selection for multi-account
+    chosen_mode = mode if mode in ("parallel", "sequential") else "parallel"
+    if chosen_account_ids and len(chosen_account_ids) > 1:
+        if interactive:
+            console.print(f"\n[bold cyan]⚡ Pilih Mode Multi-Akun (Paralel / Bergantian):[/bold cyan]")
+            console.print(f"   [bold cyan][1][/bold cyan] [bold green]Mode Paralel (Serentak)[/bold green] — [white]Semua akun bekerja serentak bersamaan di layar[/white]")
+            console.print(f"   [bold cyan][2][/bold cyan] [bold yellow]Mode Bergantian (Rotasi)[/bold yellow] — [white]1 browser bergantian akun tiap periode (75 detik)[/white]")
+            m_pick = Prompt.ask("  [bold white]Pilihan Mode [1/2][/bold white]", choices=["1", "2"], default="1").strip()
+            chosen_mode = "parallel" if m_pick == "1" else "sequential"
+        else:
+            chosen_mode = mode if mode in ("parallel", "sequential") else tiktok_cfg.get("execution_mode", "parallel")
+
     default_user = target_user or tiktok_cfg.get("target_user") or "@evelyn.vln"
     default_speed = tap_speed or tiktok_cfg.get("tap_speed") or 50
     default_chat = chat_message or tiktok_cfg.get("chat_message") or "Semangat live kak! Support selalu 🔥"
@@ -800,8 +814,9 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
         do_chat = tiktok_cfg.get("auto_chat", True)
         t_chat = default_chat
 
+    mode_label = "⚡ Paralel (Serentak)" if chosen_mode == "parallel" else "🔄 Bergantian (Rotasi)"
     console.print(f"\n[bold cyan]🚀 Memulai bot Chromium TikTok Live pada Virtual Display :99 untuk streamer [bold yellow]{t_user}[/bold yellow]...[/bold cyan]")
-    console.print(f"[dim]Menyiapkan akun cookie: {account_label}...[/dim]")
+    console.print(f"[dim]Menyiapkan akun: {account_label} • Mode: {mode_label}...[/dim]")
     console.print("[dim]Tekan Ctrl+C untuk menghentikan bot dan kembali ke menu.[/dim]\n")
 
     server_url = "http://127.0.0.1:5000"
@@ -814,7 +829,8 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                 "tap_speed": t_speed,
                 "auto_chat": do_chat,
                 "chat_message": t_chat,
-                "account_ids": chosen_account_ids
+                "account_ids": chosen_account_ids,
+                "mode": chosen_mode
             },
             timeout=8
         )
@@ -865,8 +881,9 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                             error_count = st_data.get("error_count", 0)
                             is_logged_in_state = st_data.get("is_logged_in", False)
                             
+                            active_mode = st_data.get("execution_mode", chosen_mode)
                             if st_data.get("account_count", 0) > 1:
-                                cur_acc = st_data.get("current_account") or "Rotasi"
+                                cur_acc = st_data.get("current_account") or ("Paralel" if active_mode == "parallel" else "Rotasi")
                                 tt_username = f"👥 {st_data.get('account_count')} Akun ({cur_acc})"
                             elif st_data.get("current_account"):
                                 tt_username = st_data.get("current_account")
@@ -899,7 +916,8 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                     success=success_count,
                     fail=fail_count,
                     error=error_count,
-                    logs=recent_logs
+                    logs=recent_logs,
+                    mode=st_data.get("execution_mode", chosen_mode) if is_server_active else chosen_mode
                 )
                 live.update(card_ui)
     except KeyboardInterrupt:
@@ -1200,6 +1218,7 @@ def main():
     tt_parser.add_argument("--target", "-t", default="@evelyn.vln", help="Username host TikTok LIVE (default: @evelyn.vln)")
     tt_parser.add_argument("--speed", "-s", type=int, default=50, help="Kecepatan tap-tap like per detik (default: 50)")
     tt_parser.add_argument("--chat", "-c", default="Semangat live kak! Support selalu 🔥", help="Pesan live chat")
+    tt_parser.add_argument("--mode", "-m", choices=["parallel", "sequential", "paralel", "bergantian"], default="parallel", help="Mode eksekusi: parallel (serentak) atau sequential (bergantian)")
 
     args = parser.parse_args()
 
@@ -1256,7 +1275,8 @@ def main():
         elif args.command == "run":
             run_task_interactive(args.business, screen_count=args.slots, star_rating=args.stars)
         elif args.command == "tiktok-live":
-            run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat, interactive=False)
+            mode_arg = "sequential" if args.mode in ("sequential", "bergantian") else "parallel"
+            run_tiktok_live_interactive(target_user=args.target, tap_speed=args.speed, chat_message=args.chat, mode=mode_arg, interactive=False)
     except KeyboardInterrupt:
         console.print("\n[bold yellow]⚠️ Ctrl+C terdeteksi. Menghentikan semua tugas otomasi...[/bold yellow]")
         stop_all_running_tasks()

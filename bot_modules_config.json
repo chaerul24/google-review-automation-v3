@@ -12,11 +12,12 @@
     "enabled": true,
     "name": "TikTok Live",
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie).",
-    "target_user": "@feri_shaster22",
+    "target_user": "@adonara1990",
     "tap_speed": 5,
     "auto_chat": true,
     "chat_message": "Halo kak",
-    "multi_account": true
+    "multi_account": true,
+    "execution_mode": "parallel"
   },
   "youtube_live": {
     "enabled": false,

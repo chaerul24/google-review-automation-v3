@@ -312,14 +312,15 @@ class ServerClient:
         except Exception:
             return []
 
-    def start_tiktok_live(self, target_user: str, tap_speed: int = 50, auto_chat: bool = True, chat_message: str = "", account_ids: Optional[List[Any]] = None) -> Dict[str, Any]:
+    def start_tiktok_live(self, target_user: str, tap_speed: int = 50, auto_chat: bool = True, chat_message: str = "", account_ids: Optional[List[Any]] = None, mode: str = "parallel") -> Dict[str, Any]:
         """Start TikTok Live automation bot on server."""
         payload = {
             "target_user": target_user,
             "tap_speed": tap_speed,
             "auto_chat": auto_chat,
             "chat_message": chat_message,
-            "account_ids": account_ids
+            "account_ids": account_ids,
+            "mode": mode
         }
         return self._request("/api/tiktok-live/start", method="POST", data=payload)
 
@@ -2523,11 +2524,22 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
     else:
         print(f" {C_YELLOW}Peringatan: Belum ada cookie akun TikTok diimpor. Berjalan dalam Mode Tamu (Guest).{C_RESET}\n")
 
+    chosen_mode = "parallel"
+    if chosen_account_ids and len(chosen_account_ids) > 1:
+        print(f" {C_CYAN}┌── [PILIHAN MODE MULTI-AKUN (PARALEL / BERGANTIAN)]{C_RESET}")
+        print(f" {C_CYAN}│{C_RESET}   [1] {C_BOLD}{C_GREEN}⚡ Mode Paralel (Serentak){C_RESET} — Semua akun bekerja serentak bersamaan di layar")
+        print(f" {C_CYAN}│{C_RESET}   [2] {C_BOLD}{C_YELLOW}🔄 Mode Bergantian (Rotasi){C_RESET} — 1 browser bergantian akun tiap periode (75 detik)")
+        print(f" {C_CYAN}└──{C_RESET}")
+        m_in = input(f" {C_GREEN}Pilih Mode Multi-Akun [1/2] (default: 1): {C_RESET}").strip()
+        chosen_mode = "sequential" if m_in == "2" else "parallel"
+
     box_header("PENGATURAN OTOMASI TIKTOK LIVE")
+    mode_str = f"{C_GREEN}⚡ Paralel (Serentak){C_RESET}" if chosen_mode == "parallel" else f"{C_YELLOW}🔄 Bergantian (Rotasi){C_RESET}"
     print(f" {C_CYAN}┌── [MODUL TIKTOK LIVE: FITUR TERSEDIA]{C_RESET}")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}❤️  Auto Tap-tap Likes  :{C_RESET} {C_GREEN}Aktif{C_RESET} (Meningkatkan algoritma & interaksi live)")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}💬  Auto Live Chat      :{C_RESET} {C_GREEN}Aktif{C_RESET} (Kirim pesan interaksi otomatis)")
     print(f" {C_CYAN}│{C_RESET}   {C_WHITE}👥  Akun Bot TikTok     :{C_RESET} {C_CYAN}{account_label}{C_RESET}")
+    print(f" {C_CYAN}│{C_RESET}   {C_WHITE}⚡  Mode Eksekusi       :{C_RESET} {mode_str}")
     print(f" {C_CYAN}└──{C_RESET}\n")
 
     try:
@@ -2577,7 +2589,8 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                 tap_speed=tap_speed,
                 auto_chat=auto_chat,
                 chat_message=chat_msg,
-                account_ids=chosen_account_ids
+                account_ids=chosen_account_ids,
+                mode=chosen_mode
             )
             spin.stop(f" {C_GREEN}✓ Bot TikTok Live berhasil diaktifkan di server!{C_RESET}")
         except Exception as e:
@@ -2612,8 +2625,11 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     error = st.get("error_count", 0)
                     logs = st.get("logs", [])
 
+                    live_mode = st.get("execution_mode", chosen_mode)
+                    mode_tag = f"{C_GREEN}⚡ Paralel{C_RESET}" if live_mode == "parallel" else f"{C_YELLOW}🔄 Bergantian{C_RESET}"
+
                     if st.get("account_count", 0) > 1:
-                        cur_acc = st.get("current_account") or "Rotasi"
+                        cur_acc = st.get("current_account") or ("Paralel" if live_mode == "parallel" else "Rotasi")
                         live_acc_label = f"Multi-Akun ({st.get('account_count')} Akun - {cur_acc})"
                     elif st.get("current_account"):
                         live_acc_label = st.get("current_account")
@@ -2629,7 +2645,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     if cols >= 80:
                         card_lines = [
                             f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 ON-AIR (Display :99){C_RESET}  ⏱ {time_str}",
-                            f" {C_BOLD}{C_WHITE}Akun TikTok    {C_RESET} : {C_BOLD}{C_CYAN}{live_acc_label}{C_RESET}   │  {C_BOLD}{C_WHITE}Engine :{C_RESET} {C_GREEN}Native Chromium{C_RESET}",
+                            f" {C_BOLD}{C_WHITE}Akun TikTok    {C_RESET} : {C_BOLD}{C_CYAN}{live_acc_label}{C_RESET}   │  {C_BOLD}{C_WHITE}Mode   :{C_RESET} {mode_tag}",
                             f" {C_BOLD}{C_WHITE}Metrik Likes   {C_RESET} : {C_BOLD}{C_RED}❤️ {likes:,} tap{C_RESET} ({tap_speed} tap/s)  │  {C_BOLD}{C_CYAN}💬 Chat :{C_RESET} {chats} terkirim",
                             f" ───────────────────────────────────────────────────────────────────",
                             f" {C_BOLD}{C_WHITE}Statistik Live {C_RESET} : {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
@@ -2639,7 +2655,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                         c_w = min(cols - 4, 46)
                         card_lines = [
                             f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [LIVE :99] ⏱ {time_str}",
-                            f" {C_BOLD}{C_CYAN}👤 AKUN  {C_RESET} : {live_acc_label[:20]}",
+                            f" {C_BOLD}{C_CYAN}👤 AKUN  {C_RESET} : {live_acc_label[:18]} │ {mode_tag}",
                             f" {C_BOLD}{C_MAGENTA}⚡ LIKES {C_RESET} : {C_RED}❤️ {likes:,}{C_RESET} ({tap_speed}/s) │ 💬 {chats}",
                             f" ───────────────────────────────────────",
                             f" {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
@@ -3057,6 +3073,7 @@ def main():
     p_tt.add_argument("--chat", "-c", default="Semangat live kak! Support selalu 🔥", help="Pesan live chat")
     p_tt.add_argument("--no-chat", action="store_true", help="Nonaktifkan kirim chat otomatis")
     p_tt.add_argument("--accounts", "-a", nargs="*", default=None, help="ID atau username akun TikTok (default: semua akun cookie)")
+    p_tt.add_argument("--mode", "-m", choices=["parallel", "sequential", "paralel", "bergantian"], default="parallel", help="Mode eksekusi: parallel (serentak) atau sequential (bergantian)")
 
     args = parser.parse_args()
     client = ServerClient(base_url=args.server, api_key=args.key or "")

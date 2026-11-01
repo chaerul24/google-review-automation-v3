@@ -105,7 +105,10 @@ Kontrol dan monitor jalannya bot langsung dari HP Android melalui **Termux**:
    ```
    *(Atau gunakan IP lokal jika satu jaringan WiFi: `curl -O http://<SERVER_IP>:5000/download/bot.sh && bash bot.sh`)*
 3. Masukkan Username dan Password akun AutoBotix Anda.
-4. Pilih menu `[1] 🚀 Jalankan Task` untuk menjalankan atau memantau ulasan secara live!
+4. Pilih menu:
+   - `[1] 🗺️ Google Map (Mulai)` — Jalankan ulasan Google Maps otomatis
+   - `[2] 🎵 Tiktok Live (Mulai)` — Otomasi tap-tap likes & chat TikTok Live
+   - Tekan `Ctrl + C` kapan saja untuk otomatis membatalkan dan menghentikan seluruh bot & browser di server!
 
 ---
 

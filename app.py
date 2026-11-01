@@ -1350,14 +1350,17 @@ def api_dashboard():
         if os.path.exists(f"/tmp/.X11-unix/X{num}"):
             displays.append(f":{num}")
 
+    tiktok_cookies = db.get_all_tiktok_cookies()
     return jsonify({
         "status": "ok",
         "businesses": businesses,
         "all_emails": all_emails,
         "all_cookies": all_cookies,
+        "all_tiktok_cookies": tiktok_cookies,
         "eligible_emails": sum(1 for e in all_emails if not e.get("flagged")),
         "flagged_emails": sum(1 for e in all_emails if e.get("flagged")),
         "active_cookies": sum(1 for c in all_cookies if c.get("status") == "active"),
+        "active_tiktok_cookies": sum(1 for c in tiktok_cookies if c.get("status") == "active"),
         "displays": displays,
         "queue_metrics": dict(queue_metrics or {}),
         "inventory": inventory,
@@ -1738,6 +1741,36 @@ class TikTokLiveRunner:
             driver = webdriver.Chrome(options=opts)
             self.driver = driver
 
+            # Check if active TikTok cookie exists in database
+            active_cookie = db.get_active_tiktok_cookie()
+            cookie_injected = False
+            if active_cookie and active_cookie.get("cookie_json"):
+                try:
+                    c_user = active_cookie.get("username", "@tiktok_user")
+                    self.add_log("info", f"🔑 Menginjeksi cookie sesi akun TikTok {c_user} ke browser...")
+                    driver.get("https://www.tiktok.com")
+                    time.sleep(2.0)
+                    raw_c = json.loads(active_cookie.get("cookie_json") or "[]")
+                    if isinstance(raw_c, list):
+                        for ck in raw_c:
+                            if isinstance(ck, dict) and ck.get("name") and ck.get("value"):
+                                c_dict = {
+                                    "name": str(ck.get("name")),
+                                    "value": str(ck.get("value")),
+                                    "domain": ck.get("domain") or ".tiktok.com",
+                                    "path": ck.get("path") or "/",
+                                }
+                                if "secure" in ck:
+                                    c_dict["secure"] = bool(ck["secure"])
+                                try:
+                                    driver.add_cookie(c_dict)
+                                except Exception:
+                                    pass
+                        cookie_injected = True
+                        self.add_log("success", f"✓ Cookie sesi {c_user} berhasil disuntikkan ke Chromium!")
+                except Exception as ex:
+                    self.add_log("warning", f"⚠️ Peringatan saat menyuntikkan cookie: {ex}")
+
             self.add_log("info", f"🔗 Menavigasi ke web TikTok langsung: {target_url}...")
             driver.get(target_url)
             time.sleep(4.5)
@@ -1759,10 +1792,13 @@ class TikTokLiveRunner:
             with self.lock:
                 self.is_logged_in = is_logged_in
 
-            login_status_str = "BERHASIL LOGIN (Sesi Aktif)" if is_logged_in else "BELUM LOGIN (Tamu / Guest)"
+            active_username = active_cookie.get("username") if (active_cookie and is_logged_in) else ""
             if is_logged_in:
-                self.add_log("success", f"✓ STATUS LOGIN: Berhasil Login ke Akun TikTok! Sesi Aktif terverifikasi.")
+                label_user = f" ({active_username})" if active_username else ""
+                login_status_str = f"BERHASIL LOGIN{label_user} (Sesi Aktif)"
+                self.add_log("success", f"✓ STATUS LOGIN: Berhasil Login ke Akun TikTok{label_user}! Sesi Aktif terverifikasi.")
             else:
+                login_status_str = "BELUM LOGIN (Tamu / Guest)"
                 self.add_log("warning", "▲ STATUS LOGIN: Belum Login (Mode Tamu / Guest). Tombol 'Log in' terdeteksi.")
                 self.add_log("info", "ℹ️ Catatan: Fitur Tap-tap likes tetap aktif di layar. Untuk kirim komentar resmi, gunakan akun login.")
 
@@ -1910,6 +1946,168 @@ def api_tiktok_live_status():
         if not (api_key and expected_key and hmac.compare_digest(api_key, expected_key)):
             return jsonify({"error": "Unauthorized"}), 401
     return jsonify({"status": "ok", "state": tiktok_live_runner.get_status()})
+
+
+# ── TikTok Account & Cookie Management Endpoints ────────────────────────────
+@app.route("/api/tiktok-cookies", methods=["GET"])
+@login_required
+def api_get_tiktok_cookies():
+    cookies = db.get_all_tiktok_cookies()
+    enriched = []
+    for ck in cookies:
+        raw = ck.get("cookie_json") or "[]"
+        try:
+            cdata = json.loads(raw)
+            if isinstance(cdata, list):
+                names = {c.get("name") for c in cdata if isinstance(c, dict)}
+                count = len(cdata)
+            else:
+                names = set()
+                count = 1
+        except Exception:
+            names = set()
+            count = 0
+        has_session = bool({"sessionid", "sid_guard", "sessionid_ss"} & names)
+        enriched.append({
+            "id": ck["id"],
+            "username": ck["username"],
+            "nickname": ck.get("nickname") or "",
+            "avatar_url": ck.get("avatar_url") or "",
+            "status": ck.get("status") or "unknown",
+            "has_sessionid": has_session,
+            "cookie_count": count,
+            "last_checked_at": ck.get("last_checked_at"),
+            "error_reason": ck.get("error_reason") or "",
+            "created_at": ck.get("created_at"),
+            "updated_at": ck.get("updated_at"),
+        })
+    return jsonify({"status": "ok", "cookies": enriched, "total": len(enriched)})
+
+
+@app.route("/api/tiktok-cookies", methods=["POST"])
+@login_required
+def api_add_tiktok_cookie():
+    data = request.get_json(silent=True) or request.form
+    raw_payload = (data.get("cookie_json") or "").strip()
+    if not raw_payload:
+        return jsonify({"status": "error", "message": "Payload cookie TikTok tidak boleh kosong."}), 400
+
+    username_input = (data.get("username") or data.get("account_name") or "").strip()
+    nickname_input = (data.get("nickname") or "").strip()
+
+    # Parse payload (supports JSON array, raw header 'sessionid=xxx; ...', or single sessionid token)
+    parsed_cookies = []
+    if raw_payload.startswith("[") and raw_payload.endswith("]"):
+        try:
+            parsed_cookies = json.loads(raw_payload)
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Format JSON tidak valid: {e}"}), 400
+    elif "=" in raw_payload:
+        # Key-value header format
+        pairs = [p.strip() for p in raw_payload.split(";") if p.strip()]
+        for p in pairs:
+            if "=" in p:
+                k, v = p.split("=", 1)
+                parsed_cookies.append({
+                    "name": k.strip(),
+                    "value": v.strip(),
+                    "domain": ".tiktok.com",
+                    "path": "/"
+                })
+    else:
+        # Assume direct sessionid token string
+        token = raw_payload.strip()
+        parsed_cookies.append({
+            "name": "sessionid",
+            "value": token,
+            "domain": ".tiktok.com",
+            "path": "/"
+        })
+
+    if not parsed_cookies:
+        return jsonify({"status": "error", "message": "Gagal mengurai cookie TikTok."}), 400
+
+    # Live verification using session_manager
+    chk = session_manager.check_tiktok_account_live(parsed_cookies, fallback_account=username_input)
+    status = chk.get("status", "unknown")
+    reason = chk.get("reason", "")
+    detected_user = chk.get("account_name") or username_input or f"@tiktok_user_{int(time.time()) % 10000:04d}"
+    if not detected_user.startswith("@"):
+        detected_user = f"@{detected_user}"
+
+    cookie_json_str = json.dumps(parsed_cookies)
+    cid, is_new = db.save_tiktok_cookie(
+        username=detected_user,
+        cookie_json=cookie_json_str,
+        nickname=nickname_input or chk.get("nickname", ""),
+        status=status,
+        error_reason=reason
+    )
+
+    return jsonify({
+        "status": "ok",
+        "saved": True,
+        "is_new": is_new,
+        "cookie_id": cid,
+        "username": detected_user,
+        "session_status": status,
+        "reason": reason,
+        "cookie_count": len(parsed_cookies)
+    })
+
+
+@app.route("/api/tiktok-cookies/<int:cookie_id>", methods=["DELETE", "POST"])
+@login_required
+def api_delete_tiktok_cookie(cookie_id):
+    db.delete_tiktok_cookie(cookie_id)
+    return jsonify({"status": "ok", "message": "Cookie TikTok berhasil dihapus."})
+
+
+@app.route("/api/tiktok-cookies/<int:cookie_id>/test", methods=["POST"])
+@login_required
+def api_test_tiktok_cookie(cookie_id):
+    ck = db.get_tiktok_cookie(cookie_id)
+    if not ck:
+        return jsonify({"status": "error", "message": "Cookie tidak ditemukan."}), 404
+
+    chk = session_manager.check_tiktok_account_live(ck.get("cookie_json"), fallback_account=ck.get("username"))
+    new_status = chk.get("status", "unknown")
+    reason = chk.get("reason", "")
+    db.update_tiktok_cookie_status(cookie_id, new_status, error_reason=reason)
+
+    return jsonify({
+        "status": "ok",
+        "cookie_id": cookie_id,
+        "username": ck.get("username"),
+        "session_status": new_status,
+        "is_valid": chk.get("is_valid", False),
+        "reason": reason
+    })
+
+
+@app.route("/api/tiktok-cookies/test-all", methods=["POST"])
+@login_required
+def api_test_all_tiktok_cookies():
+    cookies = db.get_all_tiktok_cookies()
+    active_cnt = 0
+    expired_cnt = 0
+    for ck in cookies:
+        chk = session_manager.check_tiktok_account_live(ck.get("cookie_json"), fallback_account=ck.get("username"))
+        new_status = chk.get("status", "unknown")
+        reason = chk.get("reason", "")
+        db.update_tiktok_cookie_status(ck["id"], new_status, error_reason=reason)
+        if new_status == "active":
+            active_cnt += 1
+        else:
+            expired_cnt += 1
+
+    return jsonify({
+        "status": "ok",
+        "total": len(cookies),
+        "active": active_cnt,
+        "expired": expired_cnt,
+        "message": f"Pemeriksaan selesai: {active_cnt} aktif, {expired_cnt} perlu otorisasi."
+    })
 
 
 @app.route("/api/generate-preview", methods=["POST"])

@@ -88,6 +88,13 @@ export default function Sidebar({
           icon: Cookie,
           badge: 'CDP',
         },
+        {
+          to: '/dashboard?tab=tiktok-cookies',
+          tab: 'tiktok-cookies',
+          label: 'Akun Tiktok (Cookie)',
+          icon: Cookie,
+          badge: 'TikTok',
+        },
       ],
     },
   ];

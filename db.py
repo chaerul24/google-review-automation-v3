@@ -123,6 +123,7 @@ def init_db():
     migrate_add_account_name()
     migrate_add_screen_count()
     migrate_add_gemini_config()
+    migrate_add_tiktok_cookies_table()
     init_templates_and_campaigns_db()
     ensure_all_businesses_have_config()
     sync_active_cookies_to_emails()
@@ -1371,6 +1372,148 @@ def migrate_add_cookies_table():
             )
         """)
     migrate_add_cookie_session_columns()
+    migrate_add_tiktok_cookies_table()
+
+
+def migrate_add_tiktok_cookies_table():
+    """Create tiktok_cookies table if it doesn't exist."""
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tiktok_cookies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                nickname TEXT DEFAULT '',
+                avatar_url TEXT DEFAULT '',
+                sec_uid TEXT DEFAULT '',
+                cookie_json TEXT NOT NULL,
+                status TEXT DEFAULT 'unknown',
+                last_checked_at TIMESTAMP,
+                error_reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+
+def get_all_tiktok_cookies():
+    """Return all TikTok accounts/cookies ordered by newest."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, username, nickname, avatar_url, sec_uid, cookie_json, status, "
+            "last_checked_at, error_reason, created_at, updated_at "
+            "FROM tiktok_cookies ORDER BY id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_tiktok_cookie(cookie_id):
+    """Retrieve a single TikTok cookie by ID."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, username, nickname, avatar_url, sec_uid, cookie_json, status, "
+            "last_checked_at, error_reason, created_at, updated_at "
+            "FROM tiktok_cookies WHERE id = ?",
+            (cookie_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_tiktok_cookie_by_username(username):
+    """Retrieve a single TikTok cookie by username."""
+    username = str(username).strip()
+    if not username.startswith("@") and "@" not in username and "." not in username:
+        username = f"@{username}"
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, username, nickname, avatar_url, sec_uid, cookie_json, status, "
+            "last_checked_at, error_reason, created_at, updated_at "
+            "FROM tiktok_cookies WHERE LOWER(username) = LOWER(?)",
+            (username,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_active_tiktok_cookie():
+    """Retrieve the primary active TikTok cookie for live bot operations."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, username, nickname, avatar_url, sec_uid, cookie_json, status, "
+            "last_checked_at, error_reason, created_at, updated_at "
+            "FROM tiktok_cookies WHERE status = 'active' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT id, username, nickname, avatar_url, sec_uid, cookie_json, status, "
+                "last_checked_at, error_reason, created_at, updated_at "
+                "FROM tiktok_cookies ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        return dict(row) if row else None
+
+
+def save_tiktok_cookie(username, cookie_json, nickname="", status="active", error_reason=None):
+    """Insert or update a TikTok account cookie."""
+    username = str(username).strip()
+    if username and not username.startswith("@"):
+        username = f"@{username}"
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM tiktok_cookies WHERE LOWER(username) = LOWER(?)", (username,)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE tiktok_cookies SET cookie_json = ?, nickname = COALESCE(NULLIF(?, ''), nickname), "
+                "status = ?, error_reason = ?, last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP "
+                "WHERE LOWER(username) = LOWER(?)",
+                (cookie_json, nickname, status, error_reason, username),
+            )
+            return existing["id"], False
+        else:
+            cur = conn.execute(
+                "INSERT INTO tiktok_cookies (username, nickname, cookie_json, status, error_reason, last_checked_at) "
+                "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                (username, nickname, cookie_json, status, error_reason),
+            )
+            return cur.lastrowid, True
+
+
+def delete_tiktok_cookie(cookie_id):
+    """Delete a TikTok cookie record."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM tiktok_cookies WHERE id = ?", (cookie_id,))
+
+
+def update_tiktok_cookie_status(identifier, status, error_reason=None, nickname=None):
+    """Update status for a TikTok cookie by ID or username."""
+    with get_db() as conn:
+        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+            if nickname:
+                conn.execute(
+                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, nickname = ?, "
+                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (status, error_reason, nickname, int(identifier)),
+                )
+            else:
+                conn.execute(
+                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, "
+                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (status, error_reason, int(identifier)),
+                )
+        else:
+            uname = str(identifier).strip()
+            if not uname.startswith("@"):
+                uname = f"@{uname}"
+            if nickname:
+                conn.execute(
+                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, nickname = ?, "
+                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE LOWER(username) = LOWER(?)",
+                    (status, error_reason, nickname, uname),
+                )
+            else:
+                conn.execute(
+                    "UPDATE tiktok_cookies SET status = ?, error_reason = ?, "
+                    "last_checked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE LOWER(username) = LOWER(?)",
+                    (status, error_reason, uname),
+                )
 
 
 def migrate_add_cookie_session_columns():

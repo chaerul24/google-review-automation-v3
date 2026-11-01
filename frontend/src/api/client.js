@@ -268,6 +268,30 @@ export const api = {
     return request('/api/cookies/health');
   },
 
+  // TikTok Account & Cookies
+  async getTikTokCookies() {
+    return request('/api/tiktok-cookies');
+  },
+
+  async addTikTokCookie(username, cookie_json, nickname = '') {
+    return request('/api/tiktok-cookies', {
+      method: 'POST',
+      body: JSON.stringify({ username, cookie_json, nickname }),
+    });
+  },
+
+  async deleteTikTokCookie(id) {
+    return request(`/api/tiktok-cookies/${id}`, { method: 'DELETE' });
+  },
+
+  async testTikTokCookie(id) {
+    return request(`/api/tiktok-cookies/${id}/test`, { method: 'POST' });
+  },
+
+  async testAllTikTokCookies() {
+    return request('/api/tiktok-cookies/test-all', { method: 'POST' });
+  },
+
   // Business Detail & Queue Control
   async getBusinessDetail(id) {
     return request(`/api/businesses/${id}`);

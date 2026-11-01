@@ -299,6 +299,22 @@ export const api = {
     return request('/api/tiktok-cookies/test-all', { method: 'POST' });
   },
 
+  // TikTok Live Runner Control
+  async startTikTokLive(params = {}) {
+    return request('/api/tiktok-live/start', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  async stopTikTokLive() {
+    return request('/api/tiktok-live/stop', { method: 'POST' });
+  },
+
+  async getTikTokLiveStatus() {
+    return request('/api/tiktok-live/status');
+  },
+
   // Business Detail & Queue Control
   async getBusinessDetail(id) {
     return request(`/api/businesses/${id}`);

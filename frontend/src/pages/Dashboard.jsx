@@ -519,8 +519,8 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
-  const handleSaveTiktokSettings = async (e) => {
-    if (e) e.preventDefault();
+  const handleSaveTiktokSettings = async (e, startImmediately = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     const nextConfig = {
       ...botModulesConfig,
       tiktok_live: {
@@ -548,10 +548,88 @@ export default function Dashboard({ onLogout }) {
       });
       setBotConfigSavedSuccess(true);
       setTimeout(() => setBotConfigSavedSuccess(false), 2500);
+
+      if (startImmediately) {
+        setShowTiktokConfigModal(false);
+        await handleStartTikTokLive({
+          target_user: tiktokForm.target_user,
+          tap_speed: Number(tiktokForm.tap_speed),
+          chat_message: tiktokForm.chat_message,
+          display: Boolean(tiktokForm.display),
+        });
+      }
     } catch (err) {
       console.error('Failed to save tiktok config:', err);
     } finally {
       setBotConfigSaving(false);
+    }
+  };
+
+  const handleStartTikTokLive = async (customParams = {}) => {
+    try {
+      setSubmitting(true);
+      const target = customParams.target_user || tiktokForm.target_user || botModulesConfig.tiktok_live?.target_user || '@tryfredy';
+      const tapSpeed = Number(customParams.tap_speed || tiktokForm.tap_speed || botModulesConfig.tiktok_live?.tap_speed) || 50;
+      const chatMsg = customParams.chat_message || tiktokForm.chat_message || botModulesConfig.tiktok_live?.chat_message || 'Halo Cantik';
+      const isDisplay = customParams.display !== undefined
+        ? Boolean(customParams.display)
+        : Boolean(botModulesConfig.display?.enabled || tiktokForm.display);
+
+      const res = await api.startTikTokLive({
+        target_user: target,
+        tap_speed: tapSpeed,
+        auto_chat: true,
+        chat_message: chatMsg,
+        mode: 'parallel',
+        display: isDisplay,
+      });
+
+      if (res && res.status === 'ok') {
+        setSuccessMsg(`🚀 Bot TikTok Live berhasil dijalankan ke target ${target}!`);
+        setStreamSessionKey(Date.now());
+        setScreenTs(Date.now());
+        if (res.state) {
+          setTiktokLiveScreenStatus(res.state);
+          setLiveTask(prev => ({
+            ...(prev || {}),
+            tiktok_live: res.state,
+            is_running: true,
+            current_task: 'tiktok_live',
+          }));
+        }
+        setSharescreenMode('tiktok_live');
+      } else {
+        setErrorMsg(`Gagal memulai TikTok Live: ${res?.message || 'Error'}`);
+      }
+    } catch (err) {
+      setErrorMsg(`Gagal memulai TikTok Live: ${err.message || err}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStopTikTokLive = async () => {
+    try {
+      setSubmitting(true);
+      const res = await api.stopTikTokLive();
+      if (res && res.status === 'ok') {
+        setSuccessMsg('🛑 Bot TikTok Live berhasil dihentikan.');
+        if (res.state) {
+          setTiktokLiveScreenStatus(res.state);
+          setLiveTask(prev => ({
+            ...(prev || {}),
+            tiktok_live: res.state,
+            is_running: false,
+            current_task: null,
+          }));
+        }
+      } else {
+        setErrorMsg(`Gagal menghentikan TikTok Live: ${res?.message || 'Error'}`);
+      }
+    } catch (err) {
+      setErrorMsg(`Gagal menghentikan TikTok Live: ${err.message || err}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -987,6 +1065,10 @@ export default function Dashboard({ onLogout }) {
       setSuccessMsg(`🚀 Ulasan bot berhasil diluncurkan dengan ${fastRunForm.slots} browser Chromium!`);
       setShowFastRunModal(false);
       loadDashboardData(true);
+      setSharescreenMode('google_map');
+      setStreamSessionKey(Date.now());
+      setScreenTs(Date.now());
+      setStreamError(false);
     } catch (err) {
       setErrorMsg(`Gagal menjalankan bot: ${err.message || err}`);
     } finally {
@@ -998,6 +1080,17 @@ export default function Dashboard({ onLogout }) {
   const emails = data?.all_emails || [];
   const cookies = data?.all_cookies || [];
   const businesses = data?.businesses || [];
+
+  const handleOpenFastRunModal = (bizId = null) => {
+    let targetBizId = bizId;
+    if (!targetBizId && !fastRunForm.business_id && businesses && businesses.length > 0) {
+      targetBizId = String(businesses[0].id);
+    }
+    if (targetBizId) {
+      setFastRunForm(prev => ({ ...prev, business_id: String(targetBizId) }));
+    }
+    setShowFastRunModal(true);
+  };
   const queueMetrics = data?.queue_metrics || {};
   const hostMetrics = data?.host_metrics || {};
   const displays = data?.displays || cliStatus?.displays || [':99', ':100', ':101', ':102', ':103', ':104'];
@@ -2438,6 +2531,7 @@ export default function Dashboard({ onLogout }) {
           const rawStats = ttState?.account_stats || {};
           let ttCardList = Object.values(rawStats);
           const isDisplayOn = Boolean(botModulesConfig.display?.enabled);
+          const isGMapRunning = Boolean(liveTask?.is_running && !liveTask?.current_task?.includes('tiktok'));
 
           const availableCookies = (tiktokCookies && tiktokCookies.length > 0)
             ? tiktokCookies
@@ -2576,6 +2670,66 @@ export default function Dashboard({ onLogout }) {
                     </button>
                   </div>
 
+                  {/* Start / Stop Controls for Google Map & TikTok Live */}
+                  {sharescreenMode === 'google_map' ? (
+                    isGMapRunning ? (
+                      <button
+                        type="button"
+                        onClick={handleEmergencyStop}
+                        disabled={submitting || refreshing}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition flex items-center gap-1.5 shadow-sm shadow-rose-600/30 cursor-pointer disabled:opacity-50 active:scale-95"
+                        title="Hentikan bot ulasan Google Maps"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        <span>Stop Google Map</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFastRunModal()}
+                        disabled={submitting}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1.5 shadow-sm shadow-emerald-600/30 cursor-pointer disabled:opacity-50 active:scale-95"
+                        title="Luncurkan bot ulasan Google Maps"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Start Google Map</span>
+                      </button>
+                    )
+                  ) : isTTRunning ? (
+                    <button
+                      type="button"
+                      onClick={handleStopTikTokLive}
+                      disabled={submitting}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition flex items-center gap-1.5 shadow-sm shadow-rose-600/30 cursor-pointer disabled:opacity-50 active:scale-95"
+                      title="Hentikan interaksi TikTok Live"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      <span>Stop TikTok Live</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleStartTikTokLive()}
+                        disabled={submitting}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-600 to-pink-600 hover:from-cyan-500 hover:to-pink-500 text-white transition flex items-center gap-1.5 shadow-sm shadow-cyan-600/30 cursor-pointer disabled:opacity-50 active:scale-95"
+                        title={`Mulai bot interaksi TikTok Live ke target ${botModulesConfig.tiktok_live?.target_user || '@tryfredy'}`}
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Start TikTok Live</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowTiktokConfigModal(true)}
+                        className="px-2.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1 cursor-pointer"
+                        title="Ubah Target Akun & Pesan Chat TikTok"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="hidden sm:inline">Atur</span>
+                      </button>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => {
                       setStreamSessionKey(Date.now());
@@ -2691,15 +2845,39 @@ export default function Dashboard({ onLogout }) {
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
-                        {liveTask?.is_running && !liveTask?.current_task?.includes('tiktok') ? (
-                          <span className="font-mono text-[11px] text-emerald-400 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                            LIVE MJPEG STREAM
-                          </span>
+                        {isGMapRunning ? (
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-emerald-400 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                              LIVE MJPEG STREAM
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleEmergencyStop}
+                              disabled={submitting || refreshing}
+                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-600 hover:bg-rose-500 text-white transition flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
+                              title="Hentikan bot ulasan Google Maps"
+                            >
+                              <Square className="w-3 h-3 fill-current" />
+                              <span>Stop Bot</span>
+                            </button>
+                          </div>
                         ) : (
-                          <span className="font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
-                            STANDBY (:99)
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
+                              STANDBY (:99)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenFastRunModal()}
+                              disabled={submitting}
+                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
+                              title="Luncurkan bot ulasan Google Maps"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>Start Google Map</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -2765,19 +2943,19 @@ export default function Dashboard({ onLogout }) {
                             <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
                               <button
                                 type="button"
-                                onClick={() => setShowFastRunModal(true)}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm"
+                                onClick={() => handleOpenFastRunModal()}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm active:scale-95"
                               >
                                 <Play className="w-3.5 h-3.5 fill-current" />
-                                <span>Mulai Ulasan Google Maps</span>
+                                <span>Start Google Map</span>
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setShowTiktokConfigModal(true)}
-                                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm"
+                                onClick={() => handleStartTikTokLive()}
+                                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-pink-600 hover:from-cyan-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm active:scale-95"
                               >
                                 <TikTokLogo className="w-3.5 h-3.5" />
-                                <span>Mulai Bot TikTok Live</span>
+                                <span>Start TikTok Live</span>
                               </button>
                               <button
                                 type="button"
@@ -2899,14 +3077,48 @@ export default function Dashboard({ onLogout }) {
                           👥 {ttCardList.length} Display
                         </span>
                       </div>
-                      {!isTTRunning && (
-                        <button
-                          onClick={() => setShowTiktokConfigModal(true)}
-                          className="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm shadow-cyan-600/30 transition flex items-center gap-1.5"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-white" />
-                          <span>Mulai TikTok Live</span>
-                        </button>
+                      {!isTTRunning ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleStartTikTokLive()}
+                            disabled={submitting}
+                            className="px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-pink-600 hover:from-cyan-500 hover:to-pink-500 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm shadow-cyan-600/30 transition flex items-center gap-1.5 disabled:opacity-50 active:scale-95"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-white" />
+                            <span>Start TikTok Live</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowTiktokConfigModal(true)}
+                            className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs cursor-pointer transition flex items-center gap-1.5"
+                            title="Konfigurasi Target Streamer & Pesan Chat"
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
+                            <span>Atur</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleStopTikTokLive}
+                            disabled={submitting}
+                            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm shadow-rose-600/30 transition flex items-center gap-1.5 disabled:opacity-50 active:scale-95"
+                          >
+                            <Square className="w-3.5 h-3.5 fill-white" />
+                            <span>Stop TikTok Live</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowTiktokConfigModal(true)}
+                            className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs cursor-pointer transition flex items-center gap-1.5"
+                            title="Ubah Target Streamer / Pesan"
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
+                            <span>Atur</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -6492,21 +6704,30 @@ export default function Dashboard({ onLogout }) {
                 </button>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowTiktokConfigModal(false)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={botConfigSaving}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>{botConfigSaving ? 'Menyimpan...' : 'Simpan Pengaturan'}</span>
+                  <span>{botConfigSaving ? 'Menyimpan...' : 'Simpan'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSaveTiktokSettings(e, true)}
+                  disabled={botConfigSaving || submitting}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-600 to-pink-600 hover:from-cyan-500 hover:to-pink-500 text-white shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95"
+                >
+                  <Play className="w-3.5 h-3.5 fill-white" />
+                  <span>Simpan &amp; Start Bot 🚀</span>
                 </button>
               </div>
             </form>

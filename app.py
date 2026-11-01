@@ -1620,6 +1620,7 @@ class TikTokLiveRunner:
         self.is_running = False
         self.stop_event = threading.Event()
         self.worker_thread = None
+        self.browser_proc = None
         self.target_user = "@evelyn.vln"
         self.tap_speed = 50
         self.auto_chat = True
@@ -1666,6 +1667,33 @@ class TikTokLiveRunner:
         self.add_log("info", f"🚀 Memulai TikTok Live Bot untuk streamer {self.target_user}")
         self.add_log("info", f"⚡ Konfigurasi: Tap Speed {self.tap_speed}/detik | Auto Chat: {'Aktif' if self.auto_chat else 'Nonaktif'}")
         
+        # Launch Chromium on Display :99 to show the TikTok Live stream on Sharescreen
+        try:
+            profile_dir = "/tmp/tiktok_chrome_profile"
+            os.makedirs(profile_dir, exist_ok=True)
+            browser_cmd = [
+                "/usr/bin/chromium",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--kiosk",
+                "--window-size=1366,768",
+                "--window-position=0,0",
+                f"--user-data-dir={profile_dir}",
+                f"http://127.0.0.1:5000/tiktok-live/display-stream?target={self.target_user}&speed={self.tap_speed}"
+            ]
+            env = os.environ.copy()
+            env["DISPLAY"] = ":99"
+            self.browser_proc = subprocess.Popen(
+                browser_cmd,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            self.add_log("success", "📺 Menampilkan siaran TikTok Live di Virtual Display :99 (Sharescreen Monitor Aktif)")
+        except Exception as e:
+            self.add_log("warning", f"Layar Display :99 tidak dapat dibuka: {e}")
+
         self.worker_thread = threading.Thread(target=self._run_loop, daemon=True)
         self.worker_thread.start()
         return True, "Bot TikTok Live berhasil dimulai."
@@ -1676,6 +1704,19 @@ class TikTokLiveRunner:
                 return False, "Bot TikTok Live tidak sedang berjalan."
             self.stop_event.set()
         self.add_log("warning", "🛑 Perintah penghentian bot TikTok Live diterima...")
+        
+        # Terminate Chromium browser on Display :99
+        if self.browser_proc:
+            try:
+                self.browser_proc.terminate()
+                self.browser_proc.wait(timeout=2.0)
+            except Exception:
+                try:
+                    self.browser_proc.kill()
+                except Exception:
+                    pass
+            self.browser_proc = None
+
         if self.worker_thread and self.worker_thread.is_alive():
             self.worker_thread.join(timeout=3.0)
         with self.lock:
@@ -1750,6 +1791,13 @@ class TikTokLiveRunner:
 
 tiktok_live_runner = TikTokLiveRunner()
 
+@app.route("/tiktok-live/display-stream")
+def tiktok_live_display_stream():
+    """Live full-screen TikTok Live stage interface displayed on Virtual Display :99."""
+    target_user = request.args.get("target") or "@evelyn.vln"
+    tap_speed = request.args.get("speed") or 50
+    return render_template("tiktok_live_display.html", target_user=target_user, tap_speed=tap_speed)
+
 @app.route("/api/tiktok-live/start", methods=["POST"])
 @login_required
 def api_tiktok_live_start():
@@ -1778,8 +1826,13 @@ def api_tiktok_live_stop():
     return jsonify({"status": "ok", "message": msg, "state": tiktok_live_runner.get_status()})
 
 @app.route("/api/tiktok-live/status", methods=["GET"])
-@login_required
 def api_tiktok_live_status():
+    # Allow localhost / Display :99 scripts without mandatory session cookie
+    if not session.get("logged_in") and request.remote_addr not in ("127.0.0.1", "localhost", "::1"):
+        api_key = request.headers.get("X-API-Key")
+        expected_key = os.environ.get("APP_PASSWORD", "")
+        if not (api_key and expected_key and hmac.compare_digest(api_key, expected_key)):
+            return jsonify({"error": "Unauthorized"}), 401
     return jsonify({"status": "ok", "state": tiktok_live_runner.get_status()})
 
 

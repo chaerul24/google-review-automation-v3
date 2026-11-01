@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TikTok Live Bot — Sharescreen Display :99</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes floatUp {
+      0% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.6) rotate(0deg);
+      }
+      20% {
+        opacity: 1;
+        transform: translateY(-40px) scale(1.1) rotate(-10deg);
+      }
+      80% {
+        opacity: 0.9;
+        transform: translateY(-240px) scale(1) rotate(12deg);
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-340px) scale(0.8) rotate(-15deg);
+      }
+    }
+    .heart-particle {
+      position: absolute;
+      pointer-events: none;
+      animation: floatUp 2.4s ease-out forwards;
+      z-index: 40;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 15px rgba(254, 44, 85, 0.4); }
+      50% { box-shadow: 0 0 30px rgba(0, 242, 254, 0.6); }
+    }
+    .pulse-glow {
+      animation: pulseGlow 2.5s infinite;
+    }
+    @keyframes tapRipple {
+      0% { transform: scale(0.4); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+    .tap-ripple {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(254,44,85,0.7) 0%, rgba(0,242,254,0) 70%);
+      pointer-events: none;
+      animation: tapRipple 0.6s ease-out forwards;
+      z-index: 35;
+    }
+    /* Hide scrollbar */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-[#090b10] text-slate-100 font-sans overflow-hidden w-screen h-screen select-none">
+
+  <!-- TOP HUD BAR: System Status & Virtual Display info -->
+  <header class="h-12 bg-slate-950/90 border-b border-slate-800/80 px-6 flex items-center justify-between text-xs backdrop-blur-md z-50 relative">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span>
+        <span class="font-bold tracking-wider text-slate-200">AUTOBOTIX TIKTOK LIVE ENGINE</span>
+      </div>
+      <span class="text-slate-600">•</span>
+      <span class="font-mono text-emerald-400 font-semibold px-2.5 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800/50">
+        Virtual Display :99 (1366 × 768)
+      </span>
+      <span class="text-slate-600">•</span>
+      <span id="hud-status" class="text-cyan-400 font-mono">STATUS: 🔴 LIVE ACTIVE</span>
+    </div>
+
+    <div class="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
+      <div>DURASI: <span id="hud-duration" class="text-white font-bold">00:00</span></div>
+      <div>TAP SPEED: <span id="hud-speed" class="text-pink-400 font-bold">50 tap/s</span></div>
+      <div>TOTAL LIKES: <span id="hud-likes" class="text-emerald-400 font-bold">0</span></div>
+    </div>
+  </header>
+
+  <!-- MAIN VIEWPORT CONTAINER -->
+  <main class="relative w-full h-[calc(100vh-3rem)] flex items-center justify-center p-4">
+
+    <!-- Ambient Glowing Stage Background -->
+    <div class="absolute inset-0 bg-radial from-slate-900/60 via-[#0a0d14] to-[#050608] pointer-events-none"></div>
+    <div class="absolute top-1/4 left-1/3 w-96 h-96 bg-pink-600/10 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
+    <div class="absolute bottom-1/4 right-1/3 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none animate-pulse"></div>
+
+    <!-- PHONE / STAGE CONTAINER (Center 9:16 Frame Aspect) -->
+    <div class="relative w-[430px] h-full max-h-[720px] bg-slate-950 rounded-3xl border border-slate-700/60 shadow-2xl overflow-hidden flex flex-col justify-between pulse-glow">
+
+      <!-- STAGE VIDEO BACKDROP: Animated Stream Graphic -->
+      <div class="absolute inset-0 z-0 overflow-hidden bg-gradient-to-b from-indigo-950/70 via-purple-950/40 to-slate-950">
+        <!-- Live Soundwaves Background -->
+        <div class="absolute inset-0 flex items-center justify-center opacity-30">
+          <div class="flex items-center gap-1.5 h-32">
+            <span class="w-2 bg-pink-500 rounded-full animate-bounce h-16"></span>
+            <span class="w-2 bg-cyan-400 rounded-full animate-bounce h-24" style="animation-delay: 0.1s"></span>
+            <span class="w-2 bg-purple-500 rounded-full animate-bounce h-32" style="animation-delay: 0.2s"></span>
+            <span class="w-2 bg-pink-400 rounded-full animate-bounce h-20" style="animation-delay: 0.3s"></span>
+            <span class="w-2 bg-cyan-500 rounded-full animate-bounce h-28" style="animation-delay: 0.4s"></span>
+            <span class="w-2 bg-purple-400 rounded-full animate-bounce h-14" style="animation-delay: 0.5s"></span>
+          </div>
+        </div>
+
+        <!-- Streamer Center Avatar on Stage -->
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <div class="relative mb-3">
+            <div class="w-28 h-28 rounded-full border-4 border-pink-500 p-1 bg-slate-900 shadow-2xl flex items-center justify-center">
+              <img id="streamer-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80" alt="Streamer Avatar" class="w-full h-full rounded-full object-cover">
+            </div>
+            <div class="absolute -bottom-2 inset-x-0 flex justify-center">
+              <span class="bg-pink-600 text-white font-extrabold text-[10px] px-2.5 py-0.5 rounded-full shadow-md tracking-wider flex items-center gap-1 border border-pink-400">
+                <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span> LIVE
+              </span>
+            </div>
+          </div>
+          <h2 id="streamer-name" class="font-extrabold text-base text-white tracking-wide drop-shadow-md">@evelyn.vln</h2>
+          <p class="text-[11px] text-pink-300 font-medium">Official TikTok Live Broadcast</p>
+        </div>
+      </div>
+
+      <!-- STREAMER TOP HEADER BAR -->
+      <div class="relative z-20 p-3 flex items-center justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent">
+        <div class="flex items-center gap-2.5 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
+          <div class="w-7 h-7 rounded-full overflow-hidden border border-pink-500">
+            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" class="w-full h-full object-cover" alt="Thumb">
+          </div>
+          <div>
+            <div class="flex items-center gap-1">
+              <span id="top-username" class="font-bold text-xs text-white max-w-[100px] truncate">@evelyn.vln</span>
+              <svg class="w-3 h-3 text-cyan-400 fill-current" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            </div>
+            <div class="text-[10px] text-slate-300 font-mono">
+              ❤️ <span id="top-likes" class="text-pink-400 font-bold">0</span> likes
+            </div>
+          </div>
+        </div>
+
+        <!-- Viewer count badge -->
+        <div class="flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-2.5 py-1.5 rounded-full border border-white/10 text-xs font-semibold text-slate-200">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="viewer-count">2.4k</span> penonton
+        </div>
+      </div>
+
+      <!-- TAP-TAP RIPPLE & FLOATING HEARTS LAYER -->
+      <div id="heart-container" class="absolute inset-0 z-30 pointer-events-none overflow-hidden">
+        <!-- Floating hearts and tap ripples will be spawned here dynamically -->
+      </div>
+
+      <!-- GIFT DETECTOR BANNER (Animated Slide In) -->
+      <div id="gift-banner" class="absolute top-20 right-3 z-40 transition-all duration-500 transform translate-x-96 opacity-0">
+        <div class="bg-gradient-to-r from-pink-600/90 to-purple-600/90 backdrop-blur-md border border-white/30 px-3.5 py-2 rounded-2xl shadow-xl flex items-center gap-2.5 text-white">
+          <span id="gift-icon" class="text-2xl animate-bounce">🌹</span>
+          <div>
+            <div class="text-[10px] font-bold text-pink-200 uppercase tracking-wider">Gift Terdeteksi!</div>
+            <div id="gift-text" class="text-xs font-black">1x Rose dari @user</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM OVERLAY: Live Chat Stream & Bot Activity -->
+      <div class="relative z-20 p-3 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-2">
+
+        <!-- Live Chat Container -->
+        <div id="chat-box" class="h-44 overflow-y-auto no-scrollbar space-y-2 text-xs flex flex-col justify-end">
+          <div class="bg-black/40 backdrop-blur-sm border border-white/10 px-3 py-1.5 rounded-xl text-slate-300 max-w-[90%]">
+            <span class="font-bold text-cyan-400">@sistem:</span> Terhubung ke siaran live streaming.
+          </div>
+          <div class="bg-pink-950/40 backdrop-blur-sm border border-pink-500/30 px-3 py-1.5 rounded-xl text-pink-200 max-w-[95%]">
+            <span class="font-bold text-pink-400">🤖 AutoBotix Bot:</span> Auto Tap-tap Like & Chat Engine Aktif 🔥
+          </div>
+        </div>
+
+        <!-- Bottom Action Bar / Bot Status Indicator -->
+        <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
+          <div class="flex items-center gap-1.5 text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+            <span>Auto Tap Engine:</span>
+            <span id="bottom-speed" class="text-pink-400 font-bold">50 tap/s</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-pink-600/80 border border-pink-400 flex items-center justify-center text-sm shadow-lg shadow-pink-600/50 animate-bounce">
+              ❤️
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SIDE PANEL (Right): Real-time Bot Telemetry & Process Logs -->
+    <div class="hidden lg:flex flex-col justify-between w-80 h-full max-h-[720px] ml-6 bg-slate-900/80 border border-slate-800 rounded-3xl p-5 backdrop-blur-md">
+      <div>
+        <div class="flex items-center gap-2 mb-4 pb-3 border-b border-slate-800">
+          <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+          <h3 class="font-bold text-sm text-slate-200">TELEMETRI TIKTOK LIVE</h3>
+        </div>
+
+        <div class="space-y-3 font-mono text-xs">
+          <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+            <div class="text-slate-400 text-[10px] mb-0.5">TARGET STREAMER</div>
+            <div id="side-target" class="text-white font-bold text-sm text-pink-400">@evelyn.vln</div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+              <div class="text-slate-400 text-[10px] mb-0.5">LIKES TERKIRIM</div>
+              <div id="side-likes" class="text-emerald-400 font-bold text-base">0</div>
+            </div>
+            <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+              <div class="text-slate-400 text-[10px] mb-0.5">CHAT TERKIRIM</div>
+              <div id="side-chats" class="text-cyan-400 font-bold text-base">0</div>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+            <div class="text-slate-400 text-[10px] mb-0.5">GIFT DETEKSI</div>
+            <div id="side-gifts" class="text-purple-400 font-bold text-base">0</div>
+          </div>
+        </div>
+
+        <!-- Activity Log Stream -->
+        <div class="mt-4">
+          <div class="text-[11px] font-bold text-slate-400 mb-2">LOG PROSES LIVE SERVER</div>
+          <div id="side-logs" class="h-44 overflow-y-auto no-scrollbar font-mono text-[10px] space-y-1.5 text-slate-400 bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60">
+            <div>[11:00:00] Menghubungkan engine...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="text-[10px] text-slate-500 font-mono text-center pt-2 border-t border-slate-800">
+        AutoBotix Engine • Sharescreen Active
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetParam = urlParams.get('target') || '@evelyn.vln';
+    const speedParam = parseInt(urlParams.get('speed') || '50');
+
+    // UI elements
+    const streamerNameEl = document.getElementById('streamer-name');
+    const topUsernameEl = document.getElementById('top-username');
+    const sideTargetEl = document.getElementById('side-target');
+    const hudSpeedEl = document.getElementById('hud-speed');
+    const bottomSpeedEl = document.getElementById('bottom-speed');
+    const hudLikesEl = document.getElementById('hud-likes');
+    const topLikesEl = document.getElementById('top-likes');
+    const sideLikesEl = document.getElementById('side-likes');
+    const sideChatsEl = document.getElementById('side-chats');
+    const sideGiftsEl = document.getElementById('side-gifts');
+    const hudDurationEl = document.getElementById('hud-duration');
+    const chatBox = document.getElementById('chat-box');
+    const heartContainer = document.getElementById('heart-container');
+    const sideLogs = document.getElementById('side-logs');
+    const giftBanner = document.getElementById('gift-banner');
+    const giftIcon = document.getElementById('gift-icon');
+    const giftText = document.getElementById('gift-text');
+
+    streamerNameEl.innerText = targetParam;
+    topUsernameEl.innerText = targetParam;
+    sideTargetEl.innerText = targetParam;
+    hudSpeedEl.innerText = speedParam + ' tap/s';
+    bottomSpeedEl.innerText = speedParam + ' tap/s';
+
+    const heartEmojis = ['❤️', '💖', '💕', '💙', '💜', '🧡', '💛', '💗', '✨'];
+
+    // Spawn floating tap-tap heart animation
+    function spawnHearts(count = 2) {
+      for (let i = 0; i < count; i++) {
+        const heart = document.createElement('div');
+        heart.className = 'heart-particle text-2xl drop-shadow-lg';
+        heart.innerText = heartEmojis[Math.floor(Math.random() * heartEmojis.length)];
+        
+        // Random position along the right half of the stage
+        const xPos = 240 + Math.random() * 140;
+        const yPos = 460 + Math.random() * 80;
+        heart.style.left = xPos + 'px';
+        heart.style.top = yPos + 'px';
+        heartContainer.appendChild(heart);
+
+        setTimeout(() => {
+          heart.remove();
+        }, 2400);
+      }
+    }
+
+    // Spawn tap ripple effect
+    function spawnRipple() {
+      const ripple = document.createElement('div');
+      ripple.className = 'tap-ripple';
+      const xPos = 280 + (Math.random() * 60 - 30);
+      const yPos = 480 + (Math.random() * 60 - 30);
+      ripple.style.left = (xPos - 30) + 'px';
+      ripple.style.top = (yPos - 30) + 'px';
+      heartContainer.appendChild(ripple);
+
+      setTimeout(() => {
+        ripple.remove();
+      }, 600);
+    }
+
+    // Continuous tap visualizer loop (runs every 120ms)
+    setInterval(() => {
+      spawnHearts(1 + Math.floor(speedParam / 25));
+      if (Math.random() > 0.4) spawnRipple();
+    }, 150);
+
+    // Dynamic viewer count fluctuate slightly
+    let baseViewers = 2410;
+    setInterval(() => {
+      baseViewers += Math.floor(Math.random() * 11) - 5;
+      document.getElementById('viewer-count').innerText = (baseViewers / 1000).toFixed(1) + 'k';
+    }, 3000);
+
+    // Show animated gift popup banner
+    function showGiftPopup(giftIco, msg) {
+      giftIcon.innerText = giftIco || '🎁';
+      giftText.innerText = msg || '1x Gift dideteksi!';
+      giftBanner.classList.remove('translate-x-96', 'opacity-0');
+      giftBanner.classList.add('translate-x-0', 'opacity-100');
+
+      setTimeout(() => {
+        giftBanner.classList.remove('translate-x-0', 'opacity-100');
+        giftBanner.classList.add('translate-x-96', 'opacity-0');
+      }, 3500);
+    }
+
+    // Polling server telemetry every 800ms
+    let lastChatCount = 0;
+    let lastGiftCount = 0;
+    let knownLogIds = new Set();
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/api/tiktok-live/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const st = data.state || {};
+
+        if (st.likes_sent !== undefined) {
+          const lFormatted = Number(st.likes_sent).toLocaleString();
+          hudLikesEl.innerText = lFormatted;
+          topLikesEl.innerText = lFormatted;
+          sideLikesEl.innerText = lFormatted;
+        }
+
+        if (st.elapsed_seconds !== undefined) {
+          const m = Math.floor(st.elapsed_seconds / 60).toString().padStart(2, '0');
+          const s = (st.elapsed_seconds % 60).toString().padStart(2, '0');
+          hudDurationEl.innerText = `${m}:${s}`;
+        }
+
+        if (st.chats_sent !== undefined) {
+          sideChatsEl.innerText = st.chats_sent;
+          if (st.chats_sent > lastChatCount) {
+            lastChatCount = st.chats_sent;
+            // Append chat bubble
+            const bubble = document.createElement('div');
+            bubble.className = 'bg-pink-950/50 backdrop-blur-sm border border-pink-500/30 px-3 py-1.5 rounded-xl text-pink-200 max-w-[95%] animate-fade-in';
+            bubble.innerHTML = `<span class="font-bold text-pink-400">🤖 AutoBotix Bot:</span> ${st.chat_message || 'Semangat live kak! Support selalu 🔥'}`;
+            chatBox.appendChild(bubble);
+            chatBox.scrollTop = chatBox.scrollHeight;
+          }
+        }
+
+        if (st.gifts_detected !== undefined) {
+          sideGiftsEl.innerText = st.gifts_detected;
+          if (st.gifts_detected > lastGiftCount) {
+            lastGiftCount = st.gifts_detected;
+            showGiftPopup('🌹', `Gift baru terdeteksi! Total: ${st.gifts_detected} gift`);
+          }
+        }
+
+        if (st.logs && Array.isArray(st.logs)) {
+          st.logs.forEach(l => {
+            if (!knownLogIds.has(l.id)) {
+              knownLogIds.add(l.id);
+              const logLine = document.createElement('div');
+              const col = l.level === 'success' ? 'text-emerald-400' : (l.level === 'warning' ? 'text-yellow-400' : 'text-slate-300');
+              logLine.className = col;
+              logLine.innerText = `[${(l.created_at || '').split(' ')[1] || 'LOG'}] ${l.message}`;
+              sideLogs.appendChild(logLine);
+              sideLogs.scrollTop = sideLogs.scrollHeight;
+            }
+          });
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+    }
+
+    setInterval(pollStatus, 800);
+    pollStatus();
+  </script>
+</body>
+</html>

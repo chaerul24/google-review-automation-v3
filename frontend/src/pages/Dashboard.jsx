@@ -186,6 +186,7 @@ export default function Dashboard({ onLogout }) {
   const [streamActive, setStreamActive] = useState(true);
   const [streamError, setStreamError] = useState(false);
   const [sharescreenMode, setSharescreenMode] = useState('google_map'); // 'google_map' | 'tiktok_live'
+  const [userManuallyToggledScreen, setUserManuallyToggledScreen] = useState(false);
   const [tiktokLiveScreenStatus, setTiktokLiveScreenStatus] = useState(null);
   const screenContainerRef = useRef(null);
 
@@ -210,7 +211,13 @@ export default function Dashboard({ onLogout }) {
         ]);
         if (mounted) {
           if (logsRes && logsRes.logs) setScreenLogs(logsRes.logs);
-          if (ttRes && ttRes.state) setTiktokLiveScreenStatus(ttRes.state);
+          if (ttRes && ttRes.state) {
+            setTiktokLiveScreenStatus(ttRes.state);
+            // Otomatis arahkan ke tab Tiktok Live jika bot TikTok sedang on-air & user belum manual switch
+            if (ttRes.state.is_running && !userManuallyToggledScreen) {
+              setSharescreenMode('tiktok_live');
+            }
+          }
           setScreenTs(Date.now());
         }
       } catch {}
@@ -222,7 +229,7 @@ export default function Dashboard({ onLogout }) {
       mounted = false;
       clearInterval(interval);
     };
-  }, [activeTab]);
+  }, [activeTab, userManuallyToggledScreen]);
 
   // Chart Interactive States
   const [chartHoverIdx, setChartHoverIdx] = useState(null);
@@ -2410,7 +2417,10 @@ export default function Dashboard({ onLogout }) {
                   <div className="inline-flex items-center p-1 bg-slate-100 border border-slate-200/90 rounded-xl">
                     <button
                       type="button"
-                      onClick={() => setSharescreenMode('google_map')}
+                      onClick={() => {
+                        setUserManuallyToggledScreen(true);
+                        setSharescreenMode('google_map');
+                      }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                         sharescreenMode === 'google_map'
                           ? 'bg-white text-slate-900 shadow-xs'
@@ -2423,7 +2433,10 @@ export default function Dashboard({ onLogout }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSharescreenMode('tiktok_live')}
+                      onClick={() => {
+                        setUserManuallyToggledScreen(true);
+                        setSharescreenMode('tiktok_live');
+                      }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                         sharescreenMode === 'tiktok_live'
                           ? 'bg-white text-cyan-600 shadow-xs'
@@ -2479,6 +2492,34 @@ export default function Dashboard({ onLogout }) {
               {/* ───────────────────────────────────────────────────────────── */}
               {sharescreenMode === 'google_map' && (
                 <>
+                  {/* Banner Pemberitahuan jika TikTok Live sedang Aktif */}
+                  {isTTRunning && (
+                    <div className="p-3.5 bg-gradient-to-r from-cyan-950/90 via-slate-900 to-slate-900 border border-cyan-800/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md">
+                      <div className="flex items-center gap-3 text-cyan-200">
+                        <div className="w-8 h-8 rounded-lg bg-cyan-900/60 border border-cyan-700/60 flex items-center justify-center shrink-0">
+                          <TikTokLogo className="w-4 h-4 text-cyan-400" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-white">Bot TikTok Live Sedang Aktif (LIVE ON-AIR)</p>
+                          <p className="text-[11px] text-cyan-300/80">
+                            Menjalankan {ttCardList.length} browser Chromium paralel per akun. Layar Google Maps (Display :99) saat ini dalam status Standby.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserManuallyToggledScreen(true);
+                          setSharescreenMode('tiktok_live');
+                        }}
+                        className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl transition shrink-0 flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <TikTokLogo className="w-3.5 h-3.5" />
+                        <span>Buka Layar TikTok Live ({ttCardList.length} Akun) →</span>
+                      </button>
+                    </div>
+                  )}
+
                   <div
                     ref={screenContainerRef}
                     className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-xl relative flex flex-col"
@@ -2494,16 +2535,22 @@ export default function Dashboard({ onLogout }) {
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-[11px] text-emerald-400 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                          LIVE MJPEG STREAM
-                        </span>
+                        {liveTask?.is_running && !liveTask?.current_task?.includes('tiktok') ? (
+                          <span className="font-mono text-[11px] text-emerald-400 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                            LIVE MJPEG STREAM
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
+                            STANDBY (:99)
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     {/* Video / Image Display Area */}
                     <div className="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden">
-                      {streamActive && !streamError ? (
+                      {liveTask?.is_running && !liveTask?.current_task?.includes('tiktok') && streamActive && !streamError ? (
                         <img
                           key={screenTs}
                           src={`/api/screen/stream.mjpg?t=${screenTs}`}
@@ -2520,15 +2567,29 @@ export default function Dashboard({ onLogout }) {
                           <p className="text-xs text-slate-500 max-w-sm mx-auto">
                             Layar otomatis aktif dan menampilkan aksi browser secara real-time saat Anda menjalankan tugas ulasan Google Maps.
                           </p>
-                          <button
-                            onClick={() => {
-                              setStreamError(false);
-                              setScreenTs(Date.now());
-                            }}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer"
-                          >
-                            Coba Muat Ulang Layar
-                          </button>
+                          {isTTRunning ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUserManuallyToggledScreen(true);
+                                setSharescreenMode('tiktok_live');
+                              }}
+                              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl cursor-pointer transition inline-flex items-center gap-2"
+                            >
+                              <TikTokLogo className="w-4 h-4" />
+                              <span>Lihat Layar TikTok Live ({ttCardList.length} Akun)</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setStreamError(false);
+                                setScreenTs(Date.now());
+                              }}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer"
+                            >
+                              Coba Muat Ulang Layar
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2691,12 +2752,13 @@ export default function Dashboard({ onLogout }) {
                           </div>
 
                           {/* Display Screen Snapshot (Chromium Headless Worker) */}
-                          <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
+                          <div className="relative aspect-video bg-slate-950 overflow-hidden flex items-center justify-center">
                             <img
                               key={`${screenTs}-${wIdx}`}
                               src={`/api/tiktok-live/screen/${wIdx}.png?t=${screenTs}`}
                               alt={`Display ${card.username}`}
                               className="w-full h-full object-cover"
+                              loading="eager"
                             />
                             {/* Overlay Badges on Top of Screen */}
                             <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 pointer-events-none">

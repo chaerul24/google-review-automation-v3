@@ -2281,7 +2281,7 @@ class TikTokLiveRunner:
             with self.lock:
                 self.worker_threads.append(t)
             t.start()
-            time.sleep(0.3)  # peluncuran cepat serentak
+            time.sleep(1.0)  # jeda stagger agar peluncuran koneksi soket/DNS browser stabil
 
         for t in threads:
             t.join()
@@ -2305,14 +2305,35 @@ class TikTokLiveRunner:
             inject_account_cookies(driver, acc)
             self.add_log("info", f"[-] [{b_label}] Cookie sesi {user} disuntikkan ke browser profile.")
 
-            driver.get(target_url)
-            time.sleep(3.5)
+            # Navigasi ke target live dengan retry loop untuk mencegah white error page
+            for nav_try in range(4):
+                if self.stop_event.is_set():
+                    return
+                try:
+                    driver.get(target_url)
+                    time.sleep(3.5)
+                    curr = (driver.current_url or "").lower()
+                    if "/live" in curr and "chrome-error" not in curr:
+                        break
+                    self.add_log("info", f"[-] [{b_label}] Mencoba ulang koneksi ke live target (percobaan {nav_try + 1}/4)...")
+                    time.sleep(1.5)
+                except Exception:
+                    time.sleep(1.5)
 
-            # Initial screenshot capture
-            try:
-                driver.save_screenshot(screen_path)
-            except Exception:
-                pass
+            # Tunggu render DOM live sebelum screenshot awal agar tidak menangkap layar putih
+            for _ in range(8):
+                if self.stop_event.is_set():
+                    return
+                try:
+                    curr = (driver.current_url or "").lower()
+                    if "/live" in curr and "chrome-error" not in curr:
+                        rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
+                        if rendered:
+                            driver.save_screenshot(screen_path)
+                            break
+                except Exception:
+                    pass
+                time.sleep(0.8)
 
             if self.stop_event.is_set():
                 return
@@ -2460,11 +2481,23 @@ class TikTokLiveRunner:
                 if worker_likes > 0 and worker_likes % 60 == 0:
                     self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
 
-                # Save screenshot of isolated worker browser every 2.5 seconds
+                # Auto-recovery if browser gets dropped onto error page
+                try:
+                    curr_url = (driver.current_url or "").lower()
+                    if "chrome-error" in curr_url or "about:blank" in curr_url or "robots.txt" in curr_url or ("/live" not in curr_url):
+                        self.add_log("warning", f"[!] [{b_label}] Koneksi browser teralihkan ({curr_url}). Memulihkan ke siaran live...")
+                        driver.get(target_url)
+                        time.sleep(3.0)
+                except Exception:
+                    pass
+
+                # Save screenshot of isolated worker browser only when on active live page
                 if now - last_screen_time >= 2.5:
                     last_screen_time = now
                     try:
-                        driver.save_screenshot(screen_path)
+                        curr_url = (driver.current_url or "").lower()
+                        if "/live" in curr_url and "chrome-error" not in curr_url:
+                            driver.save_screenshot(screen_path)
                     except Exception:
                         pass
 
@@ -2565,13 +2598,35 @@ class TikTokLiveRunner:
                     inject_account_cookies(driver, acc)
                     self.add_log("info", f"[-] [{b_label}] Cookie sesi {user} disuntikkan ke browser.")
 
-                driver.get(target_url)
-                time.sleep(3.5)
+                # Navigasi ke target live dengan retry loop untuk mencegah white error page
+                for nav_try in range(4):
+                    if self.stop_event.is_set():
+                        break
+                    try:
+                        driver.get(target_url)
+                        time.sleep(3.5)
+                        curr = (driver.current_url or "").lower()
+                        if "/live" in curr and "chrome-error" not in curr:
+                            break
+                        self.add_log("info", f"[-] [{b_label}] Mencoba ulang koneksi ke live target (percobaan {nav_try + 1}/4)...")
+                        time.sleep(1.5)
+                    except Exception:
+                        time.sleep(1.5)
 
-                try:
-                    driver.save_screenshot(screen_path)
-                except Exception:
-                    pass
+                # Tunggu render DOM live sebelum screenshot awal
+                for _ in range(8):
+                    if self.stop_event.is_set():
+                        break
+                    try:
+                        curr = (driver.current_url or "").lower()
+                        if "/live" in curr and "chrome-error" not in curr:
+                            rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
+                            if rendered:
+                                driver.save_screenshot(screen_path)
+                                break
+                    except Exception:
+                        pass
+                    time.sleep(0.8)
 
                 if self.stop_event.is_set():
                     break
@@ -2719,11 +2774,22 @@ class TikTokLiveRunner:
                     if batch_likes > 0 and batch_likes % 60 == 0:
                         self.add_log("info", f"[-] [{b_label}] {user}: {batch_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
 
-                    # Save screenshot of isolated worker browser every 2.5 seconds
+                    # Auto-recovery if browser gets dropped onto error page
+                    try:
+                        curr_url = (driver.current_url or "").lower()
+                        if "chrome-error" in curr_url or "about:blank" in curr_url or "robots.txt" in curr_url or ("/live" not in curr_url):
+                            driver.get(target_url)
+                            time.sleep(3.0)
+                    except Exception:
+                        pass
+
+                    # Save screenshot of isolated worker browser only when on active live page
                     if now - last_screen_time >= 2.5:
                         last_screen_time = now
                         try:
-                            driver.save_screenshot(screen_path)
+                            curr_url = (driver.current_url or "").lower()
+                            if "/live" in curr_url and "chrome-error" not in curr_url:
+                                driver.save_screenshot(screen_path)
                         except Exception:
                             pass
 
@@ -2795,7 +2861,8 @@ tiktok_live_runner = TikTokLiveRunner()
 def api_tiktok_live_screen(worker_idx):
     """Single-frame PNG snapshot of isolated Chromium Headless worker for TikTok Live."""
     screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
-    if os.path.isfile(screen_path) and os.path.getsize(screen_path) > 0:
+    # Filter: pastikan file ada dan ukuran >= 30KB (screenshot live TikTok asli > 80KB-350KB, layar putih/error hanya ~19KB)
+    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 30000:
         try:
             with open(screen_path, "rb") as f:
                 img_bytes = f.read()
@@ -2811,12 +2878,14 @@ def api_tiktok_live_screen(worker_idx):
         except Exception:
             pass
 
-    svg = f"""<svg width="640" height="360" xmlns="http://www.w3.org/2000/svg">
+    svg = f"""<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#090d16"/>
-        <circle cx="320" cy="150" r="32" fill="#1e293b"/>
-        <path d="M312 140l20 10-20 10z" fill="#38bdf8"/>
-        <text x="50%" y="210" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#f1f5f9" text-anchor="middle">Browser Worker #{worker_idx + 1}</text>
-        <text x="50%" y="235" font-family="system-ui, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Memuat Sesi Cookie &amp; Tampilan Live...</text>
+        <circle cx="320" cy="135" r="34" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
+        <path d="M312 123l22 12-22 12z" fill="#06b6d4"/>
+        <circle cx="320" cy="135" r="42" fill="none" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.6"/>
+        <text x="50%" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" fill="#f8fafc" text-anchor="middle">Browser Worker #{worker_idx + 1}</text>
+        <text x="50%" y="224" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Menghubungkan ke Siaran Live TikTok...</text>
+        <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Menyinkronkan sesi cookie mandiri &amp; merender frame live</text>
     </svg>"""
     return Response(
         svg,

@@ -12,10 +12,10 @@
     "enabled": true,
     "name": "TikTok Live",
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie).",
-    "target_user": "@diahfebrynr",
-    "tap_speed": 50,
+    "target_user": "@nindy_wedding_brebes",
+    "tap_speed": 100,
     "auto_chat": true,
-    "chat_message": "ini adalah bot, buat test percobaan",
+    "chat_message": "Halo kak",
     "multi_account": true,
     "execution_mode": "parallel"
   },

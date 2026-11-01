@@ -1528,6 +1528,91 @@ def api_usage():
     })
 
 
+# ── Bot Tasks & Modules Configuration API ────────────────────────────────────
+BOT_MODULES_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_modules_config.json")
+
+def get_bot_modules_config():
+    default_config = {
+        "google_maps": {
+            "enabled": True,
+            "name": "Google Map",
+            "description": "Otomatisasi ulasan bintang 5 & komentar AI Gemini berbasis target Maps.",
+            "star_rating": 5,
+            "ai_comments": True,
+            "auto_retry": True,
+            "rotation_mode": "queue"
+        },
+        "tiktok_live": {
+            "enabled": True,
+            "name": "TikTok Live",
+            "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
+            "target_user": "@autobotix.live",
+            "tap_speed": 20,
+            "auto_chat": True,
+            "chat_message": "Semangat live kak! Support selalu 🔥",
+            "gift_detection": True
+        },
+        "youtube_live": {
+            "enabled": False,
+            "coming_soon": True,
+            "name": "Youtube Live (akan datang)",
+            "description": "Otomatisasi komentar, auto like, dan engagement live streaming YouTube (Segera Hadir)."
+        }
+    }
+    if os.path.exists(BOT_MODULES_CONFIG_FILE):
+        try:
+            with open(BOT_MODULES_CONFIG_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                default_config.update(saved)
+        except Exception as e:
+            logger.warning(f"Failed to read bot_modules_config.json: {e}")
+    return default_config
+
+def save_bot_modules_config(config_data):
+    try:
+        with open(BOT_MODULES_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save bot_modules_config.json: {e}")
+        return False
+
+@app.route("/api/bot-config", methods=["GET"])
+@login_required
+def api_get_bot_config():
+    return jsonify({
+        "status": "ok",
+        "configs": get_bot_modules_config()
+    })
+
+@app.route("/api/bot-config", methods=["POST"])
+@login_required
+def api_update_bot_config():
+    data = request.get_json(silent=True) or {}
+    new_configs = data.get("configs") or data
+    if not isinstance(new_configs, dict):
+        return jsonify({"status": "error", "message": "Format konfigurasi tidak valid"}), 400
+    
+    current = get_bot_modules_config()
+    for mod_key, mod_val in new_configs.items():
+        if mod_key in current and isinstance(mod_val, dict):
+            current[mod_key].update(mod_val)
+        else:
+            current[mod_key] = mod_val
+            
+    # YouTube Live always remains coming_soon and disabled until ready
+    if "youtube_live" in current:
+        current["youtube_live"]["coming_soon"] = True
+        current["youtube_live"]["enabled"] = False
+        
+    save_bot_modules_config(current)
+    return jsonify({
+        "status": "ok",
+        "message": "Konfigurasi tugas bot berhasil disimpan.",
+        "configs": current
+    })
+
+
 @app.route("/api/generate-preview", methods=["POST"])
 @login_required
 def api_generate_preview():

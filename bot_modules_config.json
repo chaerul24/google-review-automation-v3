@@ -1,0 +1,27 @@
+{
+  "google_maps": {
+    "enabled": true,
+    "name": "Google Map",
+    "description": "Otomatisasi ulasan bintang 5 & komentar AI Gemini berbasis target Maps.",
+    "star_rating": 5,
+    "ai_comments": true,
+    "auto_retry": true,
+    "rotation_mode": "queue"
+  },
+  "tiktok_live": {
+    "enabled": true,
+    "name": "TikTok Live",
+    "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat, & Gift Welcome).",
+    "target_user": "@autobotix.live",
+    "tap_speed": 20,
+    "auto_chat": true,
+    "chat_message": "Semangat live kak! Support selalu 🔥",
+    "gift_detection": true
+  },
+  "youtube_live": {
+    "enabled": false,
+    "coming_soon": true,
+    "name": "Youtube Live (akan datang)",
+    "description": "Otomatisasi komentar, auto like, dan engagement live streaming YouTube (Segera Hadir)."
+  }
+}

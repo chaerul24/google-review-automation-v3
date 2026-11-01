@@ -14,7 +14,7 @@
     "description": "Otomatisasi interaksi siaran langsung TikTok (Auto Tap-tap Like, Auto Chat & Multi-Akun Cookie).",
     "target_user": "@adonara1990",
     "tap_speed": 5,
-    "auto_chat": true,
+    "auto_chat": false,
     "chat_message": "halo",
     "multi_account": true,
     "execution_mode": "parallel"

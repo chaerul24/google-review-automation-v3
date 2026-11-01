@@ -451,8 +451,25 @@ def run_task_interactive(business_id: int, screen_count: int = 1, star_rating: i
                 log_lines = []
                 for l in reversed(recent_logs):
                     lvl = l["level"]
-                    col = "green" if lvl == "success" else ("red" if lvl in ("error", "fatal") else ("yellow" if lvl == "warning" else "white"))
-                    log_lines.append(f"[dim]{l['created_at'].split()[-1]}[/dim] [{col}]{l['message']}[/{col}]")
+                    msg = (l["message"] or "").strip()
+                    ts = l['created_at'].split()[-1]
+                    tag = "[-]"
+                    tag_col = "bold bright_blue"
+                    if msg.startswith("[+]") or lvl == "success":
+                        tag = "[+]"
+                        tag_col = "bold green"
+                    elif msg.startswith("[!]") or lvl in ("error", "fatal"):
+                        tag = "[!]"
+                        tag_col = "bold red"
+                    elif lvl in ("warning", "fail"):
+                        tag = "[!]"
+                        tag_col = "bold yellow"
+                    elif msg.startswith("[?]") or any(k in msg.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu")):
+                        tag = "[?]"
+                        tag_col = "bold cyan"
+                    clean_msg = re.sub(r'^(\[\+\]|\[\?\]|\[-\]|\[!\])\s*', '', msg)
+                    clean_msg = re.sub(r'^[✓▲✖ℹ🌐🔑❤️💬🚀⚡]\s*', '', clean_msg)
+                    log_lines.append(f"[dim]{ts}[/dim] [{tag_col}]{tag}[/{tag_col}] [white]{clean_msg}[/white]")
 
                 logs_text = "\n".join(log_lines) if log_lines else "[dim]Menunggu event engine...[/dim]"
                 logs_panel = Panel(logs_text, title="📋 Live Engine Logs", box=box.ROUNDED, border_style="dim")
@@ -784,8 +801,8 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
     if chosen_account_ids and len(chosen_account_ids) > 1:
         if interactive:
             console.print(f"\n[bold cyan]⚡ Pilih Mode Multi-Akun (Paralel / Bergantian):[/bold cyan]")
-            console.print(f"   [bold cyan][1][/bold cyan] [bold green]Mode Paralel (Serentak)[/bold green] — [white]Semua akun bekerja serentak bersamaan di layar[/white]")
-            console.print(f"   [bold cyan][2][/bold cyan] [bold yellow]Mode Bergantian (Rotasi)[/bold yellow] — [white]1 browser bergantian akun tiap periode (75 detik)[/white]")
+            console.print(f"   [bold cyan][1][/bold cyan] [bold green]Mode Paralel (Serentak)[/bold green] — [white]Setiap cookie memiliki browser masing-masing bekerja serentak[/white]")
+            console.print(f"   [bold cyan][2][/bold cyan] [bold yellow]Mode Bergantian (Rotasi)[/bold yellow] — [white]Setiap cookie memiliki browser masing-masing bergantian tiap periode (75 detik)[/white]")
             m_pick = Prompt.ask("  [bold white]Pilihan Mode [1/2][/bold white]", choices=["1", "2"], default="1").strip()
             chosen_mode = "parallel" if m_pick == "1" else "sequential"
         else:
@@ -892,15 +909,46 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                             for l in raw_logs[-10:]:
                                 lvl = (l.get("level") or "info").lower()
                                 ts = (l.get("created_at") or "")[-8:]
-                                msg = l.get("message") or ""
-                                if lvl == "success":
-                                    recent_logs.append(f"[green][{ts}] ✓ {msg}[/green]")
-                                elif lvl in ("warning", "fail"):
-                                    recent_logs.append(f"[yellow][{ts}] ▲ {msg}[/yellow]")
-                                elif lvl == "error":
-                                    recent_logs.append(f"[red][{ts}] ✖ {msg}[/red]")
+                                raw_msg = (l.get("message") or "").strip()
+
+                                tag = "[-]"
+                                tag_style = "bold bright_blue"
+                                clean_text = raw_msg
+                                if clean_text.startswith("[+]"):
+                                    tag = "[+]"
+                                    tag_style = "bold green"
+                                    clean_text = clean_text[3:].strip()
+                                elif clean_text.startswith("[?]"):
+                                    tag = "[?]"
+                                    tag_style = "bold cyan"
+                                    clean_text = clean_text[3:].strip()
+                                elif clean_text.startswith("[!]"):
+                                    tag = "[!]"
+                                    tag_style = "bold red" if lvl in ("error", "fatal") else "bold yellow"
+                                    clean_text = clean_text[3:].strip()
+                                elif clean_text.startswith("[-]"):
+                                    tag = "[-]"
+                                    tag_style = "bold bright_blue"
+                                    clean_text = clean_text[3:].strip()
                                 else:
-                                    recent_logs.append(f"[white][{ts}] ℹ {msg}[/white]")
+                                    if lvl == "success":
+                                        tag = "[+]"
+                                        tag_style = "bold green"
+                                    elif lvl in ("error", "fatal"):
+                                        tag = "[!]"
+                                        tag_style = "bold red"
+                                    elif lvl in ("warning", "fail"):
+                                        tag = "[!]"
+                                        tag_style = "bold yellow"
+                                    elif any(k in clean_text.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
+                                        tag = "[?]"
+                                        tag_style = "bold cyan"
+                                    else:
+                                        tag = "[-]"
+                                        tag_style = "bold bright_blue"
+
+                                clean_text = re.sub(r'^[✓▲✖ℹ🌐🔑❤️💬🚀⚡]\s*', '', clean_text)
+                                recent_logs.append(f"[dim][{ts}][/dim] [{tag_style}]{tag}[/{tag_style}] [white]{clean_text}[/white]")
                     except Exception:
                         pass
 

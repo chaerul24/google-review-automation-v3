@@ -1835,11 +1835,23 @@ class TikTokLiveRunner:
 
     def add_log(self, level, message):
         self.log_counter += 1
+        msg = str(message).strip()
+        # Ensure logcat indicator tag is present: [+], [?], [-], [!]
+        if not (msg.startswith("[+]") or msg.startswith("[?]") or msg.startswith("[-]") or msg.startswith("[!]")):
+            if level == "success" or "berhasil" in msg.lower():
+                msg = f"[+] {msg}"
+            elif level in ("check", "query") or any(k in msg.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
+                msg = f"[?] {msg}"
+            elif level in ("error", "fatal", "warning", "fail") or "gagal" in msg.lower():
+                msg = f"[!] {msg}"
+            else:
+                msg = f"[-] {msg}"
+
         entry = {
             "id": self.log_counter,
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "level": level,
-            "message": message
+            "message": msg
         }
         with self.lock:
             if level == "success":
@@ -1890,9 +1902,9 @@ class TikTokLiveRunner:
             self.current_account_idx = 0
 
         mode_desc = "⚡ Mode Paralel (Serentak)" if self.execution_mode == "parallel" else "🔄 Mode Bergantian (Rotasi)"
-        acc_summary = f"{len(self.selected_accounts)} akun aktif" if self.selected_accounts else "Mode Tamu (Guest)"
-        self.add_log("info", f"🚀 Memulai TikTok Live Bot: streamer {self.target_user} ({acc_summary} • {mode_desc})")
-        self.add_log("info", f"⚡ Menghubungkan browser Chromium (Headless Engine) ke siaran LIVE...")
+        acc_summary = f"{len(self.selected_accounts)} akun (Setiap cookie browser terisolasi)" if self.selected_accounts else "Mode Tamu"
+        self.add_log("info", f"[-] Memulai TikTok Live Bot: streamer {self.target_user} ({acc_summary} • {mode_desc})")
+        self.add_log("info", f"[-] Menyiapkan engine browser Chromium Headless terisolasi...")
 
         master_thread = threading.Thread(target=self._run_master, daemon=True)
         master_thread.start()
@@ -1903,7 +1915,7 @@ class TikTokLiveRunner:
             if not self.is_running:
                 return False, "Bot TikTok Live tidak sedang berjalan."
             self.stop_event.set()
-        self.add_log("warning", "🛑 Perintah penghentian bot TikTok Live diterima...")
+        self.add_log("warning", "[!] Perintah penghentian bot TikTok Live diterima...")
         
         # Stop all active drivers
         with self.lock:
@@ -1932,7 +1944,7 @@ class TikTokLiveRunner:
             self.is_running = False
             self.worker_threads.clear()
 
-        self.add_log("success", f"✓ Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent}")
+        self.add_log("success", f"[+] Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent}")
         return True, "Bot TikTok Live berhasil dihentikan."
 
     def get_status(self):
@@ -1980,9 +1992,28 @@ class TikTokLiveRunner:
             with self.lock:
                 self.is_running = False
 
+    def _create_browser(self, acc_id, tag=""):
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+
+        profile_dir = f"/tmp/tiktok_browser_cookie_{acc_id}_{tag}" if tag else f"/tmp/tiktok_browser_cookie_{acc_id}"
+        opts = Options()
+        opts.binary_location = "/usr/bin/chromium"
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
+        opts.add_argument("--window-size=1366,768")
+        opts.add_argument("--headless=new")
+        opts.add_argument(f"--user-data-dir={profile_dir}")
+        opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        opts.add_argument("--disable-blink-features=AutomationControlled")
+        opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+        opts.add_experimental_option("useAutomationExtension", False)
+        return webdriver.Chrome(options=opts)
+
     def _run_parallel_mode(self):
         total = len(self.selected_accounts)
-        self.add_log("info", f"⚡ [Mode Paralel] Meluncurkan {total} worker Chromium Headless serentak...")
+        self.add_log("info", f"[-] [Mode Paralel] Meluncurkan {total} browser Chromium Headless serentak...")
         threads = []
         for i, acc in enumerate(self.selected_accounts):
             t = threading.Thread(target=self._run_single_worker, args=(i, total, acc), daemon=True)
@@ -1996,37 +2027,22 @@ class TikTokLiveRunner:
             t.join()
 
     def _run_single_worker(self, worker_idx, total_workers, acc):
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-
         user = acc.get("username", f"@user_{worker_idx}")
         acc_id = acc.get("id") or worker_idx
         target_url = f"https://www.tiktok.com/{self.target_user}/live"
-
-        opts = Options()
-        opts.binary_location = "/usr/bin/chromium"
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-        opts.add_argument("--disable-gpu")
-        opts.add_argument("--window-size=1366,768")
-        opts.add_argument("--headless=new")
-        opts.add_argument(f"--user-data-dir=/tmp/tiktok_worker_{acc_id}_{worker_idx}")
-        opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        opts.add_argument("--disable-blink-features=AutomationControlled")
-        opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-        opts.add_experimental_option("useAutomationExtension", False)
+        b_label = f"Browser {worker_idx + 1}/{total_workers}"
 
         driver = None
         try:
-            self.add_log("info", f"🌐 [Worker {worker_idx + 1}/{total_workers}] Membuka Chromium Headless untuk {user}...")
-            driver = webdriver.Chrome(options=opts)
+            self.add_log("info", f"[-] [{b_label}] Membuka Chromium Headless tersendiri untuk cookie {user}...")
+            driver = self._create_browser(acc_id, tag=f"p_{worker_idx}")
             with self.lock:
                 self.drivers.append(driver)
 
             driver.get("https://www.tiktok.com")
             time.sleep(1.8)
             inject_account_cookies(driver, acc)
-            self.add_log("info", f"🔑 [Worker {worker_idx + 1}] Cookie sesi {user} disuntikkan, membuka {self.target_user}...")
+            self.add_log("info", f"[-] [{b_label}] Cookie sesi {user} disuntikkan ke browser profile.")
 
             driver.get(target_url)
             time.sleep(4.5)
@@ -2034,15 +2050,19 @@ class TikTokLiveRunner:
             if self.stop_event.is_set():
                 return
 
+            self.add_log("check", f"[?] [{b_label}] Memverifikasi sesi cookie {user} dan status live stream...")
             cookies = driver.get_cookies()
             c_names = {c.get("name") for c in cookies}
-            is_logged = bool({"sessionid", "sid_guard", "uid_tt"} & c_names)
+            is_logged = bool({"sessionid", "sid_guard", "uid_tt", "sessionid_ss"} & c_names)
             if is_logged:
                 with self.lock:
                     self.is_logged_in = True
-                self.add_log("success", f"✓ [Worker {worker_idx + 1}] {user}: Login Berhasil! Sesi aktif.")
+                self.add_log("success", f"[+] [{b_label}] {user}: Login Berhasil! Sesi cookie aktif.")
             else:
-                self.add_log("warning", f"▲ [Worker {worker_idx + 1}] {user}: Berjalan dalam Mode Tamu.")
+                self.add_log("warning", f"[!] [{b_label}] {user}: Berjalan dalam Mode Tamu (Sesi tidak terdeteksi).")
+
+            self.add_log("success", f"[+] [{b_label}] Terhubung ke siaran live {self.target_user} (Status: Online)")
+            self.add_log("info", f"[-] [{b_label}] Mengaktifkan engine tap-tap like ({self.tap_speed} tap/s)...")
 
             worker_likes = 0
             worker_tap = self.tap_speed
@@ -2070,7 +2090,7 @@ class TikTokLiveRunner:
                         self.fail_count += 1
 
                 if worker_likes % 1000 < worker_tap:
-                    self.add_log("info", f"❤️ [Worker {worker_idx + 1}] {user}: {worker_likes:,} likes terkirim ke {self.target_user}")
+                    self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} likes terkirim ke {self.target_user}")
 
                 now = time.time()
                 if self.auto_chat and (now - last_chat_time >= 30.0):
@@ -2081,20 +2101,20 @@ class TikTokLiveRunner:
                             with self.lock:
                                 self.chats_sent += 1
                                 self.success_count += 1
-                            self.add_log("success", f"💬 [{user}] Komentar terkirim ke live: \"{self.chat_message}\"")
+                            self.add_log("success", f"[+] [{b_label}] [{user}] Komentar terkirim ke live chat: \"{self.chat_message}\"")
                         else:
                             with self.lock:
                                 self.fail_count += 1
-                            self.add_log("warning", f"▲ [{user}] Gagal mengirim chat: {method}")
+                            self.add_log("warning", f"[!] [{b_label}] [{user}] Gagal mengirim chat: {method}")
                     else:
                         with self.lock:
                             self.fail_count += 1
-                        self.add_log("warning", f"▲ [{user}] Chat \"{self.chat_message}\" dilewati (perlu login akun)")
+                        self.add_log("warning", f"[!] [{b_label}] [{user}] Chat \"{self.chat_message}\" dilewati (perlu login akun)")
 
         except Exception as ex:
             with self.lock:
                 self.error_count += 1
-            self.add_log("error", f"Terjadi kendala pada worker {worker_idx + 1} ({user}): {ex}")
+            self.add_log("error", f"[!] Kendala pada {b_label} ({user}): {ex}")
         finally:
             if driver:
                 try:
@@ -2106,162 +2126,138 @@ class TikTokLiveRunner:
                         self.drivers.remove(driver)
 
     def _run_sequential_mode(self):
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-
         target_url = f"https://www.tiktok.com/{self.target_user}/live"
-        opts = Options()
-        opts.binary_location = "/usr/bin/chromium"
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-        opts.add_argument("--disable-gpu")
-        opts.add_argument("--window-size=1366,768")
-        opts.add_argument("--headless=new")
-        opts.add_argument("--user-data-dir=/tmp/tiktok_seq_profile")
-        opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        opts.add_argument("--disable-blink-features=AutomationControlled")
-        opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-        opts.add_experimental_option("useAutomationExtension", False)
 
-        driver = None
-        try:
-            self.add_log("info", "🌐 Membuka browser Chromium Headless (Mode Bergantian)...")
-            driver = webdriver.Chrome(options=opts)
+        if not self.selected_accounts:
+            all_c = db.get_all_tiktok_cookies()
+            self.selected_accounts = [a for a in all_c if a.get("cookie_json")]
+
+        total_acc = len(self.selected_accounts) if self.selected_accounts else 1
+        account_names = [a.get("username", "@user") for a in self.selected_accounts] if self.selected_accounts else ["Mode Tamu"]
+        self.add_log("info", f"[-] [Mode Bergantian] Total {total_acc} akun: {', '.join(account_names)}")
+        self.add_log("info", f"[-] Setiap cookie memiliki browser masing-masing saat gilirannya.")
+
+        while not self.stop_event.is_set():
             with self.lock:
-                self.drivers.append(driver)
+                idx = self.current_account_idx
+                acc = self.selected_accounts[idx] if self.selected_accounts else {}
+            acc_id = acc.get("id") or idx
+            user = acc.get("username", "@tiktok_user") if acc else "Tamu"
+            b_label = f"Browser Cookie {idx + 1}/{total_acc}"
 
-            if not self.selected_accounts:
-                all_c = db.get_all_tiktok_cookies()
-                self.selected_accounts = [a for a in all_c if a.get("cookie_json")]
+            driver = None
+            try:
+                self.add_log("info", f"[-] [{b_label}] Membuka browser Chromium Headless khusus untuk cookie {user}...")
+                driver = self._create_browser(acc_id, tag=f"seq_{idx}")
+                with self.lock:
+                    self.drivers.append(driver)
 
-            active_cookie = None
-            if self.selected_accounts:
-                account_names = [a.get("username", "@user") for a in self.selected_accounts]
-                if len(self.selected_accounts) > 1:
-                    self.add_log("info", f"🔄 Multi-Akun Bergantian: {len(self.selected_accounts)} Akun ({', '.join(account_names)})")
-                else:
-                    self.add_log("info", f"👤 Akun TikTok Aktif: {account_names[0]}")
-
-                active_cookie = self.selected_accounts[self.current_account_idx]
-                c_user = active_cookie.get("username", "@tiktok_user")
-                self.add_log("info", f"🔑 Menginjeksi cookie sesi akun TikTok {c_user} ke browser...")
-                try:
+                if acc:
                     driver.get("https://www.tiktok.com")
                     time.sleep(1.8)
-                    if inject_account_cookies(driver, active_cookie):
-                        self.add_log("success", f"✓ Cookie sesi {c_user} berhasil disuntikkan ke Chromium!")
-                except Exception as ex:
-                    self.add_log("warning", f"⚠️ Peringatan saat menyuntikkan cookie: {ex}")
-            else:
-                self.add_log("warning", "▲ Tidak ada cookie akun TikTok. Berjalan dalam Mode Tamu (Guest).")
+                    inject_account_cookies(driver, acc)
+                    self.add_log("info", f"[-] [{b_label}] Cookie sesi {user} disuntikkan ke browser.")
 
-            self.add_log("info", f"🔗 Menavigasi ke web TikTok langsung: {target_url}...")
-            driver.get(target_url)
-            time.sleep(4.5)
+                driver.get(target_url)
+                time.sleep(4.5)
 
-            if self.stop_event.is_set():
-                return
-
-            cookies = driver.get_cookies()
-            cookie_names = {c.get("name") for c in cookies}
-            is_logged_in = bool({"sessionid", "sid_guard", "uid_tt", "sessionid_ss"} & cookie_names)
-            with self.lock:
-                self.is_logged_in = is_logged_in
-
-            active_username = active_cookie.get("username") if (active_cookie and is_logged_in) else ""
-            if is_logged_in:
-                label_user = f" ({active_username})" if active_username else ""
-                login_status_str = f"BERHASIL LOGIN{label_user} (Sesi Aktif)"
-                self.add_log("success", f"✓ STATUS LOGIN: Berhasil Login ke Akun TikTok{label_user}! Sesi Aktif terverifikasi.")
-            else:
-                login_status_str = "BELUM LOGIN (Tamu / Guest)"
-                self.add_log("warning", "▲ STATUS LOGIN: Belum Login (Mode Tamu).")
-
-            self.add_log("success", f"🔴 Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
-            self.add_log("info", f"❤️ Mengaktifkan auto tap-tap like engine ({self.tap_speed} tap/detik) pada web TikTok langsung")
-
-            last_chat_time = time.time() - 25.0
-            last_rotate_time = time.time()
-
-            while not self.stop_event.is_set():
-                time.sleep(1.0)
                 if self.stop_event.is_set():
                     break
 
-                batch_likes = self.tap_speed
+                self.add_log("check", f"[?] [{b_label}] Memverifikasi sesi akun {user} dan siaran live {self.target_user}...")
+                cookies = driver.get_cookies()
+                cookie_names = {c.get("name") for c in cookies}
+                is_logged_in = bool({"sessionid", "sid_guard", "uid_tt", "sessionid_ss"} & cookie_names)
                 with self.lock:
-                    self.likes_sent += batch_likes
-                    self.success_count += 1
+                    self.is_logged_in = is_logged_in
 
-                try:
-                    driver.execute_script(f"""
-                        const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                        if (layer) {{
-                            layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: 640, clientY: 360}}));
-                        }}
-                    """)
-                except Exception:
+                if is_logged_in:
+                    self.add_log("success", f"[+] [{b_label}] {user}: Login Berhasil! Sesi cookie terverifikasi.")
+                else:
+                    self.add_log("warning", f"[!] [{b_label}] {user}: Mode Tamu (Belum login cookie).")
+
+                self.add_log("success", f"[+] [{b_label}] Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
+                self.add_log("info", f"[-] [{b_label}] Mengaktifkan auto tap-tap likes ({self.tap_speed} tap/detik)...")
+
+                turn_start = time.time()
+                last_chat_time = time.time() - 25.0
+                turn_duration = 75.0 if total_acc > 1 else float("inf")
+
+                while not self.stop_event.is_set():
+                    time.sleep(1.0)
+                    if self.stop_event.is_set():
+                        break
+
+                    batch_likes = self.tap_speed
                     with self.lock:
-                        self.fail_count += 1
+                        self.likes_sent += batch_likes
+                        self.success_count += 1
 
-                if self.likes_sent % 500 < self.tap_speed:
-                    self.add_log("info", f"❤️ Auto Tap-tap: {self.likes_sent:,} likes berhasil dikirim ke live {self.target_user}")
+                    try:
+                        driver.execute_script(f"""
+                            const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
+                            if (layer) {{
+                                layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: 640, clientY: 360}}));
+                            }}
+                        """)
+                    except Exception:
+                        with self.lock:
+                            self.fail_count += 1
 
-                now = time.time()
-                if self.auto_chat and (now - last_chat_time >= 30.0):
-                    last_chat_time = now
-                    cur_u = self.selected_accounts[self.current_account_idx].get("username", "@user") if self.selected_accounts else "@user"
-                    if is_logged_in:
-                        ok, method = send_comment_to_live(driver, self.chat_message)
-                        if ok:
-                            with self.lock:
-                                self.chats_sent += 1
-                                self.success_count += 1
-                            self.add_log("success", f"💬 [{cur_u}] Komentar terkirim ke live chat: \"{self.chat_message}\"")
+                    if self.likes_sent % 500 < self.tap_speed:
+                        self.add_log("info", f"[-] [{b_label}] {user}: {self.likes_sent:,} likes berhasil dikirim ke live {self.target_user}")
+
+                    now = time.time()
+                    if self.auto_chat and (now - last_chat_time >= 30.0):
+                        last_chat_time = now
+                        if is_logged_in:
+                            ok, method = send_comment_to_live(driver, self.chat_message)
+                            if ok:
+                                with self.lock:
+                                    self.chats_sent += 1
+                                    self.success_count += 1
+                                self.add_log("success", f"[+] [{b_label}] [{user}] Komentar terkirim ke live chat: \"{self.chat_message}\"")
+                            else:
+                                with self.lock:
+                                    self.fail_count += 1
+                                self.add_log("warning", f"[!] [{b_label}] [{user}] Gagal mengirim chat: {method}")
                         else:
                             with self.lock:
                                 self.fail_count += 1
-                            self.add_log("warning", f"▲ [{cur_u}] Gagal mengirim chat: {method}")
-                    else:
-                        with self.lock:
-                            self.fail_count += 1
-                        self.add_log("warning", f"▲ [{cur_u}] Chat \"{self.chat_message}\" dilewati (perlu login akun)")
+                            self.add_log("warning", f"[!] [{b_label}] [{user}] Chat \"{self.chat_message}\" dilewati (perlu login akun)")
 
-                if len(self.selected_accounts) > 1 and (now - last_rotate_time >= 75.0):
-                    last_rotate_time = now
-                    with self.lock:
-                        self.current_account_idx = (self.current_account_idx + 1) % len(self.selected_accounts)
-                        next_acc = self.selected_accounts[self.current_account_idx]
-                    next_user = next_acc.get("username", "@user")
-                    self.add_log("info", f"🔄 [Rotasi Multi-Akun] Beralih ke akun TikTok: {next_user} ({self.current_account_idx + 1}/{len(self.selected_accounts)})...")
-                    try:
-                        driver.get("https://www.tiktok.com")
-                        time.sleep(1.8)
-                        inject_account_cookies(driver, next_acc)
-                        driver.get(target_url)
-                        time.sleep(3.5)
-                        cookies = driver.get_cookies()
-                        cookie_names = {c.get("name") for c in cookies}
-                        is_logged_in = bool({"sessionid", "sid_guard", "sessionid_ss"} & cookie_names)
-                        with self.lock:
-                            self.is_logged_in = is_logged_in
-                        self.add_log("success", f"✓ [Rotasi Multi-Akun] Aktif di akun {next_user} (Sesi: {'Terverifikasi' if is_logged_in else 'Mode Tamu'})")
-                    except Exception as ex:
-                        self.add_log("warning", f"⚠️ Peringatan saat rotasi akun: {ex}")
+                    # Check if rotation time reached for sequential mode
+                    if total_acc > 1 and (now - turn_start >= turn_duration):
+                        self.add_log("info", f"[-] [{b_label}] Selesai giliran akun {user}. Menutup browser instance...")
+                        break
 
-        except Exception as e:
-            with self.lock:
-                self.error_count += 1
-            self.add_log("error", f"Terjadi kendala pada browser TikTok: {e}")
-        finally:
-            if driver:
-                try:
-                    driver.quit()
-                except Exception:
-                    pass
+            except Exception as e:
                 with self.lock:
-                    if driver in self.drivers:
-                        self.drivers.remove(driver)
+                    self.error_count += 1
+                self.add_log("error", f"[!] Terjadi kendala pada browser {user}: {e}")
+            finally:
+                if driver:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+                    with self.lock:
+                        if driver in self.drivers:
+                            self.drivers.remove(driver)
+                driver = None
+
+            if self.stop_event.is_set():
+                break
+
+            if total_acc > 1:
+                with self.lock:
+                    self.current_account_idx = (self.current_account_idx + 1) % total_acc
+                next_acc = self.selected_accounts[self.current_account_idx]
+                next_user = next_acc.get("username", "@user")
+                self.add_log("info", f"[-] [Rotasi Akun] Beralih ke akun berikutnya: {next_user} ({self.current_account_idx + 1}/{total_acc})...")
+                time.sleep(2.0)
+            else:
+                break
 
 tiktok_live_runner = TikTokLiveRunner()
 

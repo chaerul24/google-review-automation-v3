@@ -2060,20 +2060,29 @@ def format_task_log_line(ts: str, lvl: str, msg: str, email: str = "", account_n
     else:
         actor_badge = f"{C_BLUE}[SISTEM BROWSER]{C_RESET}"
 
+    tag = f"{C_BOLD}{C_BLUE}[-]{C_RESET}"
     if lvl == "success":
+        tag = f"{C_BOLD}{C_GREEN}[+]{C_RESET}"
         arrow = f"{C_GREEN}──>{C_RESET}"
-        msg_out = f"{C_BOLD}{C_GREEN}✓ {clean_msg}{C_RESET}"
+        msg_out = f"{C_BOLD}{C_GREEN}{clean_msg}{C_RESET}"
     elif lvl in ("error", "fatal"):
+        tag = f"{C_BOLD}{C_RED}[!]{C_RESET}"
         arrow = f"{C_RED}──>{C_RESET}"
-        msg_out = f"{C_BOLD}{C_RED}✖ {clean_msg}{C_RESET}"
+        msg_out = f"{C_BOLD}{C_RED}{clean_msg}{C_RESET}"
     elif lvl == "warning":
+        tag = f"{C_BOLD}{C_YELLOW}[!]{C_RESET}"
         arrow = f"{C_YELLOW}──>{C_RESET}"
-        msg_out = f"{C_YELLOW}▲ {clean_msg}{C_RESET}"
+        msg_out = f"{C_YELLOW}{clean_msg}{C_RESET}"
+    elif any(k in clean_msg.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
+        tag = f"{C_BOLD}{C_CYAN}[?]{C_RESET}"
+        arrow = f"{C_CYAN}──>{C_RESET}"
+        msg_out = f"{C_CYAN}{clean_msg}{C_RESET}"
     else:
+        tag = f"{C_BOLD}{C_BLUE}[-]{C_RESET}"
         arrow = f"{C_CYAN}──>{C_RESET}"
         msg_out = f"{C_WHITE}{clean_msg}{C_RESET}"
 
-    return f" {C_CYAN}│   ├──{C_RESET} {C_DIM}{ts}{C_RESET} {arrow} {actor_badge} {arrow} {msg_out}"
+    return f" {C_CYAN}│   ├──{C_RESET} {C_DIM}{ts}{C_RESET} {tag} {arrow} {actor_badge} {arrow} {msg_out}"
 
 
 def run_delete_maps_stream(
@@ -2527,8 +2536,8 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
     chosen_mode = "parallel"
     if chosen_account_ids and len(chosen_account_ids) > 1:
         print(f" {C_CYAN}┌── [PILIHAN MODE MULTI-AKUN (PARALEL / BERGANTIAN)]{C_RESET}")
-        print(f" {C_CYAN}│{C_RESET}   [1] {C_BOLD}{C_GREEN}⚡ Mode Paralel (Serentak){C_RESET} — Semua akun bekerja serentak bersamaan di layar")
-        print(f" {C_CYAN}│{C_RESET}   [2] {C_BOLD}{C_YELLOW}🔄 Mode Bergantian (Rotasi){C_RESET} — 1 browser bergantian akun tiap periode (75 detik)")
+        print(f" {C_CYAN}│{C_RESET}   [1] {C_BOLD}{C_GREEN}⚡ Mode Paralel (Serentak){C_RESET} — Setiap cookie memiliki browser masing-masing bekerja serentak")
+        print(f" {C_CYAN}│{C_RESET}   [2] {C_BOLD}{C_YELLOW}🔄 Mode Bergantian (Rotasi){C_RESET} — Setiap cookie memiliki browser masing-masing bergantian tiap periode (75 detik)")
         print(f" {C_CYAN}└──{C_RESET}")
         m_in = input(f" {C_GREEN}Pilih Mode Multi-Akun [1/2] (default: 1): {C_RESET}").strip()
         chosen_mode = "sequential" if m_in == "2" else "parallel"
@@ -2672,20 +2681,48 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                         for idx, l in enumerate(reversed_logs):
                             lvl = (l.get("level") or "info").lower()
                             ts = (l.get("created_at") or "").split()[-1]
-                            msg = l.get("message") or ""
-                            col = C_WHITE
-                            icon = "ℹ"
-                            if lvl == "success":
+                            raw_msg = (l.get("message") or "").strip()
+
+                            tag = "[-]"
+                            col = C_BLUE
+                            clean_text = raw_msg
+                            if clean_text.startswith("[+]"):
+                                tag = "[+]"
                                 col = C_GREEN
-                                icon = "✓"
-                            elif lvl in ("warning", "fail"):
-                                col = C_YELLOW
-                                icon = "▲"
-                            elif lvl == "error":
-                                col = C_RED
-                                icon = "✖"
+                                clean_text = clean_text[3:].strip()
+                            elif clean_text.startswith("[?]"):
+                                tag = "[?]"
+                                col = C_CYAN
+                                clean_text = clean_text[3:].strip()
+                            elif clean_text.startswith("[!]"):
+                                tag = "[!]"
+                                col = C_RED if lvl in ("error", "fatal") else C_YELLOW
+                                clean_text = clean_text[3:].strip()
+                            elif clean_text.startswith("[-]"):
+                                tag = "[-]"
+                                col = C_BLUE
+                                clean_text = clean_text[3:].strip()
+                            else:
+                                if lvl == "success":
+                                    tag = "[+]"
+                                    col = C_GREEN
+                                elif lvl in ("error", "fatal"):
+                                    tag = "[!]"
+                                    col = C_RED
+                                elif lvl in ("warning", "fail"):
+                                    tag = "[!]"
+                                    col = C_YELLOW
+                                elif any(k in clean_text.lower() for k in ("memeriksa", "verifikasi", "cek", "menunggu", "deteksi")):
+                                    tag = "[?]"
+                                    col = C_CYAN
+                                else:
+                                    tag = "[-]"
+                                    col = C_BLUE
+
+                            clean_text = re.sub(r'^[✓▲✖ℹ🌐🔑❤️💬🚀⚡]\s*', '', clean_text)
                             prefix = " ▶" if idx == 0 else "  "
-                            print(f"{prefix} {C_DIM}[{ts}]{C_RESET} {col}{icon} {msg}{C_RESET}")
+                            tag_badge = f"{C_BOLD}{col}{tag}{C_RESET}"
+                            print(f"{prefix} {C_DIM}[{ts}]{C_RESET} {tag_badge} {C_WHITE}{clean_text}{C_RESET}")
 
                     # Render Ctrl+C as plain text WITHOUT card
                     if cols >= 80:

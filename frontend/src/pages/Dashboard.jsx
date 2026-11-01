@@ -3115,77 +3115,53 @@ export default function Dashboard({ onLogout }) {
                               );
                             })}
 
-                            {/* Central Rounded Eye Bot Core (Interactive Dispatcher Hub) */}
+                            {/* Central Rounded Eye Bot Core (Interactive Dispatcher Hub — No Circle, Tentacles Directly Connected) */}
                             <g
                               onClick={() => setSelectedNodeId('router')}
                               className="cursor-pointer group select-none"
                             >
-                              {/* Outer Glow Halo */}
-                              <circle
-                                cx="480"
-                                cy="300"
-                                r={selectedNodeId === 'router' ? 44 : 38}
-                                fill={isTaskActive ? (isParallel ? '#06B6D4' : '#F59E0B') : '#38BDF8'}
-                                opacity={isTaskActive ? 0.28 : 0.12}
-                                filter="url(#glow-cyan)"
-                                className="transition-all duration-300"
-                              />
-
-                              {/* Chassis Background Plate */}
-                              <circle
-                                cx="480"
-                                cy="300"
-                                r="36"
-                                fill="#080C14"
-                                stroke={
-                                  selectedNodeId === 'router'
-                                    ? (isTaskActive ? '#38BDF8' : '#F59E0B')
-                                    : (isTaskActive ? '#0284C7' : '#334155')
-                                }
-                                strokeWidth={selectedNodeId === 'router' ? 2.5 : 1.8}
-                                className="transition-all duration-300 group-hover:stroke-cyan-400"
-                              />
-
-                              {/* Embedded Interactive Rounded Eye Bot */}
+                              {/* Embedded Interactive Rounded Eye Bot (Directly Centered at 480, 300) */}
                               <foreignObject
-                                x="380"
-                                y="222"
-                                width="200"
-                                height="156"
+                                x="360"
+                                y="200"
+                                width="240"
+                                height="200"
                                 className="overflow-visible pointer-events-auto"
                               >
                                 <div
-                                  className="w-full h-full flex flex-col items-center justify-center cursor-pointer select-none"
+                                  className="w-full h-full flex items-center justify-center cursor-pointer select-none"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedNodeId('router');
                                   }}
                                 >
-                                  <InteractiveBotEyes
-                                    size="md"
-                                    isRunning={isTaskActive}
-                                    mood={
-                                      isTaskActive
-                                        ? 'working'
-                                        : brokenCookies.length > 0
-                                        ? 'confused'
-                                        : 'happy'
-                                    }
-                                    speechText={
-                                      selectedNodeId && selectedNodeId !== 'router'
-                                        ? `fokus ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'}!`
-                                        : !isTaskActive
-                                        ? (brokenCookies.length > 0 ? `${brokenCookies.length} butuh login!` : 'siap bertugas!')
-                                        : isParallel
-                                        ? 'paralel aktif! ⚡'
-                                        : `ulasan #${currentTurnNumber} 🚀`
-                                    }
-                                  />
+                                  <div className="relative flex items-center justify-center">
+                                    <InteractiveBotEyes
+                                      size="lg"
+                                      isRunning={isTaskActive}
+                                      mood={
+                                        isTaskActive
+                                          ? 'working'
+                                          : brokenCookies.length > 0
+                                          ? 'confused'
+                                          : 'happy'
+                                      }
+                                      speechText={
+                                        selectedNodeId && selectedNodeId !== 'router'
+                                          ? `fokus ${tentacleNodes.find((n) => n.id === selectedNodeId)?.displayName || 'akun'}!`
+                                          : !isTaskActive
+                                          ? (brokenCookies.length > 0 ? `${brokenCookies.length} butuh login!` : 'siap bertugas!')
+                                          : isParallel
+                                          ? 'paralel aktif! ⚡'
+                                          : `ulasan #${currentTurnNumber} 🚀`
+                                      }
+                                    />
+                                  </div>
                                 </div>
                               </foreignObject>
 
                               {/* Eye Bot Core Badge Tag Underneath */}
-                              <g transform="translate(480, 348)">
+                              <g transform="translate(480, 344)">
                                 <rect
                                   x="-44"
                                   y="-9"

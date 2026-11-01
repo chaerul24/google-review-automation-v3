@@ -150,8 +150,8 @@ export default function InteractiveBotEyes({
 
   return (
     <div className="relative flex flex-col items-center select-none" ref={containerRef}>
-      {/* ── 1. Text Speech Bubble di Atas Bot ── */}
-      <div className="mb-2 relative flex flex-col items-center animate-in fade-in slide-in-from-bottom-1 duration-200">
+      {/* ── 1. Text Speech Bubble di Atas Bot (Floating Perfectly Above Head) ── */}
+      <div className="absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none z-30 animate-in fade-in slide-in-from-bottom-1 duration-200">
         <div data-bot-speech="true" className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold shadow-xl border flex items-center gap-1.5 whitespace-nowrap transition-colors ${
           isQuestionActive
             ? 'bg-amber-950/90 text-amber-300 border-amber-500/40 shadow-amber-950/50'
@@ -190,14 +190,14 @@ export default function InteractiveBotEyes({
         <button
           type="button"
           onClick={handleClick}
-          className={`${sizeConfig.box} bg-[#0c1017] border-2 transition-all flex items-center justify-center cursor-pointer shadow-xl relative overflow-hidden group active:scale-95 ${
+          className={`${sizeConfig.box} bg-[#0A0E17] border-2 transition-all flex items-center justify-center cursor-pointer shadow-2xl relative overflow-hidden group active:scale-95 ${
             isQuestionActive
-              ? 'border-amber-500/60 shadow-amber-500/20'
+              ? 'border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.35)] ring-2 ring-amber-500/30'
               : isRunning
-              ? 'border-emerald-500/70 shadow-emerald-500/30 ring-2 ring-emerald-500/20'
-              : 'border-slate-700/80 hover:border-slate-500'
+              ? 'border-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.4)] ring-2 ring-emerald-400/30'
+              : 'border-slate-700/90 hover:border-cyan-400/80 hover:shadow-[0_0_15px_rgba(56,189,248,0.3)] shadow-[0_0_12px_rgba(0,0,0,0.6)]'
           }`}
-          title="Grok Bot Companion"
+          title="Eye Bot Companion"
         >
           {/* Subtle Screen Reflection */}
           <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none"></div>

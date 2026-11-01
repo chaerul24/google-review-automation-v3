@@ -2662,8 +2662,7 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
         if not target_user.startswith("@"):
             target_user = f"@{target_user}"
 
-        speed_in = input(f" {C_GREEN}Kecepatan Tap-tap Like (5-100 tap/detik, default: {default_speed}): {C_RESET}").strip()
-        tap_speed = max(5, min(100, int(speed_in) if speed_in.isdigit() else default_speed))
+        tap_speed = default_speed
 
         chat_opt = input(f" {C_GREEN}Kirim pesan live chat otomatis? [Y/n] (default: {'Y' if default_chat_enabled else 'N'}): {C_RESET}").strip().lower()
         auto_chat = default_chat_enabled if chat_opt == "" else (chat_opt in ("y", "yes", "1"))

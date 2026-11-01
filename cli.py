@@ -985,8 +985,7 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
         if not t_user.startswith("@"):
             t_user = f"@{t_user}"
 
-        t_speed = IntPrompt.ask("  [bold white]Kecepatan Tap-tap Like (tap/detik, 5-100)[/bold white]", default=default_speed)
-        t_speed = max(5, min(100, t_speed))
+        t_speed = default_speed
 
         do_chat = Confirm.ask("  [bold white]Kirim Pesan Live Chat Otomatis?[/bold white]", default=tiktok_cfg.get("auto_chat", True))
         t_chat = default_chat

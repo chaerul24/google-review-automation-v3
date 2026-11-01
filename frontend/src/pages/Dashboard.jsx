@@ -257,6 +257,7 @@ export default function Dashboard({ onLogout }) {
   const [taskExecutionMode, setTaskExecutionMode] = useState('queue'); // 'queue' (Mode Bergilir) | 'parallel' (Mode Paralel)
   const [rotationIndex, setRotationIndex] = useState(0);
   const [isRotatingQueue, setIsRotatingQueue] = useState(true);
+  const [isSimulationActive, setIsSimulationActive] = useState(false); // Standby by default until task starts
 
   const loadUsageData = async () => {
     try {
@@ -283,14 +284,16 @@ export default function Dashboard({ onLogout }) {
     }
   }, [activeTab]);
 
-  // Auto-advance turn in Mode Bergilir (rotates active connected cookie every 3.2s)
+  // Auto-advance turn in Mode Bergilir ONLY when task or simulation is active
   useEffect(() => {
-    if (activeTab !== 'usage' || taskExecutionMode !== 'queue' || !isRotatingQueue) return;
+    if (activeTab !== 'usage' || taskExecutionMode !== 'queue') return;
+    const isRunning = Boolean(usageData?.task_execution?.is_running || isSimulationActive);
+    if (!isRunning || !isRotatingQueue) return;
     const interval = setInterval(() => {
       setRotationIndex((prev) => prev + 1);
     }, 3200);
     return () => clearInterval(interval);
-  }, [activeTab, taskExecutionMode, isRotatingQueue]);
+  }, [activeTab, taskExecutionMode, isRotatingQueue, usageData, isSimulationActive]);
 
   // ── Load All Data ─────────────────────────────────────────────────────────────
   const loadDashboardData = async (silent = false) => {
@@ -2775,6 +2778,7 @@ export default function Dashboard({ onLogout }) {
                 {(() => {
                   const liveTask = usageData?.task_execution;
                   const isLiveRunning = Boolean(liveTask?.is_running);
+                  const isTaskActive = isLiveRunning || isSimulationActive;
                   const activeMode = isLiveRunning ? (liveTask?.mode || 'queue') : taskExecutionMode;
                   const isParallel = activeMode === 'parallel';
                   const eligibleCookies = tentacleNodes.filter((n) => !n.isNeedsLogin);
@@ -2785,7 +2789,7 @@ export default function Dashboard({ onLogout }) {
                     ? eligibleCookies.find((c) => c.email === liveActiveEmail)
                     : null;
                   const activeTurnNode = liveTurnNode || (eligibleCookies.length > 0 ? eligibleCookies[rotationIndex % eligibleCookies.length] : null);
-                  const currentActiveCookieId = activeTurnNode ? activeTurnNode.id : null;
+                  const currentActiveCookieId = isTaskActive && activeTurnNode ? activeTurnNode.id : null;
                   const currentTurnNumber = eligibleCookies.length > 0 ? (rotationIndex % eligibleCookies.length) + 1 : 1;
 
                   return (
@@ -2797,16 +2801,21 @@ export default function Dashboard({ onLogout }) {
                             Model & Worker Topology ({tentacleNodes.length} Akun Terdaftar)
                           </span>
 
-                          {/* Live Task Badge */}
+                          {/* Live Task Badge vs Standby State */}
                           {isLiveRunning ? (
                             <span className="font-mono text-[10px] text-amber-300 bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-700 font-bold flex items-center gap-1.5 animate-pulse">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                               TASK CLI BERJALAN: {liveTask.active_business_name || 'Maps Target'} [{isParallel ? 'PARALEL' : 'BERGILIR'}]
                             </span>
+                          ) : isSimulationActive ? (
+                            <span className="font-mono text-[10px] text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-700 font-bold flex items-center gap-1.5 animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                              SIMULASI AKTIF [{isParallel ? 'MODE PARALEL' : 'MODE BERGILIR'}]
+                            </span>
                           ) : (
-                            <span className="font-mono text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/70 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              SISTEM STANDBY (SIAP JALAN)
+                            <span className="font-mono text-[10px] text-slate-400 bg-slate-900/90 px-2.5 py-0.5 rounded-full border border-slate-700 flex items-center gap-1.5 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                              STANDBY (Belum Mulai Jalankan Task)
                             </span>
                           )}
 
@@ -2819,7 +2828,7 @@ export default function Dashboard({ onLogout }) {
                           )}
                         </div>
 
-                        {/* Interactive Execution Mode Switcher Controls */}
+                        {/* Mode Selector & Simulation Trigger */}
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
                             <button
@@ -2829,7 +2838,7 @@ export default function Dashboard({ onLogout }) {
                                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
                                   : 'text-slate-400 hover:text-slate-200'
                               }`}
-                              title="Mode Bergilir: 1 Akun aktif bergantian memposting ulasan"
+                              title="Mode Bergilir: 1 Akun aktif bergantian saat task dijalankan"
                             >
                               <span>📋</span>
                               <span>Mode Bergilir</span>
@@ -2842,25 +2851,26 @@ export default function Dashboard({ onLogout }) {
                                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                                   : 'text-slate-400 hover:text-slate-200'
                               }`}
-                              title="Mode Paralel: Semua akun terhubung serentak di virtual display"
+                              title="Mode Paralel: Semua akun terhubung serentak saat task dijalankan"
                             >
                               <span>⚡</span>
                               <span>Mode Paralel</span>
                             </button>
                           </div>
 
-                          {!isParallel && !isLiveRunning && (
+                          {/* Optional preview simulation toggle button */}
+                          {!isLiveRunning && (
                             <button
-                              onClick={() => setIsRotatingQueue(!isRotatingQueue)}
-                              className={`px-2 py-1 rounded-md text-[10px] font-mono border transition-all cursor-pointer flex items-center gap-1 ${
-                                isRotatingQueue
-                                  ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60'
-                                  : 'bg-slate-800/60 text-slate-400 border-slate-700/60'
+                              onClick={() => setIsSimulationActive(!isSimulationActive)}
+                              className={`px-2.5 py-1 rounded-md text-[10px] font-mono border transition-all cursor-pointer flex items-center gap-1 ${
+                                isSimulationActive
+                                  ? 'bg-cyan-950/70 text-cyan-300 border-cyan-700/80 font-bold'
+                                  : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border-slate-700/60'
                               }`}
-                              title="Toggle rotasi otomatis simulasi giliran akun"
+                              title="Uji coba visual alur tentakel sebelum menjalankan task CLI"
                             >
-                              <span>{isRotatingQueue ? '↻' : '⏸'}</span>
-                              <span>{isRotatingQueue ? 'Rotasi: ON' : 'Rotasi: PAUSE'}</span>
+                              <span>{isSimulationActive ? '⏹' : '▶'}</span>
+                              <span>{isSimulationActive ? 'Stop Simulasi' : 'Tes Simulasi Alur'}</span>
                             </button>
                           )}
                         </div>
@@ -2914,11 +2924,11 @@ export default function Dashboard({ onLogout }) {
                               </filter>
                             </defs>
 
-                            {/* Dynamic Tentacle Strands & Energy Particles (Mode Bergilir vs Mode Paralel) */}
+                            {/* Dynamic Tentacle Strands & Energy Particles */}
                             {tentacleNodes.map((node) => {
                               const isSelected = selectedNodeId === node.id || selectedNodeId === 'router';
 
-                              // 1. KONDISI PERLU LOGIN: TENTAKEL TERPUTUS TOTAL
+                              // 1. KONDISI PERLU LOGIN: TENTAKEL TERPUTUS TOTAL (Selalu terputus agar terdeteksi sejak awal)
                               if (node.isNeedsLogin) {
                                 return (
                                   <g key={`tentacle-${node.id}`} className="transition-opacity duration-300">
@@ -2938,12 +2948,6 @@ export default function Dashboard({ onLogout }) {
                                       strokeLinecap="round"
                                       opacity={isSelected ? 0.95 : 0.65}
                                     />
-                                    <circle r="3" fill="#EF4444" filter="url(#glow-rose)">
-                                      <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
-                                    </circle>
-                                    <circle r="1.3" fill="#FFFFFF">
-                                      <animateMotion dur="1.2s" repeatCount="indefinite" path={node.stump1Path} />
-                                    </circle>
 
                                     {/* Percikan Listrik Putus di Titik Patahan */}
                                     <circle cx={node.breakTip1.x} cy={node.breakTip1.y} r="4.5" fill="#EF4444" opacity="0.8">
@@ -3011,13 +3015,30 @@ export default function Dashboard({ onLogout }) {
                                 );
                               }
 
-                              // 2. KONDISI NORMAL: CEK APAKAH AKTIF TERHUBUNG
+                              // 2. KONDISI NORMAL:
+                              // JIKA BELUM MULAI JALANKAN TASK (!isTaskActive) -> TENTAKEL DORMANT / STANDBY (TIDAK LANGSUNG AKTIF!)
+                              if (!isTaskActive) {
+                                return (
+                                  <g key={`tentacle-${node.id}`} className="transition-all duration-500">
+                                    <path
+                                      d={node.pathD}
+                                      fill="none"
+                                      stroke="#334155"
+                                      strokeWidth="1.2"
+                                      strokeDasharray="3 5"
+                                      opacity="0.22"
+                                    />
+                                  </g>
+                                );
+                              }
+
+                              // 3. JIKA TASK SEDANG BERJALAN:
                               // Mode Paralel: SEMUA akun aktif terhubung!
                               // Mode Bergilir: HANYA akun yang sedang dipakai (activeCookieId) yang terhubung!
                               const isConnected = isParallel ? true : (node.id === currentActiveCookieId);
 
                               if (isConnected) {
-                                // TENTAKEL AKTIF TERHUBUNG (PENUH DAYA & ENERGI PULSE)
+                                // TENTAKEL AKTIF TERHUBUNG (PENUH DAYA & ENERGI PULSE SAAT TASK BERJALAN)
                                 return (
                                   <g key={`tentacle-${node.id}`} className="transition-all duration-500">
                                     <path
@@ -3055,7 +3076,7 @@ export default function Dashboard({ onLogout }) {
                                 );
                               }
 
-                              // TENTAKEL STANDBY / MENUNGGU GILIRAN (MODE BERGILIR)
+                              // TENTAKEL STANDBY / MENUNGGU GILIRAN (MODE BERGILIR SAAT TASK BERJALAN)
                               return (
                                 <g key={`tentacle-${node.id}`} className="transition-all duration-500">
                                   <path
@@ -3111,7 +3132,7 @@ export default function Dashboard({ onLogout }) {
                               <circle cx="520" cy="300" r="4" fill="#F59E0B" opacity="0.8" />
                             </g>
 
-                            {/* Dynamic Cookie Account Nodes (1 Node per registered cookie) */}
+                            {/* Dynamic Cookie Account Nodes */}
                             {tentacleNodes.map((node) => {
                               const isSelected = selectedNodeId === node.id;
                               const pillW = 126;
@@ -3119,8 +3140,8 @@ export default function Dashboard({ onLogout }) {
                               const pillX = node.x - pillW / 2;
                               const pillY = node.y - pillH / 2;
                               const isNeedsLogin = node.isNeedsLogin;
-                              const isTurnActive = !isParallel && node.id === currentActiveCookieId;
-                              const isConnected = isParallel || isTurnActive;
+                              const isTurnActive = isTaskActive && !isParallel && node.id === currentActiveCookieId;
+                              const isConnected = isTaskActive && (isParallel || isTurnActive);
 
                               return (
                                 <g
@@ -3160,7 +3181,7 @@ export default function Dashboard({ onLogout }) {
                                         ? '#EF4444'
                                         : isTurnActive
                                         ? node.color
-                                        : isParallel
+                                        : isConnected
                                         ? node.color
                                         : '#334155'
                                     }
@@ -3171,7 +3192,7 @@ export default function Dashboard({ onLogout }) {
                                         ? 2.2
                                         : isNeedsLogin
                                         ? 1.5
-                                        : isParallel
+                                        : isConnected
                                         ? 1.2
                                         : 1.0
                                     }
@@ -3241,11 +3262,11 @@ export default function Dashboard({ onLogout }) {
                                       cy={node.y}
                                       r="3.2"
                                       fill="#10B981"
-                                      opacity={isConnected ? 1.0 : 0.5}
+                                      opacity={isConnected ? 1.0 : 0.6}
                                     />
                                   )}
 
-                                  {/* Sub-badge di bawah Pill: Status Bergilir / Paralel / Perlu Login */}
+                                  {/* Sub-badge di bawah Pill: Standby / Sedang Dipakai / Paralel / Perlu Login */}
                                   {isNeedsLogin ? (
                                     <g>
                                       <rect
@@ -3292,6 +3313,29 @@ export default function Dashboard({ onLogout }) {
                                         letterSpacing="0.2"
                                       >
                                         SEDANG DIPAKAI 🚀
+                                      </text>
+                                    </g>
+                                  ) : !isTaskActive ? (
+                                    <g>
+                                      <rect
+                                        x={node.x - 32}
+                                        y={node.y + 16}
+                                        width="64"
+                                        height="12"
+                                        rx="3"
+                                        fill="#0F172A"
+                                        stroke="#1E293B"
+                                        strokeWidth="0.7"
+                                      />
+                                      <text
+                                        x={node.x}
+                                        y={node.y + 24.5}
+                                        textAnchor="middle"
+                                        fill="#64748B"
+                                        fontSize="6.8"
+                                        fontWeight="medium"
+                                      >
+                                        STANDBY • SIAP
                                       </text>
                                     </g>
                                   ) : !isParallel ? (
@@ -3381,7 +3425,7 @@ export default function Dashboard({ onLogout }) {
                         const selNode = tentacleNodes.find((n) => n.id === selectedNodeId);
                         const isRouter = selectedNodeId === 'router' || !selNode;
                         const isNeedsLogin = !isRouter && selNode?.isNeedsLogin;
-                        const isCurrentlyUsed = !isParallel && selNode?.id === currentActiveCookieId;
+                        const isCurrentlyUsed = isTaskActive && !isParallel && selNode?.id === currentActiveCookieId;
 
                         return (
                           <div className="mt-4 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
@@ -3392,14 +3436,18 @@ export default function Dashboard({ onLogout }) {
                                   className="font-bold text-slate-100 font-mono text-xs truncate block"
                                   title={
                                     isRouter
-                                      ? isParallel
+                                      ? !isTaskActive
+                                        ? 'Router (Standby Engine)'
+                                        : isParallel
                                         ? 'Router (Paralel Broadcast)'
                                         : `Router ➔ ${activeTurnNode?.fullName || 'Dispatcher'}`
                                       : selNode.fullName
                                   }
                                 >
                                   {isRouter ? (
-                                    isParallel ? (
+                                    !isTaskActive ? (
+                                      '⚡ Router (Standby Engine)'
+                                    ) : isParallel ? (
                                       '⚡ Router (Paralel Hub)'
                                     ) : (
                                       `⚡ Router ➔ ${activeTurnNode?.fullName || 'Akun'}`
@@ -3424,10 +3472,12 @@ export default function Dashboard({ onLogout }) {
                                       ? 'text-emerald-400'
                                       : 'text-cyan-400'
                                   }`}
-                                  title={isRouter ? (isParallel ? 'Semua Akun Terhubung' : activeTurnNode?.email) : selNode.email}
+                                  title={isRouter ? (!isTaskActive ? 'Dispatcher (Standby)' : isParallel ? 'Semua Akun Terhubung' : activeTurnNode?.email) : selNode.email}
                                 >
                                   {isRouter ? (
-                                    isParallel ? (
+                                    !isTaskActive ? (
+                                      `Dispatcher (${eligibleCookies.length} Akun Standby)`
+                                    ) : isParallel ? (
                                       `Dispatcher (${eligibleCookies.length} Akun Paralel)`
                                     ) : (
                                       `${activeTurnNode?.email || 'Rotasi Antrean'}`
@@ -3441,7 +3491,12 @@ export default function Dashboard({ onLogout }) {
                               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
                                 <span className="text-[10px] uppercase font-bold text-slate-500 block">Status Sesi Cookie</span>
                                 {isRouter ? (
-                                  isParallel ? (
+                                  !isTaskActive ? (
+                                    <span className="font-bold text-slate-400 font-mono text-xs flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                      SISTEM STANDBY (Belum Mulai Task)
+                                    </span>
+                                  ) : isParallel ? (
                                     <span className="font-bold text-cyan-400 font-mono text-xs flex items-center gap-1.5">
                                       <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                                       SEMUA TENTAKEL TERHUBUNG (${eligibleCookies.length} Sesi)
@@ -3465,14 +3520,19 @@ export default function Dashboard({ onLogout }) {
                                 ) : (
                                   <span className="font-bold text-slate-300 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                    {isParallel ? 'PARALEL TERHUBUNG' : 'STANDBY ANTRIAN'}
+                                    {isParallel ? 'PARALEL TERHUBUNG' : 'STANDBY (SIAP DIGUNAKAN)'}
                                   </span>
                                 )}
                               </div>
 
                               <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
                                 <span className="text-[10px] uppercase font-bold text-slate-500 block">Kesiapan Bot Maps</span>
-                                {isNeedsLogin ? (
+                                {!isTaskActive ? (
+                                  <span className="font-bold text-slate-400 font-mono text-xs flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                    IDLE (Menunggu Perintah Task)
+                                  </span>
+                                ) : isNeedsLogin ? (
                                   <span className="font-bold text-rose-400 font-mono text-xs flex items-center gap-1.5">
                                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                                     OFFLINE (TENTAKEL PUTUS)

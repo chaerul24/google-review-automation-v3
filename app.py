@@ -2540,7 +2540,6 @@ class TikTokLiveRunner:
         acc_id = acc.get("id") or worker_idx
         target_url = f"https://www.tiktok.com/{self.target_user}/live"
         b_label = f"Browser {worker_idx + 1}/{total_workers}"
-        screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
 
         driver = None
         try:
@@ -2568,32 +2567,6 @@ class TikTokLiveRunner:
                     time.sleep(1.5)
                 except Exception:
                     time.sleep(1.5)
-
-            # Tunggu render DOM live sebelum screenshot awal jika display aktif
-            if getattr(self, "enable_display", False):
-                for _ in range(8):
-                    if self.stop_event.is_set():
-                        return
-                    try:
-                        curr = (driver.current_url or "").lower()
-                        if "/live" in curr and "chrome-error" not in curr:
-                            rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
-                            if rendered:
-                                try:
-                                    cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "jpeg", "quality": 60})
-                                    if cdp_res and "data" in cdp_res:
-                                        raw_jpeg = base64.b64decode(cdp_res["data"])
-                                        self.update_worker_frame(worker_idx, raw_jpeg)
-                                        with open(screen_path, "wb") as f_out:
-                                            f_out.write(raw_jpeg)
-                                    else:
-                                        driver.save_screenshot(screen_path)
-                                except Exception:
-                                    driver.save_screenshot(screen_path)
-                                break
-                    except Exception:
-                        pass
-                    time.sleep(0.5)
 
             if self.stop_event.is_set():
                 return
@@ -2687,41 +2660,6 @@ class TikTokLiveRunner:
             last_live_check = time.time()
 
             driver_lock = threading.Lock()
-            capture_stop = threading.Event()
-
-            # Dedicated ultra low-latency background capture thread (Smooth ~8 FPS, ~10KB low-quality frames, zero delay!)
-            def capture_loop():
-                last_disk_save = 0.0
-                while not self.stop_event.is_set() and not capture_stop.is_set():
-                    if getattr(self, "enable_display", False):
-                        if driver_lock.acquire(blocking=False):
-                            try:
-                                curr_u = (driver.current_url or "").lower()
-                                if "/live" in curr_u and "chrome-error" not in curr_u:
-                                    cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {
-                                        "format": "jpeg",
-                                        "quality": 38,
-                                        "clip": {"x": 0, "y": 0, "width": 1366, "height": 768, "scale": 0.5}
-                                    })
-                                    if cdp_res and "data" in cdp_res:
-                                        raw_jpeg = base64.b64decode(cdp_res["data"])
-                                        self.update_worker_frame(worker_idx, raw_jpeg)
-                                        now_c = time.time()
-                                        if (now_c - last_disk_save >= 3.0) or not os.path.exists(screen_path):
-                                            last_disk_save = now_c
-                                            try:
-                                                with open(screen_path, "wb") as f_out:
-                                                    f_out.write(raw_jpeg)
-                                            except Exception:
-                                                pass
-                            except Exception:
-                                pass
-                            finally:
-                                driver_lock.release()
-                    time.sleep(0.12)  # ~8 FPS smooth video streaming directly to user!
-
-            cap_thread = threading.Thread(target=capture_loop, daemon=True)
-            cap_thread.start()
 
             while not self.stop_event.is_set():
                 time.sleep(0.04)
@@ -2840,10 +2778,6 @@ class TikTokLiveRunner:
                 self.error_count += 1
             self.add_log("error", f"[!] Kendala pada {b_label} ({user}): {ex}")
         finally:
-            try:
-                capture_stop.set()
-            except Exception:
-                pass
             if driver:
                 try:
                     driver.quit()
@@ -2872,7 +2806,6 @@ class TikTokLiveRunner:
             acc_id = acc.get("id") or idx
             user = acc.get("username", "@tiktok_user") if acc else "Tamu"
             b_label = f"Browser Cookie {idx + 1}/{total_acc}"
-            screen_path = f"/tmp/tiktok_worker_screen_{idx}.png"
 
             driver = None
             try:
@@ -2901,22 +2834,6 @@ class TikTokLiveRunner:
                         time.sleep(1.5)
                     except Exception:
                         time.sleep(1.5)
-
-                # Tunggu render DOM live sebelum screenshot awal jika display aktif
-                if getattr(self, "enable_display", False):
-                    for _ in range(8):
-                        if self.stop_event.is_set():
-                            break
-                        try:
-                            curr = (driver.current_url or "").lower()
-                            if "/live" in curr and "chrome-error" not in curr:
-                                rendered = driver.execute_script("return document.body && (document.body.innerText || '').length > 30;")
-                                if rendered:
-                                    driver.save_screenshot(screen_path)
-                                    break
-                        except Exception:
-                            pass
-                        time.sleep(0.8)
 
                 if self.stop_event.is_set():
                     break
@@ -3010,41 +2927,6 @@ class TikTokLiveRunner:
                 batch_likes = 0
 
                 driver_lock = threading.Lock()
-                capture_stop = threading.Event()
-
-                # Dedicated ultra low-latency background capture thread (Smooth ~8 FPS, ~10KB low-quality frames, zero delay!)
-                def capture_loop():
-                    last_disk_save = 0.0
-                    while not self.stop_event.is_set() and not capture_stop.is_set():
-                        if getattr(self, "enable_display", False):
-                            if driver_lock.acquire(blocking=False):
-                                try:
-                                    curr_u = (driver.current_url or "").lower()
-                                    if "/live" in curr_u and "chrome-error" not in curr_u:
-                                        cdp_res = driver.execute_cdp_cmd("Page.captureScreenshot", {
-                                            "format": "jpeg",
-                                            "quality": 38,
-                                            "clip": {"x": 0, "y": 0, "width": 1366, "height": 768, "scale": 0.5}
-                                        })
-                                        if cdp_res and "data" in cdp_res:
-                                            raw_jpeg = base64.b64decode(cdp_res["data"])
-                                            self.update_worker_frame(idx, raw_jpeg)
-                                            now_c = time.time()
-                                            if (now_c - last_disk_save >= 3.0) or not os.path.exists(screen_path):
-                                                last_disk_save = now_c
-                                                try:
-                                                    with open(screen_path, "wb") as f_out:
-                                                        f_out.write(raw_jpeg)
-                                                except Exception:
-                                                    pass
-                                except Exception:
-                                    pass
-                                finally:
-                                    driver_lock.release()
-                        time.sleep(0.12)
-
-                cap_thread = threading.Thread(target=capture_loop, daemon=True)
-                cap_thread.start()
 
                 while not self.stop_event.is_set():
                     time.sleep(0.04)
@@ -3149,10 +3031,6 @@ class TikTokLiveRunner:
                     self.error_count += 1
                 self.add_log("error", f"[!] Terjadi kendala pada browser {user}: {e}")
             finally:
-                try:
-                    capture_stop.set()
-                except Exception:
-                    pass
                 if driver:
                     try:
                         driver.quit()
@@ -3179,129 +3057,14 @@ class TikTokLiveRunner:
 tiktok_live_runner = TikTokLiveRunner()
 
 @app.route("/api/tiktok-live/screen/<int:worker_idx>.mjpg")
-def api_tiktok_live_screen_mjpg(worker_idx):
-    """Real-time zero-delay MJPEG video stream of isolated Chromium worker for TikTok Live."""
-    is_display_on = getattr(tiktok_live_runner, "enable_display", False)
-    is_running = getattr(tiktok_live_runner, "is_running", False)
-    if not is_display_on or not is_running:
-        return api_tiktok_live_screen(worker_idx)
-
-    def generate():
-        last_ts = 0.0
-        try:
-            while getattr(tiktok_live_runner, "is_running", False) and getattr(tiktok_live_runner, "enable_display", False):
-                frame_data, ts = tiktok_live_runner.get_worker_frame(worker_idx)
-                if frame_data and len(frame_data) >= 3000 and ts > last_ts:
-                    last_ts = ts
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
-                elif not frame_data:
-                    screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
-                    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 3000:
-                        try:
-                            mtime = os.path.getmtime(screen_path)
-                            if mtime > last_ts:
-                                last_ts = mtime
-                                with open(screen_path, "rb") as f:
-                                    disk_bytes = f.read()
-                                yield (b'--frame\r\n'
-                                       b'Content-Type: image/jpeg\r\n\r\n' + disk_bytes + b'\r\n')
-                        except Exception:
-                            pass
-                time.sleep(0.04)
-        except (GeneratorExit, StopIteration):
-            return
-        except Exception:
-            return
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "Connection": "close"
-        }
-    )
-
 @app.route("/api/tiktok-live/screen/<int:worker_idx>.png")
 @app.route("/api/tiktok-live/screen/<int:worker_idx>")
 def api_tiktok_live_screen(worker_idx):
-    """Single-frame snapshot of isolated Chromium Headless worker for TikTok Live."""
-    # Fast check in-memory frame buffer (0ms disk I/O)
-    frame_data, ts = tiktok_live_runner.get_worker_frame(worker_idx)
-    if frame_data and len(frame_data) >= 3000:
-        return Response(
-            frame_data,
-            mimetype="image/jpeg",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-    screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
-    # Filter: pastikan file ada dan ukuran >= 3KB
-    if os.path.isfile(screen_path) and os.path.getsize(screen_path) >= 3000:
-        try:
-            with open(screen_path, "rb") as f:
-                img_bytes = f.read()
-            mimetype = "image/jpeg" if img_bytes.startswith(b"\xff\xd8") else "image/png"
-            return Response(
-                img_bytes,
-                mimetype=mimetype,
-                headers={
-                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                    "Pragma": "no-cache",
-                    "Expires": "0"
-                }
-            )
-        except Exception:
-            pass
-
-    is_display_on = getattr(tiktok_live_runner, "enable_display", False)
-    if not is_display_on:
-        title_text = f"Browser Worker #{worker_idx + 1}"
-        sub_title = "aktifkan layar untuk memantau bot."
-        badge_text = "SEDANG MATI"
-        svg = f"""<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100%" height="100%" fill="#090d16"/>
-            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                <circle cx="2" cy="2" r="1" fill="#1e293b"/>
-            </pattern>
-            <rect width="100%" height="100%" fill="url(#grid)" opacity="0.5"/>
-            <rect x="250" y="65" width="140" height="26" rx="13" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-            <circle cx="266" cy="78" r="4" fill="#f43f5e"/>
-            <text x="325" y="82" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="700" fill="#f1f5f9" text-anchor="middle">{badge_text}</text>
-            <rect x="296" y="112" width="48" height="36" rx="6" fill="#0f172a" stroke="#334155" stroke-width="2"/>
-            <rect x="302" y="118" width="36" height="24" rx="2" fill="#090d16"/>
-            <path d="M312 148h16v6h-16zM306 154h28v2h-28z" fill="#475569"/>
-            <path d="M316 126l10 7-10 7z" fill="#475569"/>
-            <text x="50%" y="195" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="700" fill="#f8fafc" text-anchor="middle">{title_text} • Display Sedang Mati</text>
-            <text x="50%" y="222" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">{sub_title}</text>
-            <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Pengaturan dapat diubah di Config Bot atau tombol di atas</text>
-        </svg>"""
-        return Response(
-            svg,
-            mimetype="image/svg+xml",
-            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
-        )
-
-    svg = f"""<svg width="640" height="360" viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100%" height="100%" fill="#090d16"/>
-        <circle cx="320" cy="135" r="34" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
-        <path d="M312 123l22 12-22 12z" fill="#06b6d4"/>
-        <circle cx="320" cy="135" r="42" fill="none" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.6"/>
-        <text x="50%" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" fill="#f8fafc" text-anchor="middle">Browser Worker #{worker_idx + 1}</text>
-        <text x="50%" y="224" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Menghubungkan ke Siaran Live TikTok...</text>
-        <text x="50%" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Menyinkronkan sesi cookie mandiri &amp; merender frame live</text>
-    </svg>"""
+    """Snapshot/stream endpoint disabled for high performance and low CPU usage."""
     return Response(
-        svg,
-        mimetype="image/svg+xml",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+        "Sharescreen dinonaktifkan demi performa dan stabilitas bot.",
+        status=200,
+        mimetype="text/plain"
     )
 
 @app.route("/tiktok-live/display-stream")
@@ -3667,80 +3430,16 @@ def api_worker_preview():
 @app.route("/api/screen/stream.mjpg")
 @app.route("/api/screen/stream")
 def api_screen_stream():
-    """Live continuous real-time low-latency MJPEG video stream of host Chromium Display :99 (15 FPS, Zero Delay)."""
-    display = os.environ.get("CHROMIUM_DISPLAY", ":99")
-
-    def generate():
-        cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-fflags", "nobuffer", "-flags", "low_delay",
-            "-f", "x11grab", "-framerate", "15", "-video_size", "1366x768",
-            "-i", display,
-            "-vf", "scale=1280:-1",
-            "-q:v", "4",
-            "-f", "mpjpeg",
-            "-boundary_tag", "frame",
-            "-",
-        ]
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=0
-        )
-        try:
-            while True:
-                chunk = proc.stdout.read(8192)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            try:
-                proc.terminate()
-                proc.wait(timeout=0.3)
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "Connection": "close",
-        },
-    )
+    """Endpoint sharescreen dinonaktifkan demi performa dan penghematan resource."""
+    return Response("Sharescreen dinonaktifkan demi performa sistem.", status=200, mimetype="text/plain")
 
 
 @app.route("/api/screen/preview.png")
 @app.route("/api/screen/preview")
 @login_required
 def api_screen_preview():
-    """Single-frame PNG snapshot of host Chromium Display :99."""
-    display = os.environ.get("CHROMIUM_DISPLAY", ":99")
-    try:
-        proc = subprocess.run(
-            [
-                "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "x11grab", "-video_size", "1366x768",
-                "-i", display, "-frames:v", "1",
-                "-f", "image2pipe", "-vcodec", "png", "-",
-            ],
-            capture_output=True,
-            timeout=3.0,
-            check=True,
-        )
-        return Response(
-            proc.stdout,
-            mimetype="image/png",
-            headers={"Cache-Control": "no-store, max-age=0"},
-        )
-    except Exception:
-        return Response("Display :99 belum aktif", status=503, mimetype="text/plain")
+    """Endpoint preview sharescreen dinonaktifkan demi performa sistem."""
+    return Response("Sharescreen dinonaktifkan demi performa sistem.", status=200, mimetype="text/plain")
 
 
 @app.route("/api/screen/logs", methods=["GET"])

@@ -46,8 +46,7 @@ import {
   User,
   Pencil,
   FlaskConical,
-  Loader2,
-  KeyRound
+  Loader2
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -803,8 +802,8 @@ export default function Dashboard({ onLogout }) {
               }`}
             >
               <div className="flex items-center gap-3">
-                <ShieldCheck className={`w-4 h-4 ${activeTab === 'cookies' ? 'text-emerald-400' : 'text-slate-400'}`} />
-                <span>Akun Google (OAuth)</span>
+                <Cookie className={`w-4 h-4 ${activeTab === 'cookies' ? 'text-amber-400' : 'text-slate-400'}`} />
+                <span>Akun Google (Cookie)</span>
               </div>
             </button>
 
@@ -893,7 +892,7 @@ export default function Dashboard({ onLogout }) {
               <h1 className="text-sm sm:text-base lg:text-lg font-bold text-slate-900 tracking-tight truncate">
                 {activeTab === 'overview' && 'Executive Dashboard'}
                 {activeTab === 'sharescreen' && 'Live Sharescreen Bot (Display :99)'}
-                {activeTab === 'cookies' && 'Manajemen Akun Google (Google OAuth 2.0 Client)'}
+                {activeTab === 'cookies' && 'Manajemen Akun Google (Import Cookie Sesi)'}
                 {activeTab === 'server' && 'Manajemen Server'}
                 {activeTab === 'businesses' && 'Target Bisnis Maps'}
               </h1>
@@ -1051,17 +1050,17 @@ export default function Dashboard({ onLogout }) {
           <main className="p-4 sm:p-6 space-y-6">
             {/* Top 4 KPI Metrics */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Card 1: Akun Google OAuth */}
+              {/* Card 1: Akun Google Cookie */}
               <div 
                 onClick={() => setActiveTab('cookies')}
-                className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer group"
+                className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs hover:border-amber-400 hover:shadow-sm transition-all cursor-pointer group"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-blue-700 transition-colors">
-                    Akun Google (OAuth)
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-amber-700 transition-colors">
+                    Akun Google (Cookie)
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                    <GmailLogo className="w-4 h-4" />
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                    <Cookie className="w-4 h-4" />
                   </div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1662,32 +1661,32 @@ export default function Dashboard({ onLogout }) {
               </div>
             </div>
 
-            {/* Bottom Row: Google OAuth Quick Connect & Quick Business Launch */}
+            {/* Bottom Row: Google Cookie Quick Import & Quick Business Launch */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Google OAuth 2.0 Quick Connect Card */}
+              {/* Import Cookie Sesi Card */}
               <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                        <ShieldCheck className="w-4 h-4" />
+                      <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                        <Cookie className="w-4 h-4" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-sm text-slate-900 leading-tight">Google OAuth 2.0 Client</h3>
-                        <p className="text-[11px] text-slate-500">Koneksi API Resmi Google</p>
+                        <h3 className="font-bold text-sm text-slate-900 leading-tight">Import Cookie Sesi</h3>
+                        <p className="text-[11px] text-slate-500">Ekstensi Cookie-Editor JSON</p>
                       </div>
                     </div>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
-                      Siap
+                      Aktif
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed mb-3">
-                    Hubungkan akun Google langsung secara resmi via Google Cloud OAuth. Sistem akan otomatis menyinkronkan nama, foto profil, dan token penyegaran.
+                    Import cookie sesi akun Google menggunakan format JSON dari ekstensi Cookie-Editor. Sistem akan otomatis memverifikasi sesi aktif dan menyinkronkan profil.
                   </p>
                   <div className="space-y-1.5 text-[11px] bg-slate-50 border border-slate-200/70 rounded-xl p-3 mb-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Domain Origins:</span>
-                      <span className="font-mono text-slate-700 text-[10px] font-semibold">https://autobotix.my.id</span>
+                      <span className="text-slate-500">Target Layanan:</span>
+                      <span className="font-mono text-slate-700 text-[10px] font-semibold">Google Maps / MyAccount</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Akun Terdaftar:</span>
@@ -1696,13 +1695,17 @@ export default function Dashboard({ onLogout }) {
                   </div>
                 </div>
 
-                <a
-                  href="/auth/google"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCookieForm({ email: '', cookie_json: '' });
+                    setShowCookieModal(true);
+                  }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors cursor-pointer text-center"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>+ Hubungkan Akun Google</span>
-                </a>
+                  <span>+ Import Cookie JSON</span>
+                </button>
               </div>
 
               {/* Target LIVE Fast List */}
@@ -1933,7 +1936,7 @@ export default function Dashboard({ onLogout }) {
 
 
         {/* ===================================================================== */}
-        {/* TAB 2: 🛡️ MANAJEMEN AKUN GOOGLE (GOOGLE OAUTH 2.0 CLIENT)             */}
+        {/* TAB 2: 🛡️ MANAJEMEN AKUN GOOGLE (IMPORT COOKIE SESI)                  */}
         {/* ===================================================================== */}
         {activeTab === 'cookies' && (
           <main className="p-4 sm:p-6 space-y-5">
@@ -1955,29 +1958,23 @@ export default function Dashboard({ onLogout }) {
                   onClick={handleCheckAccountNames}
                   disabled={isCheckingNames}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
-                  title="Pindai dan verifikasi token OAuth & Cookie ke server Google"
+                  title="Pindai dan verifikasi cookie sesi ke server Google"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isCheckingNames ? 'animate-spin' : ''}`} />
-                  <span>{isCheckingNames ? 'Memindai Google...' : 'Sinkron & Cek Token'}</span>
+                  <span>{isCheckingNames ? 'Memindai Google...' : 'Sinkron & Cek Cookie'}</span>
                 </button>
 
                 <button
-                  onClick={() => setShowCookieModal(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
-                  title="Import Cookie Manual (Alternatif / Fallback)"
-                >
-                  <Cookie className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Import Cookie JSON</span>
-                </button>
-
-                <a
-                  href="/auth/google"
+                  onClick={() => {
+                    setCookieForm({ email: '', cookie_json: '' });
+                    setShowCookieModal(true);
+                  }}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors cursor-pointer"
-                  title="Hubungkan akun Google resmi via Google Cloud OAuth 2.0"
+                  title="Import Cookie Sesi Google via JSON Cookie-Editor"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>+ Hubungkan Akun Google (OAuth 2.0)</span>
-                </a>
+                  <span>+ Import Cookie JSON</span>
+                </button>
               </div>
             </div>
 
@@ -2142,28 +2139,14 @@ export default function Dashboard({ onLogout }) {
 
                           <td className="py-3.5 px-4">
                             {isOAuth ? (
-                              <div className="space-y-1">
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                  <ShieldCheck className="w-3 h-3 text-blue-600" />
-                                  Google OAuth 2.0
-                                </span>
-                                {ck.oauth_access_token ? (
-                                  <p className="font-mono text-[10px] text-blue-700 bg-blue-50/80 px-2 py-0.5 rounded border border-blue-200/60 max-w-[280px] truncate block select-all" title={ck.oauth_access_token}>
-                                    {ck.oauth_access_token.substring(0, 35)}... [Secured in Server DB]
-                                  </p>
-                                ) : (
-                                  <p className="font-mono text-[10px] text-blue-700 bg-blue-50/80 px-2 py-0.5 rounded border border-blue-200/60 max-w-[280px] truncate block select-all">
-                                    ya29.a0AehfTOnHwQalJ2uDJTLaysQzgWRs_aIz1... [Secured in Server DB]
-                                  </p>
-                                )}
-                                <p className="text-[10px] text-slate-400">
-                                  Berlaku s/d {formatUnixId(ck.oauth_account_expiry)}
-                                </p>
-                              </div>
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                <ShieldCheck className="w-3 h-3 text-blue-600" />
+                                OAuth (Legacy)
+                              </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                <Cookie className="w-3 h-3 text-slate-500" />
-                                Cookie Sesi (CDP)
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                <Cookie className="w-3 h-3 text-amber-600" />
+                                Cookie Sesi (JSON)
                               </span>
                             )}
                           </td>
@@ -2199,19 +2182,22 @@ export default function Dashboard({ onLogout }) {
 
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {/* Re-authenticate via OAuth */}
-                              <a
-                                href="/auth/google"
-                                title="Otorisasi Ulang Google OAuth"
-                                className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              {/* Perbarui Cookie Sesi */}
+                              <button
+                                onClick={() => {
+                                  setCookieForm({ email: ck.email, cookie_json: '' });
+                                  setShowCookieModal(true);
+                                }}
+                                title="Import / Perbarui Cookie Akun Ini"
+                                className="p-1.5 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
                               >
-                                <KeyRound className="w-4 h-4" />
-                              </a>
+                                <Cookie className="w-4 h-4" />
+                              </button>
 
                               {/* Uji Validitas */}
                               <button
                                 onClick={() => handleTestCookie(ck.id, ck.email)}
-                                title="Uji Validitas Sesi / Token Google"
+                                title="Uji Validitas Sesi / Cookie Google"
                                 className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                               >
                                 <RefreshCw className="w-4 h-4" />
@@ -2243,7 +2229,7 @@ export default function Dashboard({ onLogout }) {
                     {filteredCookies.length === 0 && (
                       <tr>
                         <td colSpan="8" className="py-12 text-center text-xs text-slate-500">
-                          Belum ada akun Google terdaftar. Klik "+ Hubungkan Akun Google (OAuth 2.0)" di atas untuk menghubungkan akun.
+                          Belum ada akun Google terdaftar. Klik "+ Import Cookie JSON" di atas untuk menambahkan akun.
                         </td>
                       </tr>
                     )}
@@ -2252,18 +2238,18 @@ export default function Dashboard({ onLogout }) {
               </div>
             </div>
 
-            {/* Informasi Google OAuth 2.0 Client */}
-            <div className="bg-blue-50/60 border border-blue-200 rounded-2xl p-4 text-xs text-blue-900 flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+            {/* Panduan Import Cookie Sesi Google */}
+            <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 flex items-start gap-3">
+              <Cookie className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold text-slate-900">Integrasi Resmi Google OAuth 2.0 Client Aktif</p>
+                <p className="font-bold text-slate-900">Panduan Import Cookie Sesi Google (Cookie-Editor)</p>
                 <p className="mt-1 text-slate-600 leading-relaxed">
-                  Akun Google Anda kini terhubung langsung menggunakan <b>Google Cloud OAuth 2.0 Client</b>. 
-                  Sistem menyimpan <i>access token</i> dan <i>refresh token</i> aman, serta secara otomatis mengambil nama profil dan foto akun Google asli tanpa perlu mengekstrak cookie secara manual.
+                  Gunakan ekstensi <b>Cookie-Editor</b> di browser untuk mengekspor cookie akun Google yang sedang login (buka <code>accounts.google.com</code> atau <code>maps.google.com</code>, klik Export &rarr; JSON).
+                  Sistem otomatis memverifikasi keaslian cookie, menyinkronkan profil, dan menjaga sesi tetap aktif untuk otomatisasi bot ulasan Google Maps.
                 </p>
-                <div className="mt-2.5 flex items-center flex-wrap gap-4 text-[11px] text-slate-500 font-mono">
-                  <span>Client ID: <b className="text-slate-700">938790580232-tldkti8l0fuleb9mfmvl8t82vehku4gf.apps.googleusercontent.com</b></span>
-                  <span>Redirect URI: <b className="text-slate-700">https://autobotix.my.id/auth/google/callback</b></span>
+                <div className="mt-2.5 flex items-center flex-wrap gap-4 text-[11px] text-slate-600 font-mono">
+                  <span>Format: <b className="text-slate-800">{'JSON Array ([{"name": "...", "value": "..."}])'}</b></span>
+                  <span>Browser: <b className="text-slate-800">Chrome / Firefox / Edge</b></span>
                 </div>
               </div>
             </div>

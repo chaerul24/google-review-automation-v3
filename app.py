@@ -1781,75 +1781,200 @@ def api_update_bot_config():
 
 
 # ── TikTok Live Execution Worker & Status (Real Web Access - Headless Engine) ──
+def check_is_live_active(driver):
+    """
+    Periksa apakah siaran TikTok Live masih berlanjut atau sudah berakhir / dialihkan.
+    Mengembalikan (is_active: bool or None, reason: str).
+    is_active: True (live aktif), False (berakhir / offline), None (masih memuat halaman).
+    """
+    if not driver:
+        return False, "Driver browser tidak aktif"
+    try:
+        res = driver.execute_script("""
+            const url = window.location.href;
+            if (!url.includes('/live')) {
+                if (url.includes('chrome-error://') || url === 'about:blank' || url.includes('robots.txt')) {
+                    return { active: null, reason: 'Halaman sedang memuat...' };
+                }
+                return { active: false, reason: 'URL dialihkan dari halaman live: ' + url };
+            }
+            const txt = (document.body.innerText || '').toLowerCase();
+            const endedPatterns = [
+                'live has ended',
+                'siaran live telah berakhir',
+                'live ended',
+                'the host is currently away',
+                'siaran langsung telah berakhir',
+                'siaran ini telah berakhir',
+                'room has ended',
+                'host is away'
+            ];
+            for (let p of endedPatterns) {
+                if (txt.includes(p)) {
+                    return { active: false, reason: 'Siaran live telah berakhir (' + p + ')' };
+                }
+            }
+
+            const video = document.querySelector('video');
+            const hasChatSlot = !!document.querySelector('[data-e2e="public-screen-live-chat-slot"], [data-e2e="live-chat-container"]');
+            const hasChatInput = !!document.querySelector('[data-e2e="room-chat-input-field"], div[contenteditable]');
+            const hasLikeBtn = !!document.querySelector('div[data-e2e="room-chat-like-btn"]');
+
+            if (!video && !hasChatSlot && !hasLikeBtn) {
+                return { active: false, reason: 'Streamer sedang offline / siaran telah berakhir' };
+            }
+
+            return { active: true, reason: 'Siaran live sedang berlangsung (Video & Live Chat Aktif)' };
+        """)
+        if res and isinstance(res, dict):
+            act = res.get("active")
+            if act is None:
+                return None, str(res.get("reason", "Memuat..."))
+            return bool(act), str(res.get("reason", "OK"))
+        return True, "Siaran live aktif"
+    except Exception as e:
+        return True, f"Pengecekan live lewati: {e}"
+
+
+def check_like_button_exists(driver):
+    """
+    Periksa apakah tombol like room-chat-like-btn tersedia di DOM siaran live.
+    Kembalikan (exists: bool, details: dict).
+    """
+    if not driver:
+        return False, {}
+    try:
+        res = driver.execute_script("""
+            const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+            if (!btn) return { exists: false };
+            const rect = btn.getBoundingClientRect();
+            const svg = btn.querySelector('svg');
+            return {
+                exists: true,
+                tagName: btn.tagName,
+                className: btn.className,
+                hasSvg: !!svg,
+                visible: rect.width > 0 || (btn.offsetParent !== null)
+            };
+        """)
+        return bool(res.get("exists")), res
+    except Exception:
+        return False, {}
+
+
 def send_comment_to_live(driver, message):
-    """Kirim komentar nyata ke live chat TikTok via Selenium typing & Enter (Headless-safe)."""
+    """Kirim komentar nyata ke live chat TikTok dan verifikasi apakah pesan benar-benar terkirim (Headless-safe)."""
     if not driver or not message:
         return False, "Driver atau pesan komentar kosong"
 
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
 
-    # Primary: Native element focus, typing, and Enter (Works 100% in Headless)
+    input_selector = '[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]'
+    send_btn_selector = '[data-e2e="room-chat-send-btn"]'
+
+    msg_sent = False
+    delivery_method = "unverified"
+
+    # 1. Primary: Native element focus, typing, and Enter (Works 100% in Headless)
     try:
-        inputs = driver.find_elements(By.CSS_SELECTOR, '[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"]')
+        inputs = driver.find_elements(By.CSS_SELECTOR, input_selector)
         if inputs:
             inp = inputs[0]
             inp.click()
             time.sleep(0.3)
+            # Clear any leftover draft
+            driver.execute_script("arguments[0].innerText = '';", inp)
+            time.sleep(0.1)
             inp.send_keys(message)
-            time.sleep(0.5)
+            time.sleep(0.4)
             inp.send_keys(Keys.ENTER)
-            time.sleep(1.2)
+            time.sleep(1.0)
 
-            txt = driver.execute_script("return arguments[0].innerText || '';", inp)
-            if txt.strip() == "":
-                return True, "enter_key_sent"
-
-            # If still has text, try clicking the send button
-            send_btns = driver.find_elements(By.CSS_SELECTOR, '[data-e2e="room-chat-send-btn"]')
-            if send_btns:
-                btn = send_btns[0]
-                driver.execute_script("arguments[0].classList.remove('invisible', 'cursor-not-allowed');", btn)
-                btn.click()
-                time.sleep(1.2)
-                txt2 = driver.execute_script("return arguments[0].innerText || '';", inp)
-                if txt2.strip() == "":
-                    return True, "send_btn_click"
+            txt = driver.execute_script("return (arguments[0].innerText || '').trim();", inp)
+            if txt == "":
+                msg_sent = True
+                delivery_method = "enter_key"
+            else:
+                # If still has text, try clicking the send button
+                send_btns = driver.find_elements(By.CSS_SELECTOR, send_btn_selector)
+                if send_btns:
+                    btn = send_btns[0]
+                    driver.execute_script("arguments[0].classList.remove('invisible', 'cursor-not-allowed');", btn)
+                    btn.click()
+                    time.sleep(1.0)
+                    txt2 = driver.execute_script("return (arguments[0].innerText || '').trim();", inp)
+                    if txt2 == "":
+                        msg_sent = True
+                        delivery_method = "send_btn_click"
     except Exception:
         pass
 
-    # Secondary Fallback: JavaScript synthetic input
-    script = """
-    const msg = arguments[0];
-    const input = document.querySelector('[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]');
-    if (!input) return { ok: false, error: "Input chat tidak ditemukan di layar live" };
+    # 2. Secondary Fallback: JavaScript synthetic input
+    if not msg_sent:
+        script = """
+        const msg = arguments[0];
+        const input = document.querySelector('[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]');
+        if (!input) return { ok: false, error: "Input chat tidak ditemukan di layar live" };
 
-    try {
-        input.focus();
-        document.execCommand('selectAll', false, null);
-        document.execCommand('insertText', false, msg);
-        input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
+        try {
+            input.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, msg);
+            input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
 
-        const sendBtn = document.querySelector('[data-e2e="room-chat-send-btn"]');
-        if (sendBtn) {
-            sendBtn.classList.remove('invisible', 'cursor-not-allowed');
-            sendBtn.click();
-            return { ok: true, method: "send_btn_click" };
+            const sendBtn = document.querySelector('[data-e2e="room-chat-send-btn"]');
+            if (sendBtn) {
+                sendBtn.classList.remove('invisible', 'cursor-not-allowed');
+                sendBtn.click();
+                return { ok: true, method: "send_btn_click" };
+            }
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            return { ok: true, method: "enter_key" };
+        } catch(err) {
+            return { ok: false, error: err.toString() };
         }
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-        return { ok: true, method: "enter_key" };
-    } catch(err) {
-        return { ok: false, error: err.toString() };
-    }
-    """
+        """
+        try:
+            res = driver.execute_script(script, message)
+            if res and res.get("ok"):
+                time.sleep(1.0)
+                is_empty = driver.execute_script("""
+                    const inp = document.querySelector('[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]');
+                    return !inp || (inp.innerText || '').trim() === '';
+                """)
+                if is_empty:
+                    msg_sent = True
+                    delivery_method = res.get("method") or "synthetic_js"
+        except Exception:
+            pass
+
+    if not msg_sent:
+        return False, "Input chat tidak dapat dikosongkan / pesan gagal dikirim"
+
+    # 3. Double Verification: Check if message appears in live chat container DOM
     try:
-        res = driver.execute_script(script, message)
-        if res and res.get("ok"):
-            return True, res.get("method")
-        return False, (res.get("error") if res else "element_not_found")
-    except Exception as e:
-        return False, str(e)
+        time.sleep(0.8)
+        feed_verified = driver.execute_script("""
+            const msg = arguments[0];
+            const chatContainer = document.querySelector('[data-e2e="live-chat-container"], [data-e2e="public-screen-live-chat-slot"]');
+            if (chatContainer && (chatContainer.innerText || '').includes(msg)) {
+                return true;
+            }
+            const allChats = document.querySelectorAll('[data-e2e*="chat"], [data-e2e*="comment"], div[class*="Chat"], div[class*="comment"]');
+            for (let el of allChats) {
+                if ((el.innerText || '').includes(msg)) return true;
+            }
+            return (document.body.innerText || '').includes(msg);
+        """, message)
+
+        if feed_verified:
+            return True, "verified_in_chat_feed"
+        else:
+            return True, "verified_input_cleared"
+    except Exception:
+        return True, delivery_method
 
 
 def inject_account_cookies(driver, acc_dict):
@@ -2079,7 +2204,6 @@ class TikTokLiveRunner:
         profile_dir = f"/tmp/tiktok_browser_cookie_{acc_id}_{tag}" if tag else f"/tmp/tiktok_browser_cookie_{acc_id}"
         opts = Options()
         opts.binary_location = "/usr/bin/chromium"
-        opts.page_load_strategy = "eager"
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-gpu")
@@ -2137,6 +2261,22 @@ class TikTokLiveRunner:
             if self.stop_event.is_set():
                 return
 
+            # Ensure page has finished navigation and check if live stream is actively continuing
+            is_active = None
+            live_reason = "Memuat..."
+            for _ in range(8):
+                if self.stop_event.is_set():
+                    return
+                is_active, live_reason = check_is_live_active(driver)
+                if is_active is not None:
+                    break
+                time.sleep(1.0)
+
+            if is_active is False:
+                self.add_log("warning", f"[!] [{b_label}] Siaran live target {self.target_user} terdeteksi telah berakhir ({live_reason}).")
+                self.stop_event.set()
+                return
+
             self.add_log("check", f"[?] [{b_label}] Memverifikasi sesi cookie {user} dan status live stream...")
             cookies = driver.get_cookies()
             c_names = {c.get("name") for c in cookies}
@@ -2179,39 +2319,74 @@ class TikTokLiveRunner:
                     self.verified_viewers.add(user)
                 self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
 
+            # Check for like button [data-e2e="room-chat-like-btn"]
+            has_like_btn, btn_info = check_like_button_exists(driver)
+            has_logged_like_btn = False
+            if has_like_btn:
+                has_logged_like_btn = True
+                self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
+            else:
+                self.add_log("info", f"[-] [{b_label}] Menunggu tombol like room-chat-like-btn selesai dimuat di layar...")
+
             self.add_log("success", f"[+] [{b_label}] Terhubung ke siaran live {self.target_user} (Status: Online)")
-            self.add_log("info", f"[-] [{b_label}] Mengaktifkan engine tap-tap like ({self.tap_speed} tap/s)...")
+            self.add_log("info", f"[-] [{b_label}] Mengaktifkan engine tap love setiap 1 detik...")
 
             worker_likes = 0
-            worker_tap = self.tap_speed
             last_chat_time = time.time() - 30.0 + (worker_idx * 7.0)
             last_viewer_scan = time.time()
+            last_live_check = time.time()
 
             while not self.stop_event.is_set():
                 time.sleep(1.0)
                 if self.stop_event.is_set():
                     break
 
-                worker_likes += worker_tap
-                with self.lock:
-                    self.likes_sent += worker_tap
-                    self.success_count += 1
+                # Periodic check: check if live stream is still active every 10 seconds
+                now = time.time()
+                if now - last_live_check >= 10.0:
+                    last_live_check = now
+                    is_still_live, end_reason = check_is_live_active(driver)
+                    if is_still_live is False:
+                        self.add_log("warning", f"[!] [{b_label}] Siaran live telah berakhir ({end_reason}). Menghentikan bot...")
+                        self.stop_event.set()
+                        break
 
+                # Dispatch love click every 1.0 second to room-chat-like-btn
                 try:
-                    driver.execute_script(f"""
+                    click_res = driver.execute_script("""
+                        const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+                        if (btn) {
+                            btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                            btn.click();
+                            return { ok: true, method: 'room-chat-like-btn' };
+                        }
                         const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                        if (layer) {{
-                            layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: 640, clientY: 360}}));
-                        }}
+                        if (layer) {
+                            layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
+                            return { ok: true, method: 'canvas_layer' };
+                        }
+                        return { ok: false, method: 'none' };
                     """)
+                    if click_res and click_res.get("ok"):
+                        method = click_res.get("method")
+                        if method == "room-chat-like-btn" and not has_logged_like_btn:
+                            has_logged_like_btn = True
+                            self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
+                        worker_likes += 1
+                        with self.lock:
+                            self.likes_sent += 1
+                            self.success_count += 1
+                    else:
+                        with self.lock:
+                            self.fail_count += 1
                 except Exception:
                     with self.lock:
                         self.fail_count += 1
 
-                if worker_likes % 1000 < worker_tap:
-                    self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} likes terkirim ke {self.target_user}")
+                if worker_likes > 0 and worker_likes % 60 == 0:
+                    self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
 
-                now = time.time()
                 # Scan room for accounts in viewer list / chat periodically
                 if now - last_viewer_scan >= 15.0:
                     last_viewer_scan = now
@@ -2240,7 +2415,10 @@ class TikTokLiveRunner:
                                 self.chats_sent += 1
                                 self.success_count += 1
                                 self.verified_viewers.add(user)
-                            self.add_log("success", f"[+] [{b_label}] [{user}] Komentar terkirim ke live chat: \"{self.chat_message}\"")
+                            if method == "verified_in_chat_feed":
+                                self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Pesan terkirim & terverifikasi tampil di siaran live: \"{self.chat_message}\"")
+                            else:
+                                self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Pesan terkirim ke antrean live chat (Input cleared): \"{self.chat_message}\"")
                         else:
                             with self.lock:
                                 self.fail_count += 1
@@ -2303,6 +2481,22 @@ class TikTokLiveRunner:
                 if self.stop_event.is_set():
                     break
 
+                # Ensure page has finished navigation and check if live stream is actively continuing
+                is_active = None
+                live_reason = "Memuat..."
+                for _ in range(8):
+                    if self.stop_event.is_set():
+                        break
+                    is_active, live_reason = check_is_live_active(driver)
+                    if is_active is not None:
+                        break
+                    time.sleep(1.0)
+
+                if is_active is False:
+                    self.add_log("warning", f"[!] [{b_label}] Siaran live target {self.target_user} terdeteksi telah berakhir ({live_reason}).")
+                    self.stop_event.set()
+                    break
+
                 self.add_log("check", f"[?] [{b_label}] Memverifikasi sesi akun {user} dan siaran live {self.target_user}...")
                 cookies = driver.get_cookies()
                 cookie_names = {c.get("name") for c in cookies}
@@ -2346,38 +2540,75 @@ class TikTokLiveRunner:
                         self.verified_viewers.add(user)
                     self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
 
+                # Check for like button [data-e2e="room-chat-like-btn"]
+                has_like_btn, btn_info = check_like_button_exists(driver)
+                has_logged_like_btn = False
+                if has_like_btn:
+                    has_logged_like_btn = True
+                    self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
+                else:
+                    self.add_log("info", f"[-] [{b_label}] Menunggu tombol like room-chat-like-btn selesai dimuat di layar...")
+
                 self.add_log("success", f"[+] [{b_label}] Terhubung ke siaran live {self.target_user}! Stream status: LIVE ACTIVE")
-                self.add_log("info", f"[-] [{b_label}] Mengaktifkan auto tap-tap likes ({self.tap_speed} tap/detik)...")
+                self.add_log("info", f"[-] [{b_label}] Mengaktifkan auto tap love setiap 1 detik...")
 
                 turn_start = time.time()
                 last_chat_time = time.time() - 25.0
+                last_live_check = time.time()
                 turn_duration = 75.0 if total_acc > 1 else float("inf")
+                batch_likes = 0
 
                 while not self.stop_event.is_set():
                     time.sleep(1.0)
                     if self.stop_event.is_set():
                         break
 
-                    batch_likes = self.tap_speed
-                    with self.lock:
-                        self.likes_sent += batch_likes
-                        self.success_count += 1
+                    now = time.time()
+                    # Periodic check: check if live stream is still active every 10 seconds
+                    if now - last_live_check >= 10.0:
+                        last_live_check = now
+                        is_still_live, end_reason = check_is_live_active(driver)
+                        if is_still_live is False:
+                            self.add_log("warning", f"[!] [{b_label}] Siaran live telah berakhir ({end_reason}). Menghentikan bot...")
+                            self.stop_event.set()
+                            break
 
+                    # Dispatch love click every 1.0 second to room-chat-like-btn
                     try:
-                        driver.execute_script(f"""
+                        click_res = driver.execute_script("""
+                            const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
+                            if (btn) {
+                                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                                btn.click();
+                                return { ok: true, method: 'room-chat-like-btn' };
+                            }
                             const layer = document.querySelector("div.cursor-pointer") || document.querySelector("video") || document.body;
-                            if (layer) {{
-                                layer.dispatchEvent(new MouseEvent("click", {{bubbles: true, cancelable: true, clientX: 640, clientY: 360}}));
-                            }}
+                            if (layer) {
+                                layer.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, clientX: 640, clientY: 360}));
+                                return { ok: true, method: 'canvas_layer' };
+                            }
+                            return { ok: false, method: 'none' };
                         """)
+                        if click_res and click_res.get("ok"):
+                            method = click_res.get("method")
+                            if method == "room-chat-like-btn" and not has_logged_like_btn:
+                                has_logged_like_btn = True
+                                self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
+                            batch_likes += 1
+                            with self.lock:
+                                self.likes_sent += 1
+                                self.success_count += 1
+                        else:
+                            with self.lock:
+                                self.fail_count += 1
                     except Exception:
                         with self.lock:
                             self.fail_count += 1
 
-                    if self.likes_sent % 500 < self.tap_speed:
-                        self.add_log("info", f"[-] [{b_label}] {user}: {self.likes_sent:,} likes berhasil dikirim ke live {self.target_user}")
+                    if batch_likes > 0 and batch_likes % 60 == 0:
+                        self.add_log("info", f"[-] [{b_label}] {user}: {batch_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
 
-                    now = time.time()
                     if self.auto_chat and (now - last_chat_time >= 30.0):
                         last_chat_time = now
                         if is_logged_in:
@@ -2386,7 +2617,11 @@ class TikTokLiveRunner:
                                 with self.lock:
                                     self.chats_sent += 1
                                     self.success_count += 1
-                                self.add_log("success", f"[+] [{b_label}] [{user}] Komentar terkirim ke live chat: \"{self.chat_message}\"")
+                                    self.verified_viewers.add(user)
+                                if method == "verified_in_chat_feed":
+                                    self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Pesan terkirim & terverifikasi tampil di siaran live: \"{self.chat_message}\"")
+                                else:
+                                    self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Pesan terkirim ke antrean live chat (Input cleared): \"{self.chat_message}\"")
                             else:
                                 with self.lock:
                                     self.fail_count += 1

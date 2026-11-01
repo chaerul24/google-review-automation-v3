@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import io
 import json
+import glob
 import logging
 import os
 import random
@@ -1651,6 +1652,7 @@ def api_usage():
             "avatar_url": active_tt_cookie.get("avatar_url"),
             "status": active_tt_cookie.get("status", "active"),
         } if active_tt_cookie else None,
+        "account_stats": tt_status.get("account_stats", {}),
         "recent_logs": tt_status.get("logs", [])[-15:] if tt_status else [],
     }
 
@@ -1863,7 +1865,8 @@ def check_like_button_exists(driver):
 
 
 def send_comment_to_live(driver, message):
-    """Kirim komentar nyata ke live chat TikTok dan verifikasi apakah pesan benar-benar terkirim (Headless-safe)."""
+    """Kirim komentar nyata ke live chat TikTok dan verifikasi apakah pesan benar-benar terkirim (Headless-safe).
+    Dioptimalkan agar eksekusi cepat non-blocking (~0.4 - 0.6s) dan stabil tanpa membekukan loop utama."""
     if not driver or not message:
         return False, "Driver atau pesan komentar kosong"
 
@@ -1882,14 +1885,13 @@ def send_comment_to_live(driver, message):
         if inputs:
             inp = inputs[0]
             inp.click()
-            time.sleep(0.3)
+            time.sleep(0.1)
             # Clear any leftover draft
             driver.execute_script("arguments[0].innerText = '';", inp)
-            time.sleep(0.1)
             inp.send_keys(message)
-            time.sleep(0.4)
+            time.sleep(0.1)
             inp.send_keys(Keys.ENTER)
-            time.sleep(1.0)
+            time.sleep(0.2)
 
             txt = driver.execute_script("return (arguments[0].innerText || '').trim();", inp)
             if txt == "":
@@ -1900,9 +1902,8 @@ def send_comment_to_live(driver, message):
                 send_btns = driver.find_elements(By.CSS_SELECTOR, send_btn_selector)
                 if send_btns:
                     btn = send_btns[0]
-                    driver.execute_script("arguments[0].classList.remove('invisible', 'cursor-not-allowed');", btn)
-                    btn.click()
-                    time.sleep(1.0)
+                    driver.execute_script("arguments[0].classList.remove('invisible', 'cursor-not-allowed'); arguments[0].click();", btn)
+                    time.sleep(0.2)
                     txt2 = driver.execute_script("return (arguments[0].innerText || '').trim();", inp)
                     if txt2 == "":
                         msg_sent = True
@@ -1939,7 +1940,7 @@ def send_comment_to_live(driver, message):
         try:
             res = driver.execute_script(script, message)
             if res and res.get("ok"):
-                time.sleep(1.0)
+                time.sleep(0.2)
                 is_empty = driver.execute_script("""
                     const inp = document.querySelector('[data-e2e="room-chat-input-field"], div[contenteditable="plaintext-only"], div[contenteditable="true"]');
                     return !inp || (inp.innerText || '').trim() === '';
@@ -1955,7 +1956,7 @@ def send_comment_to_live(driver, message):
 
     # 3. Double Verification: Check if message appears in live chat container DOM
     try:
-        time.sleep(0.8)
+        time.sleep(0.2)
         feed_verified = driver.execute_script("""
             const msg = arguments[0];
             const chatContainer = document.querySelector('[data-e2e="live-chat-container"], [data-e2e="public-screen-live-chat-slot"]');
@@ -2033,6 +2034,7 @@ class TikTokLiveRunner:
         self.selected_accounts = []
         self.verified_viewers = set()
         self.current_account_idx = 0
+        self.account_stats = {}  # Per-account real-time telemetry card
         self.logs = []
         self.log_counter = 0
 
@@ -2105,6 +2107,52 @@ class TikTokLiveRunner:
                 self.selected_accounts = [a for a in all_db if a.get("cookie_json")]
             self.current_account_idx = 0
 
+            # Clean previous screenshot files
+            for old_s in glob.glob("/tmp/tiktok_worker_screen_*.png"):
+                try:
+                    os.remove(old_s)
+                except Exception:
+                    pass
+
+            # Initialize per-account statistics card
+            self.account_stats = {}
+            if self.selected_accounts:
+                for idx, a in enumerate(self.selected_accounts):
+                    u = a.get("username", f"@user_{idx}")
+                    self.account_stats[u] = {
+                        "username": u,
+                        "nickname": a.get("nickname") or u,
+                        "worker_idx": idx,
+                        "browser_profile": f"Profile #{idx + 1}",
+                        "is_logged_in": False,
+                        "is_viewer_verified": False,
+                        "has_like_btn": False,
+                        "likes_sent": 0,  # 100% REAL CLICKS ONLY - NO DUMMY
+                        "chats_sent": 0,
+                        "last_chat_message": "",
+                        "last_chat_time": None,
+                        "status": "Starting",
+                        "live_stream": self.target_user,
+                        "screen_url": f"/api/tiktok-live/screen/{idx}.png"
+                    }
+            else:
+                self.account_stats["@guest"] = {
+                    "username": "@guest",
+                    "nickname": "Tamu (Guest)",
+                    "worker_idx": 0,
+                    "browser_profile": "Profile #1 (Guest)",
+                    "is_logged_in": False,
+                    "is_viewer_verified": False,
+                    "has_like_btn": False,
+                    "likes_sent": 0,
+                    "chats_sent": 0,
+                    "last_chat_message": "",
+                    "last_chat_time": None,
+                    "status": "Starting",
+                    "live_stream": self.target_user,
+                    "screen_url": "/api/tiktok-live/screen/0.png"
+                }
+
         mode_desc = "⚡ Mode Paralel (Serentak)" if self.execution_mode == "parallel" else "🔄 Mode Bergantian (Rotasi)"
         acc_summary = f"{len(self.selected_accounts)} akun (Setiap cookie browser terisolasi)" if self.selected_accounts else "Mode Tamu"
         self.add_log("info", f"[-] Memulai TikTok Live Bot: streamer {self.target_user} ({acc_summary} • {mode_desc})")
@@ -2148,7 +2196,7 @@ class TikTokLiveRunner:
             self.is_running = False
             self.worker_threads.clear()
 
-        self.add_log("success", f"[+] Bot TikTok Live dihentikan. Total Likes: {self.likes_sent:,} | Chats: {self.chats_sent}")
+        self.add_log("success", f"[+] Bot TikTok Live dihentikan. Total Real Likes: {self.likes_sent:,} | Chats: {self.chats_sent}")
         return True, "Bot TikTok Live berhasil dihentikan."
 
     def get_status(self):
@@ -2182,6 +2230,7 @@ class TikTokLiveRunner:
                 "active_accounts": [a.get("username") for a in self.selected_accounts],
                 "verified_viewers": list(self.verified_viewers),
                 "current_account": current_user,
+                "account_stats": dict(self.account_stats),
                 "logs": list(self.logs[-50:])
             }
 
@@ -2242,6 +2291,7 @@ class TikTokLiveRunner:
         acc_id = acc.get("id") or worker_idx
         target_url = f"https://www.tiktok.com/{self.target_user}/live"
         b_label = f"Browser {worker_idx + 1}/{total_workers}"
+        screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
 
         driver = None
         try:
@@ -2257,6 +2307,12 @@ class TikTokLiveRunner:
 
             driver.get(target_url)
             time.sleep(3.5)
+
+            # Initial screenshot capture
+            try:
+                driver.save_screenshot(screen_path)
+            except Exception:
+                pass
 
             if self.stop_event.is_set():
                 return
@@ -2281,9 +2337,14 @@ class TikTokLiveRunner:
             cookies = driver.get_cookies()
             c_names = {c.get("name") for c in cookies}
             is_logged = bool({"sessionid", "sid_guard", "uid_tt", "sessionid_ss"} & c_names)
-            if is_logged:
-                with self.lock:
+            with self.lock:
+                if is_logged:
                     self.is_logged_in = True
+                if user in self.account_stats:
+                    self.account_stats[user]["is_logged_in"] = is_logged
+                    self.account_stats[user]["status"] = "Online (Sesi Aktif)" if is_logged else "Online (Mode Tamu)"
+
+            if is_logged:
                 self.add_log("success", f"[+] [{b_label}] {user}: Login Berhasil! Sesi cookie aktif.")
             else:
                 self.add_log("warning", f"[!] [{b_label}] {user}: Berjalan dalam Mode Tamu (Sesi tidak terdeteksi).")
@@ -2317,11 +2378,17 @@ class TikTokLiveRunner:
             if is_viewer_verified:
                 with self.lock:
                     self.verified_viewers.add(user)
+                    if user in self.account_stats:
+                        self.account_stats[user]["is_viewer_verified"] = True
                 self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
 
             # Check for like button [data-e2e="room-chat-like-btn"]
             has_like_btn, btn_info = check_like_button_exists(driver)
             has_logged_like_btn = False
+            with self.lock:
+                if user in self.account_stats:
+                    self.account_stats[user]["has_like_btn"] = bool(has_like_btn)
+
             if has_like_btn:
                 has_logged_like_btn = True
                 self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
@@ -2332,17 +2399,19 @@ class TikTokLiveRunner:
             self.add_log("info", f"[-] [{b_label}] Mengaktifkan engine tap love setiap 1 detik...")
 
             worker_likes = 0
-            last_chat_time = time.time() - 30.0 + (worker_idx * 7.0)
+            # Komentar setiap 3.0 detik per akun cookie!
+            last_chat_time = time.time() - 3.0 + (worker_idx * 0.4)
             last_viewer_scan = time.time()
             last_live_check = time.time()
+            last_screen_time = time.time()
 
             while not self.stop_event.is_set():
                 time.sleep(1.0)
                 if self.stop_event.is_set():
                     break
 
-                # Periodic check: check if live stream is still active every 10 seconds
                 now = time.time()
+                # Periodic check: check if live stream is still active every 10 seconds
                 if now - last_live_check >= 10.0:
                     last_live_check = now
                     is_still_live, end_reason = check_is_live_active(driver)
@@ -2352,6 +2421,7 @@ class TikTokLiveRunner:
                         break
 
                 # Dispatch love click every 1.0 second to room-chat-like-btn
+                # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE, TANPA DATA DUMMY/MULTIPLIER)
                 try:
                     click_res = driver.execute_script("""
                         const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
@@ -2377,6 +2447,9 @@ class TikTokLiveRunner:
                         with self.lock:
                             self.likes_sent += 1
                             self.success_count += 1
+                            if user in self.account_stats:
+                                self.account_stats[user]["likes_sent"] = worker_likes
+                                self.account_stats[user]["has_like_btn"] = True
                     else:
                         with self.lock:
                             self.fail_count += 1
@@ -2386,6 +2459,14 @@ class TikTokLiveRunner:
 
                 if worker_likes > 0 and worker_likes % 60 == 0:
                     self.add_log("info", f"[-] [{b_label}] {user}: {worker_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
+
+                # Save screenshot of isolated worker browser every 2.5 seconds
+                if now - last_screen_time >= 2.5:
+                    last_screen_time = now
+                    try:
+                        driver.save_screenshot(screen_path)
+                    except Exception:
+                        pass
 
                 # Scan room for accounts in viewer list / chat periodically
                 if now - last_viewer_scan >= 15.0:
@@ -2402,11 +2483,14 @@ class TikTokLiveRunner:
                                 for d in detected_accs:
                                     if d not in self.verified_viewers:
                                         self.verified_viewers.add(d)
+                                        if d in self.account_stats:
+                                            self.account_stats[d]["is_viewer_verified"] = True
                                         self.add_log("success", f"[+] [{b_label}] [{d}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
                     except Exception:
                         pass
 
-                if self.auto_chat and (now - last_chat_time >= 30.0):
+                # Kirim komentar setiap 3.0 detik per akun cookie!
+                if self.auto_chat and (now - last_chat_time >= 3.0):
                     last_chat_time = now
                     if is_logged:
                         ok, method = send_comment_to_live(driver, self.chat_message)
@@ -2415,6 +2499,11 @@ class TikTokLiveRunner:
                                 self.chats_sent += 1
                                 self.success_count += 1
                                 self.verified_viewers.add(user)
+                                if user in self.account_stats:
+                                    self.account_stats[user]["chats_sent"] += 1
+                                    self.account_stats[user]["last_chat_message"] = self.chat_message
+                                    self.account_stats[user]["last_chat_time"] = datetime.now().strftime("%H:%M:%S")
+                                    self.account_stats[user]["is_viewer_verified"] = True
                             if method == "verified_in_chat_feed":
                                 self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Pesan terkirim & terverifikasi tampil di siaran live: \"{self.chat_message}\"")
                             else:
@@ -2461,6 +2550,7 @@ class TikTokLiveRunner:
             acc_id = acc.get("id") or idx
             user = acc.get("username", "@tiktok_user") if acc else "Tamu"
             b_label = f"Browser Cookie {idx + 1}/{total_acc}"
+            screen_path = f"/tmp/tiktok_worker_screen_{idx}.png"
 
             driver = None
             try:
@@ -2477,6 +2567,11 @@ class TikTokLiveRunner:
 
                 driver.get(target_url)
                 time.sleep(3.5)
+
+                try:
+                    driver.save_screenshot(screen_path)
+                except Exception:
+                    pass
 
                 if self.stop_event.is_set():
                     break
@@ -2503,6 +2598,9 @@ class TikTokLiveRunner:
                 is_logged_in = bool({"sessionid", "sid_guard", "uid_tt", "sessionid_ss"} & cookie_names)
                 with self.lock:
                     self.is_logged_in = is_logged_in
+                    if user in self.account_stats:
+                        self.account_stats[user]["is_logged_in"] = is_logged_in
+                        self.account_stats[user]["status"] = "Online (Sesi Aktif)" if is_logged_in else "Online (Mode Tamu)"
 
                 if is_logged_in:
                     self.add_log("success", f"[+] [{b_label}] {user}: Login Berhasil! Sesi cookie terverifikasi.")
@@ -2538,11 +2636,17 @@ class TikTokLiveRunner:
                 if is_viewer_verified:
                     with self.lock:
                         self.verified_viewers.add(user)
+                        if user in self.account_stats:
+                            self.account_stats[user]["is_viewer_verified"] = True
                     self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Terdeteksi aktif di Daftar Penonton Siaran Live!")
 
                 # Check for like button [data-e2e="room-chat-like-btn"]
                 has_like_btn, btn_info = check_like_button_exists(driver)
                 has_logged_like_btn = False
+                with self.lock:
+                    if user in self.account_stats:
+                        self.account_stats[user]["has_like_btn"] = bool(has_like_btn)
+
                 if has_like_btn:
                     has_logged_like_btn = True
                     self.add_log("success", f"[+] [{b_label}] [✓] Tombol Like terdeteksi (data-e2e=\"room-chat-like-btn\")! Mengirim love setiap 1 detik.")
@@ -2553,8 +2657,10 @@ class TikTokLiveRunner:
                 self.add_log("info", f"[-] [{b_label}] Mengaktifkan auto tap love setiap 1 detik...")
 
                 turn_start = time.time()
-                last_chat_time = time.time() - 25.0
+                # Komentar setiap 3.0 detik!
+                last_chat_time = time.time() - 3.0
                 last_live_check = time.time()
+                last_screen_time = time.time()
                 turn_duration = 75.0 if total_acc > 1 else float("inf")
                 batch_likes = 0
 
@@ -2574,6 +2680,7 @@ class TikTokLiveRunner:
                             break
 
                     # Dispatch love click every 1.0 second to room-chat-like-btn
+                    # 100% REAL LIKES ONLY (1 KLIK BERHASIL = 1 LIKE)
                     try:
                         click_res = driver.execute_script("""
                             const btn = document.querySelector('div[data-e2e="room-chat-like-btn"]');
@@ -2599,6 +2706,9 @@ class TikTokLiveRunner:
                             with self.lock:
                                 self.likes_sent += 1
                                 self.success_count += 1
+                                if user in self.account_stats:
+                                    self.account_stats[user]["likes_sent"] = batch_likes
+                                    self.account_stats[user]["has_like_btn"] = True
                         else:
                             with self.lock:
                                 self.fail_count += 1
@@ -2609,7 +2719,16 @@ class TikTokLiveRunner:
                     if batch_likes > 0 and batch_likes % 60 == 0:
                         self.add_log("info", f"[-] [{b_label}] {user}: {batch_likes:,} love terkirim via room-chat-like-btn ke {self.target_user}")
 
-                    if self.auto_chat and (now - last_chat_time >= 30.0):
+                    # Save screenshot of isolated worker browser every 2.5 seconds
+                    if now - last_screen_time >= 2.5:
+                        last_screen_time = now
+                        try:
+                            driver.save_screenshot(screen_path)
+                        except Exception:
+                            pass
+
+                    # Komentar setiap 3.0 detik per akun cookie!
+                    if self.auto_chat and (now - last_chat_time >= 3.0):
                         last_chat_time = now
                         if is_logged_in:
                             ok, method = send_comment_to_live(driver, self.chat_message)
@@ -2618,6 +2737,11 @@ class TikTokLiveRunner:
                                     self.chats_sent += 1
                                     self.success_count += 1
                                     self.verified_viewers.add(user)
+                                    if user in self.account_stats:
+                                        self.account_stats[user]["chats_sent"] += 1
+                                        self.account_stats[user]["last_chat_message"] = self.chat_message
+                                        self.account_stats[user]["last_chat_time"] = datetime.now().strftime("%H:%M:%S")
+                                        self.account_stats[user]["is_viewer_verified"] = True
                                 if method == "verified_in_chat_feed":
                                     self.add_log("success", f"[+] [{b_label}] [{user}] [✓] Pesan terkirim & terverifikasi tampil di siaran live: \"{self.chat_message}\"")
                                 else:
@@ -2665,6 +2789,40 @@ class TikTokLiveRunner:
                 break
 
 tiktok_live_runner = TikTokLiveRunner()
+
+@app.route("/api/tiktok-live/screen/<int:worker_idx>.png")
+@app.route("/api/tiktok-live/screen/<int:worker_idx>")
+def api_tiktok_live_screen(worker_idx):
+    """Single-frame PNG snapshot of isolated Chromium Headless worker for TikTok Live."""
+    screen_path = f"/tmp/tiktok_worker_screen_{worker_idx}.png"
+    if os.path.isfile(screen_path) and os.path.getsize(screen_path) > 0:
+        try:
+            with open(screen_path, "rb") as f:
+                img_bytes = f.read()
+            return Response(
+                img_bytes,
+                mimetype="image/png",
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
+        except Exception:
+            pass
+
+    svg = f"""<svg width="640" height="360" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="#090d16"/>
+        <circle cx="320" cy="150" r="32" fill="#1e293b"/>
+        <path d="M312 140l20 10-20 10z" fill="#38bdf8"/>
+        <text x="50%" y="210" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#f1f5f9" text-anchor="middle">Browser Worker #{worker_idx + 1}</text>
+        <text x="50%" y="235" font-family="system-ui, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Memuat Sesi Cookie &amp; Tampilan Live...</text>
+    </svg>"""
+    return Response(
+        svg,
+        mimetype="image/svg+xml",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    )
 
 @app.route("/tiktok-live/display-stream")
 def tiktok_live_display_stream():

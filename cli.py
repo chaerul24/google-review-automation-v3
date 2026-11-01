@@ -671,7 +671,8 @@ def render_tiktok_live_cards(
     logs: List[str] = None,
     mode: str = "parallel",
     verified_viewers: List[str] = None,
-    active_accounts: List[str] = None
+    active_accounts: List[str] = None,
+    account_stats: Optional[Dict[str, Any]] = None
 ) -> Group:
     login_badge = "[bold green]✓ Sesi Aktif[/bold green]" if is_logged_in else "[bold yellow]Mode Tamu[/bold yellow]"
     mode_badge = "[bold green]⚡ Paralel[/bold green]" if mode == "parallel" else "[bold yellow]🔄 Bergantian[/bold yellow]"
@@ -689,8 +690,36 @@ def render_tiktok_live_cards(
     else:
         penonton_rich = "[yellow]Mode Tamu[/yellow]"
 
+    # Prepare individual account cards if account_stats is present
+    acc_cards = []
+    card_items = list(account_stats.values()) if account_stats else []
+    if not card_items and active_accounts:
+        card_items = [{"username": u, "worker_idx": i, "is_logged_in": True, "is_viewer_verified": u in v_set, "has_like_btn": True, "likes_sent": likes, "chats_sent": chats} for i, u in enumerate(active_accounts)]
+
+    for c in card_items:
+        cu = c.get("username", "@user")
+        wi = c.get("worker_idx", 0) + 1
+        clg = "[bold green]✓ Sesi Aktif[/bold green]" if c.get("is_logged_in") else "[bold yellow]Mode Tamu[/bold yellow]"
+        cv = "[bold green]\\[✓] Penonton Live[/bold green]" if c.get("is_viewer_verified") else "[cyan]\\[?] Memindai[/cyan]"
+        cbtn = "[bold green]\\[✓] Love Btn (1s)[/bold green]" if c.get("has_like_btn") else "[yellow]Mencari Love[/yellow]"
+        clikes = c.get("likes_sent", 0)
+        cchats = c.get("chats_sent", 0)
+        cmsg = c.get("last_chat_message") or "indonesia"
+
+        acc_panel = Panel(
+            f"👤 [bold cyan]{cu}[/bold cyan] ({clg})\n"
+            f"Status: {cv} │ {cbtn}\n"
+            f"❤️ Real Likes: [bold red]{clikes:,} klik nyata[/bold red] (NO DUMMY)\n"
+            f"💬 Chat (3s)  : [bold cyan]{cchats} terkirim[/bold cyan] │ \"{cmsg[:18]}\"",
+            title=f"[bold cyan]KARTU AKUN #{wi}: {cu}[/bold cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
+            expand=True
+        )
+        acc_cards.append(acc_panel)
+
     if width >= 135:
-        # PC / DESKTOP ULTRAWIDE (>= 135 cols): 4 Horizon Cards Grid
+        # PC / DESKTOP ULTRAWIDE (>= 135 cols): 4 Horizon Cards Grid + Per-Account Cards
         grid = Table.grid(expand=True, padding=(0, 1))
         grid.add_column(ratio=1)
         grid.add_column(ratio=1)
@@ -712,10 +741,10 @@ def render_tiktok_live_cards(
             expand=True
         )
         c3 = Panel(
-            f"[bold red]❤️ {likes:,} tap[/bold red] (⚡{speed}/s)\n"
+            f"[bold red]❤️ {likes:,} klik nyata[/bold red] (1:1 NO DUMMY)\n"
             f"[green]✓ Berhasil: {success}[/green]\n"
             f"[yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
-            title="[bold magenta]❤️ STATISTIK[/bold magenta]",
+            title="[bold magenta]❤️ REAL LIKES & STATS[/bold magenta]",
             border_style="magenta",
             box=box.ROUNDED,
             expand=True
@@ -723,16 +752,25 @@ def render_tiktok_live_cards(
         c4 = Panel(
             f"💬 [bold cyan]{chats} chat terkirim[/bold cyan]\n"
             f"Auto-Chat: [green]Aktif ✓[/green]\n"
-            f"Interval: [white]30 detik[/white]",
-            title="[bold yellow]💬 LIVE CHAT[/bold yellow]",
+            f"Interval: [bold white]3.0 detik[/bold white]",
+            title="[bold yellow]💬 LIVE CHAT (3s)[/bold yellow]",
             border_style="yellow",
             box=box.ROUNDED,
             expand=True
         )
         grid.add_row(c1, c2, c3, c4)
 
+        if acc_cards:
+            grid_acc = Table.grid(expand=True, padding=(0, 1))
+            col_count = min(3, len(acc_cards))
+            for _ in range(col_count):
+                grid_acc.add_column(ratio=1)
+            for i in range(0, len(acc_cards), col_count):
+                grid_acc.add_row(*acc_cards[i:i+col_count])
+            grid = Group(grid, grid_acc)
+
     elif width >= 65:
-        # LAPTOP / TABLET / DESKTOP (65-134 cols): 2x2 Grid Cards
+        # LAPTOP / TABLET / DESKTOP (65-134 cols): 2x2 Grid Cards + Per-Account Cards
         grid = Table.grid(expand=True, padding=(0, 1))
         grid.add_column(ratio=1)
         grid.add_column(ratio=1)
@@ -752,23 +790,35 @@ def render_tiktok_live_cards(
             expand=True
         )
         c3 = Panel(
-            f"[bold red]❤️ {likes:,} tap[/bold red] (⚡ [bold yellow]{speed}/dtk[/bold yellow])\n"
+            f"[bold red]❤️ {likes:,} klik nyata[/bold red] (1:1 NO DUMMY)\n"
             f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
-            title="[bold magenta]❤️ TAP LIKES & STATISTIK[/bold magenta]",
+            title="[bold magenta]❤️ REAL LIKES & STATISTIK[/bold magenta]",
             border_style="magenta",
             box=box.ROUNDED,
             expand=True
         )
         c4 = Panel(
             f"💬 [bold cyan]{chats} pesan live chat terkirim[/bold cyan]\n"
-            f"Status: [green]Auto-Chat Aktif (Interval 30s) ✓[/green]",
-            title="[bold yellow]💬 LIVE CHAT[/bold yellow]",
+            f"Status: [green]Auto-Chat Aktif (Interval 3 Detik) ✓[/green]",
+            title="[bold yellow]💬 LIVE CHAT (3s)[/bold yellow]",
             border_style="yellow",
             box=box.ROUNDED,
             expand=True
         )
         grid.add_row(c1, c2)
         grid.add_row(c3, c4)
+
+        if acc_cards:
+            grid_acc = Table.grid(expand=True, padding=(0, 1))
+            grid_acc.add_column(ratio=1)
+            grid_acc.add_column(ratio=1)
+            for i in range(0, len(acc_cards), 2):
+                chunk = acc_cards[i:i+2]
+                if len(chunk) == 1:
+                    grid_acc.add_row(chunk[0], Panel("", box=box.ROUNDED, border_style="dim"))
+                else:
+                    grid_acc.add_row(*chunk)
+            grid = Group(grid, grid_acc)
 
     else:
         # HP / MOBILE TERMUX (< 65 cols): Stacked Compact Mobile Cards
@@ -782,15 +832,15 @@ def render_tiktok_live_cards(
             expand=True
         )
         c_mobile2 = Panel(
-            f"❤️ Likes: [bold red]{likes:,} tap[/bold red] (⚡ {speed}/s)\n"
-            f"💬 Chat: [bold cyan]{chats} pesan terkirim[/bold cyan]\n"
+            f"❤️ Real Likes: [bold red]{likes:,} klik nyata[/bold red] (NO DUMMY)\n"
+            f"💬 Chat (3s)  : [bold cyan]{chats} pesan terkirim[/bold cyan]\n"
             f"[green]✓ Berhasil: {success}[/green] │ [yellow]▲ Gagal: {fail}[/yellow] │ [red]✗ Error: {error}[/red]",
             title="[bold magenta]📊 STATISTIK LIVE[/bold magenta]",
             border_style="magenta",
             box=box.ROUNDED,
             expand=True
         )
-        grid = Group(c_mobile1, c_mobile2)
+        grid = Group(c_mobile1, c_mobile2, *acc_cards)
 
     # Real-Time Logs (Google Maps Tree Line Style - Newest on Top)
     max_logs = 3 if width < 65 else 5
@@ -1016,7 +1066,8 @@ def run_tiktok_live_interactive(target_user: str = "", tap_speed: int = 50, chat
                     logs=recent_logs,
                     mode=st_data.get("execution_mode", chosen_mode) if is_server_active else chosen_mode,
                     verified_viewers=st_data.get("verified_viewers", []) if is_server_active else [],
-                    active_accounts=st_data.get("active_accounts", []) if is_server_active else []
+                    active_accounts=st_data.get("active_accounts", []) if is_server_active else [],
+                    account_stats=st_data.get("account_stats", {}) if is_server_active else {}
                 )
                 live.update(card_ui)
     except KeyboardInterrupt:

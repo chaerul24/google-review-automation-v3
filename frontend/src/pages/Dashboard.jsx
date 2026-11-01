@@ -180,11 +180,13 @@ export default function Dashboard({ onLogout }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Live Sharescreen (1 Display) States
+  // Live Sharescreen (Dual Mode: Google Maps Display :99 vs TikTok Live Multi-Account Cards)
   const [screenTs, setScreenTs] = useState(Date.now());
   const [screenLogs, setScreenLogs] = useState([]);
   const [streamActive, setStreamActive] = useState(true);
   const [streamError, setStreamError] = useState(false);
+  const [sharescreenMode, setSharescreenMode] = useState('google_map'); // 'google_map' | 'tiktok_live'
+  const [tiktokLiveScreenStatus, setTiktokLiveScreenStatus] = useState(null);
   const screenContainerRef = useRef(null);
 
   const handleToggleFullscreen = () => {
@@ -200,17 +202,22 @@ export default function Dashboard({ onLogout }) {
     if (activeTab !== 'sharescreen') return;
 
     let mounted = true;
-    const fetchLogs = async () => {
+    const fetchScreenData = async () => {
       try {
-        const res = await api.getScreenLogs(25);
-        if (mounted && res && res.logs) {
-          setScreenLogs(res.logs);
+        const [logsRes, ttRes] = await Promise.all([
+          api.getScreenLogs(25).catch(() => null),
+          fetch('/api/tiktok-live/status').then(r => r.json()).catch(() => null)
+        ]);
+        if (mounted) {
+          if (logsRes && logsRes.logs) setScreenLogs(logsRes.logs);
+          if (ttRes && ttRes.state) setTiktokLiveScreenStatus(ttRes.state);
+          setScreenTs(Date.now());
         }
       } catch {}
     };
 
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 2500);
+    fetchScreenData();
+    const interval = setInterval(fetchScreenData, 2500);
     return () => {
       mounted = false;
       clearInterval(interval);
@@ -2315,170 +2322,476 @@ export default function Dashboard({ onLogout }) {
 
 
         {/* ===================================================================== */}
-        {/* TAB: 📺 LIVE SHARESCREEN 1 DISPLAY (:99)                             */}
         {/* ===================================================================== */}
-        {activeTab === 'sharescreen' && (
-          <main className="p-4 sm:p-6 space-y-6">
-            {/* Header Card */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-slate-900 flex items-center justify-center text-emerald-400 shadow-sm shrink-0">
-                  <Tv className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-                      Sharescreen Bot (Display :99)
-                    </h2>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      LIVE STREAM
-                    </span>
+        {/* TAB: 📺 LIVE SHARESCREEN DUAL MODE ("Google Map" & "Tiktok Live")     */}
+        {/* ===================================================================== */}
+        {activeTab === 'sharescreen' && (() => {
+          const ttState = tiktokLiveScreenStatus || liveTask?.tiktok_live;
+          const isTTRunning = Boolean(ttState?.is_running);
+          const rawStats = ttState?.account_stats || {};
+          let ttCardList = Object.values(rawStats);
+
+          if (ttCardList.length === 0) {
+            if (ttState?.active_accounts && ttState.active_accounts.length > 0) {
+              ttCardList = ttState.active_accounts.map((u, i) => ({
+                username: u,
+                worker_idx: i,
+                is_logged_in: true,
+                is_viewer_verified: (ttState.verified_viewers || []).includes(u),
+                has_like_btn: true,
+                likes_sent: ttState.likes_sent || 0,
+                chats_sent: ttState.chats_sent || 0,
+                last_chat_message: ttState.chat_message || 'indonesia',
+                status: 'Online (Sesi Aktif)',
+                browser_profile: `Profile #${i + 1}`
+              }));
+            } else if (tiktokCookies && tiktokCookies.length > 0) {
+              ttCardList = tiktokCookies.map((ck, i) => ({
+                username: ck.username || `@cookie_${i + 1}`,
+                worker_idx: i,
+                is_logged_in: ck.status === 'active' || ck.session_status === 'active',
+                is_viewer_verified: false,
+                has_like_btn: false,
+                likes_sent: 0,
+                chats_sent: 0,
+                last_chat_message: 'indonesia',
+                status: ck.status === 'active' ? 'Siap' : 'Perlu Login',
+                browser_profile: `Cookie Profile #${i + 1}`
+              }));
+            }
+          }
+
+          const ttLogs = ttState?.logs || ttState?.recent_logs || [];
+
+          return (
+            <main className="p-4 sm:p-6 space-y-6">
+              {/* Top Navigation & Mode Switcher Card */}
+              <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-sm shrink-0 ${
+                    sharescreenMode === 'tiktok_live'
+                      ? 'bg-cyan-950 text-cyan-400 border border-cyan-800/60'
+                      : 'bg-slate-900 text-emerald-400'
+                  }`}>
+                    {sharescreenMode === 'tiktok_live' ? (
+                      <TikTokLogo className="w-5 h-5" />
+                    ) : (
+                      <Tv className="w-5 h-5" />
+                    )}
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Memantau tampilan langsung browser Chromium headless di server Linux saat bot mengeksekusi ulasan Google Maps.
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => {
-                    setScreenTs(Date.now());
-                    setStreamError(false);
-                  }}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1.5 cursor-pointer"
-                  title="Segarkan stream layar"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Segarkan</span>
-                </button>
-                <button
-                  onClick={handleToggleFullscreen}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1.5 cursor-pointer"
-                  title="Mode Layar Penuh"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                  <span>Fullscreen</span>
-                </button>
-                <a
-                  href="/api/screen/stream.mjpg"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Buka Tab Baru</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Main Video Screen Container */}
-            <div
-              ref={screenContainerRef}
-              className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-xl relative flex flex-col"
-            >
-              {/* Screen Top Bar */}
-              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/80" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
-                  <span className="ml-2 font-mono text-[11px] text-slate-300">
-                    AutoBotix Chromium Engine • Virtual Display :99 (1366 × 768)
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[11px] text-emerald-400 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    LIVE MJPEG STREAM
-                  </span>
-                </div>
-              </div>
-
-              {/* Video / Image Display Area */}
-              <div className="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden">
-                {streamActive && !streamError ? (
-                  <img
-                    key={screenTs}
-                    src={`/api/screen/stream.mjpg?t=${screenTs}`}
-                    alt="Live Sharescreen Display :99"
-                    className="w-full h-full object-contain"
-                    onError={() => setStreamError(true)}
-                  />
-                ) : (
-                  <div className="text-center p-8 space-y-3">
-                    <Tv className="w-12 h-12 text-slate-600 mx-auto" />
-                    <p className="text-sm font-semibold text-slate-300">
-                      Display :99 Sedang Standby
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                        Sharescreen Bot: {sharescreenMode === 'tiktok_live' ? 'Tiktok Live Multi-Akun' : 'Google Map (Display :99)'}
+                      </h2>
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                        sharescreenMode === 'tiktok_live'
+                          ? (isTTRunning ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-600')
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full ${
+                          sharescreenMode === 'tiktok_live'
+                            ? (isTTRunning ? 'bg-rose-500 animate-pulse' : 'bg-slate-400')
+                            : 'bg-emerald-500 animate-pulse'
+                        }`} />
+                        {sharescreenMode === 'tiktok_live' ? (isTTRunning ? 'LIVE ON-AIR' : 'STANDBY') : 'LIVE STREAM'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {sharescreenMode === 'tiktok_live'
+                        ? 'Memantau tampilan display kartu browser Chromium per akun cookie (Setiap akun menggunakan cookie terisolasi sendiri).'
+                        : 'Memantau tampilan langsung browser Chromium headless di server Linux saat bot mengeksekusi ulasan Google Maps.'}
                     </p>
-                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                      Layar otomatis aktif dan menampilkan aksi browser secara real-time saat Anda menjalankan tugas ulasan.
-                    </p>
+                  </div>
+                </div>
+
+                {/* Pill Switcher: Google Map vs Tiktok Live */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="inline-flex items-center p-1 bg-slate-100 border border-slate-200/90 rounded-xl">
                     <button
-                      onClick={() => {
-                        setStreamError(false);
-                        setScreenTs(Date.now());
-                      }}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer"
+                      type="button"
+                      onClick={() => setSharescreenMode('google_map')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        sharescreenMode === 'google_map'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
                     >
-                      Coba Muat Ulang Layar
+                      <MapPin className="w-3.5 h-3.5 text-red-500" />
+                      <span>Google Map</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 font-mono text-slate-500">:99</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSharescreenMode('tiktok_live')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        sharescreenMode === 'tiktok_live'
+                          ? 'bg-white text-cyan-600 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <TikTokLogo className="w-3.5 h-3.5" />
+                      <span>Tiktok Live</span>
+                      {isTTRunning && (
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                      )}
                     </button>
                   </div>
-                )}
-              </div>
-            </div>
 
-            {/* Live Bot Activity Logs Section */}
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-600" />
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Log Aktivitas Bot Terkini (Real-Time)
-                  </h3>
+                  <button
+                    onClick={() => {
+                      setScreenTs(Date.now());
+                      setStreamError(false);
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+                    title="Segarkan stream layar"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Segarkan</span>
+                  </button>
+
+                  {sharescreenMode === 'google_map' && (
+                    <>
+                      <button
+                        onClick={handleToggleFullscreen}
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+                        title="Mode Layar Penuh"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span>Fullscreen</span>
+                      </button>
+                      <a
+                        href="/api/screen/stream.mjpg"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 cursor-pointer"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Tab Baru</span>
+                      </a>
+                    </>
+                  )}
                 </div>
-                <span className="text-[11px] text-slate-400 font-mono">Auto-refresh tiap 2.5 detik</span>
               </div>
 
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 sm:p-4 font-mono text-xs max-h-64 overflow-y-auto space-y-2">
-                {screenLogs && screenLogs.length > 0 ? (
-                  screenLogs.map((log) => {
-                    const lvl = (log.level || 'info').toLowerCase();
-                    let badgeClass = 'text-sky-400 bg-sky-950/60 border-sky-800';
-                    if (lvl === 'success') badgeClass = 'text-emerald-400 bg-emerald-950/60 border-emerald-800';
-                    else if (lvl === 'warning' || lvl === 'warn') badgeClass = 'text-amber-400 bg-amber-950/60 border-amber-800';
-                    else if (lvl === 'error' || lvl === 'fatal') badgeClass = 'text-rose-400 bg-rose-950/60 border-rose-800';
-
-                    return (
-                      <div key={log.id} className="flex items-start gap-2.5 leading-relaxed border-b border-slate-900/80 pb-1.5 last:border-none">
-                        <span className="text-slate-500 text-[11px] shrink-0 pt-0.5">
-                          {log.created_at ? log.created_at.split(' ')[1] : '--:--:--'}
-                        </span>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border shrink-0 ${badgeClass}`}>
-                          {lvl}
-                        </span>
-                        {log.business_name && (
-                          <span className="text-slate-400 text-[11px] shrink-0">
-                            [{log.business_name}]
-                          </span>
-                        )}
-                        <span className="text-slate-200 break-words flex-1">
-                          {log.message}
+              {/* ───────────────────────────────────────────────────────────── */}
+              {/* MODE 1: GOOGLE MAP (DISPLAY :99)                              */}
+              {/* ───────────────────────────────────────────────────────────── */}
+              {sharescreenMode === 'google_map' && (
+                <>
+                  <div
+                    ref={screenContainerRef}
+                    className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-xl relative flex flex-col"
+                  >
+                    {/* Screen Top Bar */}
+                    <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/80" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
+                        <span className="ml-2 font-mono text-[11px] text-slate-300">
+                          AutoBotix Chromium Engine • Virtual Display :99 (1366 × 768)
                         </span>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-slate-500 text-center py-4">
-                    Belum ada log proses ulasan aktif. Jalankan task ulasan untuk melihat aktivitas.
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-[11px] text-emerald-400 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                          LIVE MJPEG STREAM
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Video / Image Display Area */}
+                    <div className="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden">
+                      {streamActive && !streamError ? (
+                        <img
+                          key={screenTs}
+                          src={`/api/screen/stream.mjpg?t=${screenTs}`}
+                          alt="Live Sharescreen Display :99"
+                          className="w-full h-full object-contain"
+                          onError={() => setStreamError(true)}
+                        />
+                      ) : (
+                        <div className="text-center p-8 space-y-3">
+                          <Tv className="w-12 h-12 text-slate-600 mx-auto" />
+                          <p className="text-sm font-semibold text-slate-300">
+                            Display :99 Sedang Standby
+                          </p>
+                          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                            Layar otomatis aktif dan menampilkan aksi browser secara real-time saat Anda menjalankan tugas ulasan Google Maps.
+                          </p>
+                          <button
+                            onClick={() => {
+                              setStreamError(false);
+                              setScreenTs(Date.now());
+                            }}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer"
+                          >
+                            Coba Muat Ulang Layar
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
-          </main>
-        )}
+
+                  {/* Live Bot Activity Logs Section */}
+                  <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-emerald-600" />
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Log Aktivitas Bot Terkini (Real-Time)
+                        </h3>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">Auto-refresh tiap 2.5 detik</span>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 sm:p-4 font-mono text-xs max-h-64 overflow-y-auto space-y-2">
+                      {screenLogs && screenLogs.length > 0 ? (
+                        screenLogs.map((log) => {
+                          const lvl = (log.level || 'info').toLowerCase();
+                          let badgeClass = 'text-sky-400 bg-sky-950/60 border-sky-800';
+                          if (lvl === 'success') badgeClass = 'text-emerald-400 bg-emerald-950/60 border-emerald-800';
+                          else if (lvl === 'warning' || lvl === 'warn') badgeClass = 'text-amber-400 bg-amber-950/60 border-amber-800';
+                          else if (lvl === 'error' || lvl === 'fatal') badgeClass = 'text-rose-400 bg-rose-950/60 border-rose-800';
+
+                          return (
+                            <div key={log.id} className="flex items-start gap-2.5 leading-relaxed border-b border-slate-900/80 pb-1.5 last:border-none">
+                              <span className="text-slate-500 text-[11px] shrink-0 pt-0.5">
+                                {log.created_at ? log.created_at.split(' ')[1] : '--:--:--'}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border shrink-0 ${badgeClass}`}>
+                                {lvl}
+                              </span>
+                              {log.business_name && (
+                                <span className="text-slate-400 text-[11px] shrink-0">
+                                  [{log.business_name}]
+                                </span>
+                              )}
+                              <span className="text-slate-200 break-words flex-1">
+                                {log.message}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-slate-500 text-center py-4">
+                          Belum ada log proses ulasan aktif. Jalankan task ulasan untuk melihat aktivitas.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ───────────────────────────────────────────────────────────── */}
+              {/* MODE 2: TIKTOK LIVE (CARDS DISPLAY PER AKUN COOKIE)          */}
+              {/* ───────────────────────────────────────────────────────────── */}
+              {sharescreenMode === 'tiktok_live' && (
+                <>
+                  {/* Status Banner Card */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 text-white flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-cyan-950 border border-cyan-800/60 flex items-center justify-center text-cyan-400 shrink-0">
+                        <TikTokLogo className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm sm:text-base text-white font-mono">
+                            Target: {ttState?.target_user || '@evelyn.vln'}
+                          </h3>
+                          {isTTRunning ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                              LIVE ON-AIR
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-400">
+                              STANDBY
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Mode: {ttState?.execution_mode === 'parallel' ? '⚡ Paralel (Browser Terpisah Serentak)' : '🔄 Bergantian (Rotasi)'} • Komentar tiap 3 detik • 100% Real Likes (Klik Nyata Tanpa Dummy)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
+                      <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800">
+                        <span className="text-slate-400 text-[10px] block font-sans">REAL LIKES (1:1)</span>
+                        <span className="text-rose-400 font-bold text-sm">
+                          ❤️ {(ttState?.likes_sent || 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800">
+                        <span className="text-slate-400 text-[10px] block font-sans">CHAT 3 DETIK</span>
+                        <span className="text-cyan-400 font-bold text-sm">
+                          💬 {(ttState?.chats_sent || 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800">
+                        <span className="text-slate-400 text-[10px] block font-sans">AKUN COOKIE</span>
+                        <span className="text-emerald-400 font-bold text-sm">
+                          👥 {ttCardList.length} Display
+                        </span>
+                      </div>
+                      {!isTTRunning && (
+                        <button
+                          onClick={() => setShowTiktokConfigModal(true)}
+                          className="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm shadow-cyan-600/30 transition flex items-center gap-1.5"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-white" />
+                          <span>Mulai TikTok Live</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Grid Display Cards: 1 Card per Akun Cookie */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {ttCardList.map((card, idx) => {
+                      const wIdx = card.worker_idx !== undefined ? card.worker_idx : idx;
+                      const isViewer = Boolean(card.is_viewer_verified);
+                      const hasLikeBtn = Boolean(card.has_like_btn);
+                      const realLikes = card.likes_sent || 0;
+                      const chatsSent = card.chats_sent || 0;
+
+                      return (
+                        <div
+                          key={card.username || idx}
+                          className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col transition hover:border-slate-700"
+                        >
+                          {/* Card Header */}
+                          <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-lg bg-cyan-950 border border-cyan-800/60 flex items-center justify-center text-cyan-400 font-bold text-xs font-mono">
+                                #{wIdx + 1}
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
+                                  {card.username}
+                                </h4>
+                                <span className="text-[10px] text-slate-400">
+                                  {card.browser_profile || `Browser #${wIdx + 1}`} • Cookie Mandiri
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {card.is_logged_in ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                  ✓ Sesi Aktif
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                  Mode Tamu
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Display Screen Snapshot (Chromium Headless Worker) */}
+                          <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
+                            <img
+                              key={`${screenTs}-${wIdx}`}
+                              src={`/api/tiktok-live/screen/${wIdx}.png?t=${screenTs}`}
+                              alt={`Display ${card.username}`}
+                              className="w-full h-full object-cover"
+                            />
+                            {/* Overlay Badges on Top of Screen */}
+                            <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5 pointer-events-none">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
+                                isViewer
+                                  ? 'bg-emerald-600/90 text-white'
+                                  : 'bg-slate-900/85 text-slate-300 border border-slate-700/80'
+                              }`}>
+                                {isViewer ? '✓ Penonton Terdaftar' : '? Memindai Penonton...'}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm backdrop-blur-xs ${
+                                hasLikeBtn
+                                  ? 'bg-rose-600/90 text-white'
+                                  : 'bg-slate-900/85 text-slate-300 border border-slate-700/80'
+                              }`}>
+                                {hasLikeBtn ? '❤️ Tombol Love [✓]' : 'Cari Tombol Love'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Real Statistics Card Body (100% Real, NO DUMMY) */}
+                          <div className="p-3.5 space-y-2.5 bg-slate-950 font-mono text-xs">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                                <span className="text-[10px] text-slate-400 block font-sans">REAL LIKES (1:1)</span>
+                                <span className="text-xs font-bold text-rose-400 flex items-center gap-1">
+                                  ❤️ {realLikes.toLocaleString()} <span className="text-[9px] text-slate-500 font-normal">klik nyata</span>
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                                <span className="text-[10px] text-slate-400 block font-sans">CHAT 3 DETIK</span>
+                                <span className="text-xs font-bold text-cyan-400 flex items-center gap-1">
+                                  💬 {chatsSent} <span className="text-[9px] text-slate-500 font-normal">terkirim</span>
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800/80">
+                              <span className="text-slate-500 font-sans">Pesan:</span>
+                              <span className="text-slate-200 truncate max-w-[170px]" title={card.last_chat_message || ttState?.chat_message || 'indonesia'}>
+                                "{card.last_chat_message || ttState?.chat_message || 'indonesia'}"
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* TikTok Live Logcat Tree Section */}
+                  <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-cyan-600" />
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Logcat TikTok Live Engine (Real-Time Cards &amp; Tree Branch)
+                        </h3>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">Pembaruan otomatis tiap 2.5s</span>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 sm:p-4 font-mono text-xs max-h-64 overflow-y-auto space-y-2">
+                      {ttLogs && ttLogs.length > 0 ? (
+                        ttLogs.map((log) => {
+                          const lvl = (log.level || 'info').toLowerCase();
+                          let badgeClass = 'text-sky-400 bg-sky-950/60 border-sky-800';
+                          if (lvl === 'success') badgeClass = 'text-emerald-400 bg-emerald-950/60 border-emerald-800';
+                          else if (lvl === 'warning' || lvl === 'warn') badgeClass = 'text-amber-400 bg-amber-950/60 border-amber-800';
+                          else if (lvl === 'error' || lvl === 'fatal') badgeClass = 'text-rose-400 bg-rose-950/60 border-rose-800';
+
+                          return (
+                            <div key={log.id} className="flex items-start gap-2.5 leading-relaxed border-b border-slate-900/80 pb-1.5 last:border-none">
+                              <span className="text-slate-500 text-[11px] shrink-0 pt-0.5">
+                                {log.created_at ? log.created_at.split(' ')[1] : '--:--:--'}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border shrink-0 ${badgeClass}`}>
+                                {lvl}
+                              </span>
+                              <span className="text-slate-200 break-words flex-1">
+                                {log.message}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-slate-500 text-center py-4">
+                          Belum ada aktivitas TikTok Live. Jalankan bot untuk melihat display dan logcat.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </main>
+          );
+        })()}
 
 
 

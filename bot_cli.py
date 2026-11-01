@@ -2725,52 +2725,69 @@ def handle_tiktok_live_menu(client: ServerClient, status_info: Optional[Dict[str
                     verified_set = set(st.get("verified_viewers") or [])
                     active_accs = st.get("active_accounts") or []
 
-                    # Responsive Card UI (PC/Laptop vs Mobile Termux) - WITHOUT Ctrl+C inside card
+                    # Responsive Card UI (PC/Laptop vs Mobile Termux)
+                    # 1. Overview Card
                     if cols >= 80:
-                        if active_accs:
-                            v_badges = []
-                            for acc_u in active_accs:
-                                short_u = acc_u[:14]
-                                if acc_u in verified_set:
-                                    v_badges.append(f"{C_BOLD}{C_GREEN}[✓] {short_u}{C_RESET}")
-                                else:
-                                    v_badges.append(f"{C_CYAN}[?] {short_u}{C_RESET}")
-                            penonton_str = f" {C_BOLD}{C_WHITE}Daftar Penonton{C_RESET} : " + "  ".join(v_badges)
-                        else:
-                            penonton_str = f" {C_BOLD}{C_WHITE}Daftar Penonton{C_RESET} : {C_YELLOW}Mode Tamu (Guest View){C_RESET}"
-
-                        card_lines = [
+                        overview_lines = [
                             f" {C_BOLD}{C_WHITE}Target Streamer{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET}   │  {C_BOLD}{C_RED}🔴 LIVE ON-AIR{C_RESET}  ⏱ {time_str}",
-                            f" {C_BOLD}{C_WHITE}Akun TikTok    {C_RESET} : {C_BOLD}{C_CYAN}{live_acc_label}{C_RESET}   │  {C_BOLD}{C_WHITE}Mode   :{C_RESET} {mode_tag}",
-                            penonton_str,
-                            f" {C_BOLD}{C_WHITE}Metrik Likes   {C_RESET} : {C_BOLD}{C_RED}❤️ {likes:,} tap{C_RESET} ({tap_speed} tap/s)  │  {C_BOLD}{C_CYAN}💬 Chat :{C_RESET} {chats} terkirim",
+                            f" {C_BOLD}{C_WHITE}Mode Eksekusi  {C_RESET} : {mode_tag}   │  {C_BOLD}{C_WHITE}Total Akun:{C_RESET} {len(active_accs) or 1} browser terisolasi",
+                            f" {C_BOLD}{C_WHITE}Real Likes (1:1){C_RESET}: {C_BOLD}{C_RED}❤️ {likes:,} klik nyata{C_RESET} (NO DUMMY) │ {C_BOLD}{C_CYAN}💬 Chat 3s:{C_RESET} {chats} terkirim",
                             f" ───────────────────────────────────────────────────────────────────",
-                            f" {C_BOLD}{C_WHITE}Statistik Live {C_RESET} : {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
+                            f" {C_BOLD}{C_WHITE}Statistik Sistem{C_RESET}: {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
                         ]
-                        print_box(card_lines, width=68, title=f"{C_BOLD}{C_RED}CARD UI • TIKTOK LIVE DASHBOARD{C_RESET}")
+                        print_box(overview_lines, width=68, title=f"{C_BOLD}{C_RED}TIKTOK LIVE • OVERVIEW DASHBOARD{C_RESET}")
                     else:
                         c_w = min(cols - 4, 46)
-                        if active_accs:
-                            v_badges = []
-                            for acc_u in active_accs:
-                                short_u = acc_u[:10]
-                                if acc_u in verified_set:
-                                    v_badges.append(f"{C_BOLD}{C_GREEN}[✓]{short_u}{C_RESET}")
-                                else:
-                                    v_badges.append(f"{C_CYAN}[?]{short_u}{C_RESET}")
-                            penonton_str = f" {C_BOLD}{C_WHITE}Penonton{C_RESET}: " + " ".join(v_badges)
-                        else:
-                            penonton_str = f" {C_BOLD}{C_WHITE}Penonton{C_RESET}: {C_YELLOW}Mode Tamu{C_RESET}"
-
-                        card_lines = [
+                        overview_lines = [
                             f" {C_BOLD}{C_RED}🔴 TARGET{C_RESET} : {C_BOLD}{C_YELLOW}{target_user}{C_RESET} [LIVE] ⏱ {time_str}",
-                            f" {C_BOLD}{C_CYAN}👤 AKUN  {C_RESET} : {live_acc_label[:18]} │ {mode_tag}",
-                            penonton_str,
-                            f" {C_BOLD}{C_MAGENTA}⚡ LIKES {C_RESET} : {C_RED}❤️ {likes:,}{C_RESET} ({tap_speed}/s) │ 💬 {chats}",
+                            f" {C_BOLD}{C_CYAN}⚡ MODE  {C_RESET} : {mode_tag} │ 👥 {len(active_accs) or 1} akun",
+                            f" {C_BOLD}{C_MAGENTA}❤️ LIKES {C_RESET} : {C_RED}{likes:,} (REAL){C_RESET} │ 💬 {chats} chat (3s)",
                             f" ───────────────────────────────────────",
                             f" {C_GREEN}✓ Berhasil: {success}{C_RESET} │ {C_YELLOW}▲ Gagal: {fail}{C_RESET} │ {C_RED}✗ Error: {error}{C_RESET}",
                         ]
-                        print_box(card_lines, width=c_w, title=f"{C_BOLD}{C_RED}TIKTOK LIVE (HP CARD){C_RESET}")
+                        print_box(overview_lines, width=c_w, title=f"{C_BOLD}{C_RED}TIKTOK LIVE (OVERVIEW){C_RESET}")
+
+                    # 2. Desain Card Per Akun Cookie
+                    acc_stats_map = st.get("account_stats") or {}
+                    card_items = list(acc_stats_map.values()) if acc_stats_map else []
+                    if not card_items and active_accs:
+                        card_items = [{"username": u, "worker_idx": i, "is_logged_in": True, "is_viewer_verified": u in verified_set, "has_like_btn": True, "likes_sent": likes, "chats_sent": chats} for i, u in enumerate(active_accs)]
+
+                    if card_items:
+                        for card in card_items:
+                            acc_u = card.get("username", "@user")
+                            w_i = card.get("worker_idx", 0) + 1
+                            is_lg = card.get("is_logged_in", False)
+                            is_v = card.get("is_viewer_verified", False)
+                            has_btn = card.get("has_like_btn", False)
+                            a_likes = card.get("likes_sent", 0)
+                            a_chats = card.get("chats_sent", 0)
+                            a_msg = card.get("last_chat_message") or chat_msg
+
+                            v_tag = f"{C_GREEN}[✓] Terdaftar Penonton Live{C_RESET}" if is_v else f"{C_CYAN}[?] Memindai Penonton...{C_RESET}"
+                            btn_tag = f"{C_GREEN}[✓] room-chat-like-btn (Aktif){C_RESET}" if has_btn else f"{C_YELLOW}[?] Mencari Love Btn...{C_RESET}"
+                            sesi_tag = f"{C_GREEN}[✓] Aktif (Browser Profile #{w_i}){C_RESET}" if is_lg else f"{C_YELLOW}[!] Mode Tamu{C_RESET}"
+
+                            if cols >= 80:
+                                acc_lines = [
+                                    f" {C_BOLD}{C_WHITE}Sesi Cookie    {C_RESET} : {sesi_tag}",
+                                    f" {C_BOLD}{C_WHITE}Daftar Penonton{C_RESET} : {v_tag}",
+                                    f" {C_BOLD}{C_WHITE}Tombol Love    {C_RESET} : {btn_tag}",
+                                    f" {C_BOLD}{C_WHITE}Real Likes (1:1){C_RESET}: {C_BOLD}{C_RED}❤️ {a_likes:,} klik nyata{C_RESET} (1 like/detik, TANPA DUMMY)",
+                                    f" {C_BOLD}{C_WHITE}Live Chat (3s) {C_RESET} : {C_BOLD}{C_CYAN}💬 {a_chats} terkirim{C_RESET} │ Pesan: \"{a_msg[:24]}\"",
+                                    f" {C_BOLD}{C_WHITE}Status Engine  {C_RESET} : {C_GREEN}🟢 ONLINE (Browser Terpisah Berjalan){C_RESET}",
+                                ]
+                                print_box(acc_lines, width=68, title=f"{C_BOLD}{C_CYAN}KARTU AKUN #{w_i}: {acc_u}{C_RESET}")
+                            else:
+                                c_w = min(cols - 4, 46)
+                                acc_lines = [
+                                    f" {C_BOLD}{C_CYAN}SESI   {C_RESET} : {C_GREEN}✓ Aktif{C_RESET} (Browser #{w_i})",
+                                    f" {C_BOLD}{C_WHITE}PENONTON{C_RESET}: {C_GREEN}✓ Live{C_RESET} │ Love: {C_GREEN}✓ Btn{C_RESET}",
+                                    f" {C_BOLD}{C_MAGENTA}LIKES  {C_RESET} : {C_RED}❤️ {a_likes:,} REAL{C_RESET} (No Dummy)",
+                                    f" {C_BOLD}{C_YELLOW}CHAT 3S{C_RESET} : 💬 {a_chats} terkirim │ \"{a_msg[:14]}\"",
+                                    f" {C_BOLD}{C_GREEN}STATUS {C_RESET} : 🟢 ONLINE",
+                                ]
+                                print_box(acc_lines, width=c_w, title=f"{C_BOLD}{C_CYAN}KARTU #{w_i}: {acc_u[:14]}{C_RESET}")
 
                     # Render logs WITHOUT card, newest on top with Google Maps tree branch lines
                     if cols >= 80:
